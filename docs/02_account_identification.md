@@ -1,0 +1,156 @@
+# 02 — 账号识别方案（`nt_qq_<hash>` ↔ QQ 号）
+
+> 账号目录名是 `nt_qq_` + MD5(MD5(uid)+"nt_kernel")，uid 是**内部标识（≠ QQ 号）**，
+> 无法从目录名反推。但存在**三个完全明文的来源**可直接拿到映射，无需解密任何数据库。
+> 本方案经开发机双账号交叉验证，逻辑通用。
+
+---
+
+## 1. 结论速查（示例）
+
+| 账号目录 hash | QQ 号 | 可用来源 |
+|---|---|---|
+| `nt_qq_<32hex>`（示例 A） | **QQ <号码>** | mmkv.default ✓ + UnitedConfig ✓ + Login ✓ |
+| `nt_qq_<32hex>`（示例 B） | **QQ <号码>** | mmkv.default ✓ + Login ✓ |
+
+---
+
+## 2. 来源一（最可靠）：`global/nt_data/mmkv/mmkv.default`
+
+**路径**：`<QQ>/global/nt_data/mmkv/mmkv.default`
+
+**原理**：这是一个 mmkv 键值文件（二进制但含明文 UTF-8 字符串）。其中 flash_transfer
+相关的 key 把**账号目录路径**和 **QQ 号**拼在一起，可直接配对：
+
+```
+.../nt_qq_<32hex>/nt_data/flashfransfer+<QQ号>_flash_transfer_document_cache_key
+.../nt_qq_<32hex>/nt_data/flashfransfer+<QQ号>_flash_file_download_dir_key
+```
+
+**实现（Go）**：
+```go
+func IdentifyFromMmkv(qqRoot, instanceHash string) (string, error) {
+    p := filepath.Join(qqRoot, "global", "nt_data", "mmkv", "mmkv.default")
+    data, err := os.ReadFile(p)
+    if err != nil {
+        return "", err
+    }
+    // 模式: nt_qq_<hash> ... <5~12位数字>_flash
+    re := regexp.MustCompile(`nt_qq_` + regexp.QuoteMeta(instanceHash) + `[^0-9]*?(\d{5,12})_flash`)
+    m := re.FindStringSubmatch(string(data))
+    if len(m) == 2 {
+        return m[1], nil
+    }
+    return "", nil
+}
+```
+
+> 注意：`nt_qq_<hash>` 与数字之间可能有路径分隔符/其他字符，用 `[^0-9]*?` 宽松匹配；
+> `_flash` 后缀保证数字是 QQ 号而不是其他数字。
+
+---
+
+## 3. 来源二：`nt_qq_*/nt_data/UnitedConfig/` 子目录名
+
+**路径**：`<QQ>/nt_qq_<hash>/nt_data/UnitedConfig/`
+
+**原理**：目录下通常有 `000`（默认配置）和以 **QQ 号命名**的子目录（每账号一个）：
+```
+UnitedConfig/
+├── 000/
+└── <QQ号>/            # ← 这就是 QQ 号
+    ├── 10001/
+    ├── 10002/
+    ...
+```
+
+**实现（Go）**：
+```go
+func IdentifyFromUnitedConfig(ntData string) (string, error) {
+    uc := filepath.Join(ntData, "UnitedConfig")
+    entries, err := os.ReadDir(uc)
+    if err != nil {
+        return "", err
+    }
+    for _, e := range entries {
+        n := e.Name()
+        if n != "000" && len(n) >= 5 {
+            if _, err := strconv.Atoi(n); err == nil {
+                return n, nil
+            }
+        }
+    }
+    return "", nil
+}
+```
+
+> 局限：某些账号可能只有 `000`（无 QQ 号子目录）→ 用来源一/三兜底。
+
+---
+
+## 4. 来源三：`global/nt_data/Login/.<qq号>` 标记文件
+
+**路径**：`<QQ>/global/nt_data/Login/`
+
+**原理**：每个登录过的账号有一个 `.` 开头的**空文件**，文件名即 QQ 号：
+```
+Login/
+├── .<QQ号1>     # 0 字节
+└── .<QQ号2>     # 0 字节
+```
+
+**实现（Go）**：
+```go
+func ListLoggedAccounts(qqRoot string) ([]string, error) {
+    lg := filepath.Join(qqRoot, "global", "nt_data", "Login")
+    entries, err := os.ReadDir(lg)
+    if err != nil {
+        return nil, err
+    }
+    var out []string
+    for _, e := range entries {
+        n := e.Name()
+        if strings.HasPrefix(n, ".") && len(n) > 1 {
+            if _, err := strconv.Atoi(n[1:]); err == nil {
+                out = append(out, n[1:])
+            }
+        }
+    }
+    return out, nil
+}
+```
+
+> 局限：只列出"登录过哪些号"，不直接关联到目录 → 用于**交叉验证**。
+
+---
+
+## 5. 推荐综合算法
+
+**实现（Go）**：
+```go
+// IdentifyAccount 三源综合：mmkv 最可靠，UnitedConfig 兜底，Login 交叉验证
+func IdentifyAccount(qqRoot, instanceHash, ntData string) string {
+    qq, _ := IdentifyFromMmkv(qqRoot, instanceHash)
+    if qq == "" {
+        qq, _ = IdentifyFromUnitedConfig(ntData)
+    }
+    if qq == "" {
+        qq = "unknown"
+    }
+    // 交叉验证（可选）：ListLoggedAccounts(qqRoot) 含 qq 则确认
+    return qq
+}
+```
+
+---
+
+## 6. 输出形式（工具展示）
+
+```
+账号 1: nt_qq_<32hex>  →  QQ <号码>   （最近使用）
+账号 2: nt_qq_<32hex>  →  QQ <号码>   （旧账号）
+账号 3: nt_qq_<32hex>  →  unknown     （未识别，仅按时间排序）
+```
+
+- 账号新旧判定：用 `nt_data` 目录 mtime 或 Pic 月目录最新月份排序
+- 每个账号独立统计与清理，**禁止跨账号混淆**
