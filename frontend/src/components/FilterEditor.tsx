@@ -1,0 +1,399 @@
+import { useEffect, useState } from "react";
+import { filterToText, group, leaf, parseExpr, updateTree } from "../expression";
+import type { Condition, Expr, Sort } from "../types";
+import { FILTER_FIELDS, OPS_LABEL, allFilters, fieldDef, type NamedFilter } from "../filters";
+
+interface Props {
+  open: boolean;
+  expr: Expr | null;
+  onChangeExpr: (e: Expr | null) => void;
+  limit?: number;
+  offset?: number;
+  orders?: { field: string; desc: boolean }[];
+  onStagesChange: (s: {
+    limit?: number;
+    offset?: number;
+    orders?: { field: string; desc: boolean }[];
+  }) => void;
+  sort: Sort;
+  onSortChange: (s: Sort) => void;
+  filters: NamedFilter[];
+  onSaveFilters: (list: NamedFilter[]) => void;
+  onApply: (f: NamedFilter) => void;
+  onClose: () => void;
+}
+
+// ---- 条件叶子行 ----
+
+function ConditionRow({
+  cond,
+  onChange,
+  onRemove,
+}: {
+  cond: Condition;
+  onChange: (c: Condition) => void;
+  onRemove: () => void;
+}) {
+  const def = fieldDef(cond.field) ?? FILTER_FIELDS[0];
+  const displayValue =
+    def.toBytes && cond.value !== ""
+      ? String(Math.round(Number(cond.value) / (1024 * 1024)))
+      : cond.value;
+
+  const setValue = (v: string) => {
+    if (def.toBytes && v !== "") {
+      const mb = Number(v);
+      if (!Number.isFinite(mb)) return;
+      onChange({ ...cond, value: String(Math.round(mb * 1024 * 1024)) });
+      return;
+    }
+    onChange({ ...cond, value: v });
+  };
+
+  return (
+    <div className="cond-row">
+      <select
+        value={cond.field}
+        onChange={(e) => {
+          const nd = fieldDef(e.target.value);
+          onChange({
+            field: e.target.value,
+            op: nd?.ops.includes(cond.op) ? cond.op : (nd?.ops[0] ?? "eq"),
+            value: "",
+          });
+        }}
+      >
+        {FILTER_FIELDS.map((f) => (
+          <option key={f.field} value={f.field}>
+            {f.label}
+          </option>
+        ))}
+      </select>
+      <select value={cond.op} onChange={(e) => onChange({ ...cond, op: e.target.value })}>
+        {def.ops.map((op) => (
+          <option key={op} value={op}>
+            {OPS_LABEL[op]}
+          </option>
+        ))}
+      </select>
+      {def.kind === "bool" ? (
+        <select value={cond.value} onChange={(e) => onChange({ ...cond, value: e.target.value })}>
+          <option value="true">是</option>
+          <option value="false">否</option>
+        </select>
+      ) : (
+        <input
+          type={def.kind === "number" ? "number" : "text"}
+          placeholder={def.kind === "number" ? "数值" : def.field === "month" ? "如 2024-09" : "值"}
+          value={displayValue}
+          onChange={(e) => setValue(e.target.value)}
+        />
+      )}
+      {def.unit && <span className="cond-unit">{def.unit}</span>}
+      <button className="mini" onClick={onRemove} title="删除此条件">
+        ✕
+      </button>
+    </div>
+  );
+}
+
+// ---- 列表视图：嵌套且/或组（括号 = 嵌套组）----
+
+function GroupBlock({
+  root,
+  path,
+  depth,
+  onChangeRoot,
+}: {
+  root: Expr; // 整棵树根（updateTree 需要）
+  path: number[]; // 本组在树中的位置
+  depth: number;
+  onChangeRoot: (e: Expr | null) => void;
+}) {
+  let node = root;
+  for (const i of path) node = node.or?.[i] ?? node.and?.[i] ?? group("and", []);
+  const isOr = Array.isArray(node.or);
+  const kids = node.or ?? node.and ?? [];
+
+  const apply = (upd: (n: Expr) => Expr | null) => onChangeRoot(updateTree(root, path, upd));
+  const setKind = (or: boolean) =>
+    apply((n) => group(or ? "or" : "and", n.or ?? n.and ?? []));
+  const add = (child: Expr) =>
+    apply((n) => {
+      const arr = [...(n.or ?? n.and ?? [])];
+      arr.push(child);
+      return n.or ? { or: arr } : { and: arr };
+    });
+  const removeSelf = () => onChangeRoot(updateTree(root, path, () => null));
+
+  return (
+    <div className="expr-group" style={{ marginLeft: depth > 0 ? 12 : 0 }}>
+      <div className="expr-group-head">
+        <select
+          value={isOr ? "or" : "and"}
+          onChange={(e) => setKind(e.target.value === "or")}
+          title="组内逻辑：且 = 全部满足；或 = 任一满足"
+        >
+          <option value="and">且（全部满足）</option>
+          <option value="or">或（任一满足）</option>
+        </select>
+        <button className="mini" onClick={() => add(leaf("age", "gte", "90"))}>
+          ＋条件
+        </button>
+        <button className="mini" onClick={() => add(group("and", [leaf("age", "gte", "90")]))}>
+          ＋且组
+        </button>
+        <button className="mini" onClick={() => add(group("or", [leaf("age", "gte", "90")]))}>
+          ＋或组
+        </button>
+        {depth > 0 && (
+          <button className="mini" onClick={removeSelf}>
+            删除组
+          </button>
+        )}
+      </div>
+      {kids.length === 0 && <div className="cond-empty">空组 = 匹配全部</div>}
+      {kids.map((child, i) => {
+        const childPath = [...path, i];
+        if (child.c) {
+          return (
+            <ConditionRow
+              key={i}
+              cond={child.c}
+              onChange={(nc) => onChangeRoot(updateTree(root, childPath, () => ({ c: nc })))}
+              onRemove={() => onChangeRoot(updateTree(root, childPath, () => null))}
+            />
+          );
+        }
+        return (
+          <GroupBlock
+            key={i}
+            root={root}
+            path={childPath}
+            depth={depth + 1}
+            onChangeRoot={onChangeRoot}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+// ---- 主对话框：列表 / 表达式 双视图 + 筛选器列表 ----
+
+export function FilterEditor({
+  open,
+  expr,
+  onChangeExpr,
+  limit,
+  offset,
+  orders,
+  onStagesChange,
+  sort,
+  onSortChange,
+  filters,
+  onSaveFilters,
+  onApply,
+  onClose,
+}: Props) {
+  const [view, setView] = useState<"list" | "text">("list");
+  const [text, setText] = useState("");
+  const [parseErr, setParseErr] = useState("");
+  const [filterName, setFilterName] = useState("");
+  const [selected, setSelected] = useState("");
+
+  useEffect(() => {
+    if (open && view === "text") setText(filterToText(expr, limit, offset, orders));
+  }, [open, view, expr, limit, offset, orders]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const root = expr ?? group("and", []);
+
+  const onTextChange = (t: string) => {
+    setText(t);
+    const res = parseExpr(t);
+    if (res.error) {
+      setParseErr(res.error);
+      return;
+    }
+    setParseErr("");
+    onChangeExpr(res.expr ?? null);
+    onStagesChange({ limit: res.limit, offset: res.offset, orders: res.orders });
+  };
+
+  const saveFilter = () => {
+    const name = filterName.trim();
+    if (!name) return;
+    const next = [
+      ...filters.filter((f) => f.name !== name),
+      { name, expr, sort, limit, offset, orders },
+    ];
+    onSaveFilters(next);
+    setSelected(name);
+    setFilterName("");
+  };
+
+  const deleteFilter = (name: string) => {
+    onSaveFilters(filters.filter((f) => f.name !== name));
+    if (selected === name) setSelected("");
+  };
+
+  const togglePin = (name: string) => {
+    onSaveFilters(filters.map((f) => (f.name === name ? { ...f, pinned: !f.pinned } : f)));
+  };
+
+  return (
+    <div className="dialog-mask" onClick={onClose}>
+      <div className="dialog dialog-wide" onClick={(e) => e.stopPropagation()}>
+        <h2>编辑筛选器</h2>
+
+        <div className="row">
+          <label>视图</label>
+          <span style={{ display: "flex", gap: 6 }}>
+            <button className={view === "list" ? "primary" : ""} onClick={() => setView("list")}>
+              列表
+            </button>
+            <button className={view === "text" ? "primary" : ""} onClick={() => setView("text")}>
+              表达式
+            </button>
+          </span>
+        </div>
+
+        {view === "list" ? (
+          <div className="cond-list">
+            <GroupBlock root={root} path={[]} depth={0} onChangeRoot={onChangeExpr} />
+            {expr === null && <div className="cond-empty">无条件 = 显示全部</div>}
+            <div className="row">
+              <label>取前 N 条（take）</label>
+              <input
+                type="number"
+                min={0}
+                placeholder="不限制"
+                value={limit ?? ""}
+                onChange={(e) =>
+                  onStagesChange({
+                    limit: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)),
+                    offset,
+                    orders,
+                  })
+                }
+                style={{ width: 90 }}
+              />
+              <label>跳过前 N 条（drop）</label>
+              <input
+                type="number"
+                min={0}
+                placeholder="0"
+                value={offset ?? ""}
+                onChange={(e) =>
+                  onStagesChange({
+                    limit,
+                    offset: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)),
+                    orders,
+                  })
+                }
+                style={{ width: 90 }}
+              />
+            </div>
+            {(orders?.length ?? 0) > 0 && (
+              <div className="cond-empty">
+                排序由表达式 order() 控制：
+                {orders!.map((o) => ` ${o.field} ${o.desc ? "↓" : "↑"}`).join("，")}
+                （在表达式视图中编辑）
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="expr-text-view">
+            <textarea
+              value={text}
+              onChange={(e) => onTextChange(e.target.value)}
+              placeholder={
+                "例：thumb = true AND age >= 90 | order(size, desc) | take(100)\n例：size > 104857600 | drop(10)  （除去最大的10个）\n例：biz in pic,video OR category ~ marketface\n字段：biz/sub/category/month/age/size/md5/reason/thumb/temp\n操作符：= != ~ in > >= < <=\n管道函数：order(field, asc|desc) · take(n) 取前 n · drop(n) 跳过前 n"
+              }
+              rows={5}
+            />
+            {parseErr ? (
+              <div className="parse-err">✗ {parseErr}</div>
+            ) : (
+              <div className="parse-ok">✓ 表达式有效</div>
+            )}
+          </div>
+        )}
+
+        <div className="row">
+          <label>排序（随筛选器保存）</label>
+          <select
+            value={`${sort.field}:${sort.desc}`}
+            onChange={(e) => {
+              const [field, desc] = e.target.value.split(":");
+              onSortChange({ field, desc: desc === "true" });
+            }}
+          >
+            <option value="size:true">大小（大→小）</option>
+            <option value="size:false">大小（小→大）</option>
+            <option value="mtime:true">时间（新→旧）</option>
+            <option value="mtime:false">时间（旧→新）</option>
+            <option value="month:true">月份（新→旧）</option>
+            <option value="month:false">月份（旧→新）</option>
+          </select>
+        </div>
+
+        <div className="row">
+          <label>保存当前为筛选器</label>
+          <input
+            value={filterName}
+            onChange={(e) => setFilterName(e.target.value)}
+            placeholder="名称（条件与排序一并保存）"
+            style={{ flex: 1 }}
+          />
+          <button onClick={saveFilter}>保存</button>
+        </div>
+
+        <div className="filter-list">
+          <h3>筛选器列表</h3>
+          {allFilters(filters).map((f) => (
+            <div key={f.name} className="filter-item">
+              <span style={{ flex: 1 }}>
+                {f.name}
+                {f.builtin ? "" : "（我的）"}
+                {f.pinned ? " ★" : ""}
+              </span>
+              <button className="mini" onClick={() => onApply(f)}>
+                应用
+              </button>
+              {!f.builtin && (
+                <button className="mini" onClick={() => togglePin(f.name)}>
+                  {f.pinned ? "取消置顶" : "置顶"}
+                </button>
+              )}
+              {!f.builtin && (
+                <button className="mini" onClick={() => deleteFilter(f.name)}>
+                  删除
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="actions">
+          <button onClick={() => onChangeExpr(null)}>清空条件</button>
+          <button onClick={onClose}>取消</button>
+          <button className="primary" onClick={onClose}>
+            完成
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
