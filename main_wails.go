@@ -47,13 +47,18 @@ func (d *Dialogs) PickDirectory(title string) (string, error) {
 // ConfirmClean shows the pre-cleanup confirmation dialog and returns the
 // chosen button label ("清理" or "取消").
 func (d *Dialogs) ConfirmClean(msg string) (string, error) {
+	return d.Confirm("确认清理", msg, []string{"清理", "取消"}, "取消")
+}
+
+// Confirm 通用确认对话框（危险操作二次确认用）；返回选中的按钮文案。
+func (d *Dialogs) Confirm(title, msg string, buttons []string, def string) (string, error) {
 	return runtime.MessageDialog(d.ctx, runtime.MessageDialogOptions{
-		Type:          runtime.QuestionDialog,
-		Title:         "确认清理",
+		Type:          runtime.WarningDialog,
+		Title:         title,
 		Message:       msg,
-		Buttons:       []string{"清理", "取消"},
-		DefaultButton: "取消", // 安全默认：回车不触发清理
-		CancelButton:  "取消",
+		Buttons:       buttons,
+		DefaultButton: def, // 安全默认：回车不触发危险动作
+		CancelButton:  def,
 	})
 }
 

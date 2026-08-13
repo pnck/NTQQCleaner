@@ -116,10 +116,11 @@ type DupGroup struct {
 
 // CleanRequest comes from the UI; every field is re-validated in Go.
 type CleanRequest struct {
-	IDs       []int  `json:"ids"`
-	BackupDir string `json:"backupDir"`
-	Force     bool   `json:"force"`
-	Confirmed bool   `json:"confirmed"`
+	IDs           []int  `json:"ids"`
+	BackupDir     string `json:"backupDir"`
+	Force         bool   `json:"force"`
+	Confirmed     bool   `json:"confirmed"`
+	IgnoreRunning bool   `json:"ignoreRunning"` // QQ 运行中仍清理（需二次确认）
 }
 
 // CleanResult summarizes a cleanup run.

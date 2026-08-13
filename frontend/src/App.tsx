@@ -237,31 +237,59 @@ export default function App() {
     const backup = getBackupDir();
     const msg =
       `将清理 ${checkedCount} 个文件（${fmtSize(checkedBytes)}）。\n` +
-      (backup ? `文件将移动到：${backup}` : "未设置备份目录：删除前会计算 SHA-256 并写入审计日志。") +
+      (backup ? `文件将移动到：${backup}` : "未设置备份目录：删除前会写入审计日志（路径/大小/时间）。") +
       "\n\n确定继续？";
     const answer = await api.confirmClean(msg);
     if (answer !== "清理") return;
     setPhase("cleaning");
-    try {
-      const res: CleanResult = await api.clean({
+    const runClean = (ignoreRunning: boolean) =>
+      api.clean({
         ids: [...checked],
         backupDir: backup,
         force: true,
         confirmed: true,
+        ignoreRunning,
       });
-      setPhase("idle");
-      setRows([]);
-      setChecked(new Set());
-      setToast(
-        `清理完成：处理 ${res.processed}，移动 ${res.moved}，删除 ${res.deleted}，` +
-          `跳过 ${res.skipped}，失败 ${res.failed}，释放 ${fmtSize(res.bytesFreed)}`,
-      );
-      if (res.errors.length > 0) setError(res.errors.join("\n"));
+    let res: CleanResult;
+    try {
+      res = await runClean(false);
     } catch (e) {
-      setPhase("ready");
-      setError(String(e));
-      setToast(`清理被拒绝：${e}`);
+      // 后端哨兵错误：QQ 运行中。POSIX 下 unlink 不被写锁阻塞，但 QQ
+      // 正在写的缓存条目可能失效（重新下载即恢复）—— 二次确认后可覆盖。
+      if (String(e) === "qq-running") {
+        const again = await api.confirm(
+          "QQ 正在运行",
+          "检测到 QQ 进程正在运行。\n\n删除本身不会被写入锁阻塞，但 QQ 正在写入的缓存条目可能失效（重新下载即可恢复）。\n\n仍要继续清理吗？",
+          ["仍要清理", "取消"],
+          "取消",
+        );
+        if (again !== "仍要清理") {
+          setPhase("ready");
+          return;
+        }
+        try {
+          res = await runClean(true);
+        } catch (e2) {
+          setPhase("ready");
+          setError(String(e2));
+          setToast(`清理被拒绝：${e2}`);
+          return;
+        }
+      } else {
+        setPhase("ready");
+        setError(String(e));
+        setToast(`清理被拒绝：${e}`);
+        return;
+      }
     }
+    setPhase("idle");
+    setRows([]);
+    setChecked(new Set());
+    setToast(
+      `清理完成：处理 ${res.processed}，移动 ${res.moved}，删除 ${res.deleted}，` +
+        `跳过 ${res.skipped}，失败 ${res.failed}，释放 ${fmtSize(res.bytesFreed)}`,
+    );
+    if (res.errors.length > 0) setError(res.errors.join("\n"));
   }, [checked, checkedBytes, checkedCount]);
 
   const openDupes = useCallback(async () => {

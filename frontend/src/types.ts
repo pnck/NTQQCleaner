@@ -117,6 +117,7 @@ export interface CleanRequest {
   backupDir: string;
   force: boolean;
   confirmed: boolean;
+  ignoreRunning?: boolean; // QQ 运行中仍清理（需二次确认）
 }
 
 export interface CleanResult {

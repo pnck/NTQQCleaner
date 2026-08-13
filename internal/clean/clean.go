@@ -35,8 +35,12 @@ type Request struct {
 	AuditLog     string   // JSONL audit log path (always written)
 	Force        bool
 	Confirmed    bool
-	Config       rules.Config
-	Now          time.Time // zero = time.Now()
+	// IgnoreRunning 允许在 QQ 运行中清理（产品决策：POSIX 下 unlink 与
+	// 并发写互不锁定；残余风险仅是缓存条目失效可重新生成。默认仍拒绝，
+	// 需用户在确认对话框显式选择「仍要清理」）。
+	IgnoreRunning bool
+	Config        rules.Config
+	Now           time.Time // zero = time.Now()
 }
 
 // Result summarizes a run. Errors are collected per-file so one failure
@@ -65,7 +69,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if req.AuditLog == "" {
 		return Result{}, fmt.Errorf("audit log path is required (redline: no unrecorded deletion)")
 	}
-	if qqRunningFunc() {
+	if !req.IgnoreRunning && qqRunningFunc() {
 		return Result{}, qqRunningError()
 	}
 	now := req.Now
@@ -86,8 +90,9 @@ func Run(ctx context.Context, req Request) (Result, error) {
 			break
 		}
 		res.Processed++
-		// Process guard re-checked close to every deletion (docs/06 §5).
-		if time.Since(lastQQCheck) >= 30*time.Second {
+		// Process guard re-checked close to every deletion (docs/06 §5)；
+		// IgnoreRunning 时同样跳过（用户已显式确认）。
+		if !req.IgnoreRunning && time.Since(lastQQCheck) >= 30*time.Second {
 			if qqRunningFunc() {
 				res.Errors = append(res.Errors, "QQ started during cleanup; aborting")
 				return res, qqRunningError()

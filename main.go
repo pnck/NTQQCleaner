@@ -222,6 +222,7 @@ func cleanCmd(args []string) error {
 		configPath  = fs.String("config", "", "")
 		inclSuggest = fs.Bool("include-suggest", false, "")
 		inclCaution = fs.Bool("include-caution", false, "")
+		ignoreQQ    = fs.Bool("ignore-running", false, "")
 	)
 	fs.Parse(args)
 
@@ -287,7 +288,7 @@ func cleanCmd(args []string) error {
 		return fmt.Errorf("aborted (confirmation required)")
 	}
 
-	res, err := cleanRun(m, files, *backupDir, *auditLog, cfg)
+	res, err := cleanRun(m, files, *backupDir, *auditLog, cfg, *ignoreQQ)
 	if err != nil {
 		return err
 	}

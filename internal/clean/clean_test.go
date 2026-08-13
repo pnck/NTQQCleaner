@@ -53,6 +53,35 @@ func TestRunRefusesWhileQQRunning(t *testing.T) {
 	}
 }
 
+// TestRunIgnoreRunning：显式覆盖后 QQ 运行中也执行（产品决策）。
+func TestRunIgnoreRunning(t *testing.T) {
+	setQQRunning(t, true)
+	base := t.TempDir()
+	src := filepath.Join(base, "Pic", "2023-01", "Thumb", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01_720.png")
+	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := gateRequest(true, true)
+	r.Files = []classify.FileEntry{{
+		Path: src, Biz: "pic", Sub: "Thumb", Category: "pic/thumb",
+		Month: "2023-01", Size: 1, IsThumb: true,
+		MTime: testutil.Now.AddDate(-2, 0, 0).Unix(), MD5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01",
+	}}
+	r.AllowedRoots = []string{base}
+	r.AuditLog = filepath.Join(t.TempDir(), "audit.log")
+	r.IgnoreRunning = true
+	res, err := Run(context.Background(), r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Deleted != 1 {
+		t.Fatalf("got %+v", res)
+	}
+}
+
 // TestRunMovesToBackup verifies the recoverable-move path and the audit
 // record (redline: no unrecorded deletion).
 func TestRunMovesToBackup(t *testing.T) {

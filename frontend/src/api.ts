@@ -72,6 +72,8 @@ export const api = {
   reveal: (id: number) => call<void>("Reveal", id),
   pickDirectory: (title: string) => callDialogs<string>("PickDirectory", title),
   confirmClean: (msg: string) => callDialogs<string>("ConfirmClean", msg),
+  confirm: (title: string, msg: string, buttons: string[], def: string) =>
+    callDialogs<string>("Confirm", title, msg, buttons, def),
 };
 
 export const events = {

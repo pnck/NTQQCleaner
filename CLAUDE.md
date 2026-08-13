@@ -61,6 +61,7 @@ tests/cli_smoke.sh CLI 端到端冒烟
 ## 关键约定
 
 - **安全红线在 Go 侧**，前端不可信（docs/06 §5b）：删除前逐文件重验白名单/黑名单；dry-run 零写入；无 --force + 确认则不可删
+- 产品决策（偏离 docs/06）：① QQ 运行守卫默认拒绝，但经二次确认可带 `IgnoreRunning` 覆盖（POSIX 下 unlink 不被写锁阻塞，残余风险仅是缓存条目失效可重下）；② 无备份目录时审计只记路径不再算 SHA-256
 - 打分模型：score = type(0-40) + time(0-30) + redundancy(0-20) + size(0-10)；tier：safe/suggest/caution/keep；🟠 需 aggressive
 - 测试时钟用 `testutil.Now`（2026-08-10）注入；fixture mtime 固定，断言可复现
 - 前端页面大小 200 行，PhotoWall 虚拟化 + 无限分页；行状态（rows/checked）由 App 持有

@@ -575,6 +575,10 @@ func (b *Backend) PreviewHandler(w http.ResponseWriter, r *http.Request) {
 
 // ---- cleanup ----
 
+// errQQRunningSentinel 是 Backend.Clean 的 QQ 运行预检哨兵错误；
+// 前端识别后弹二次确认，确认后带 ignoreRunning 重试。
+var errQQRunningSentinel = fmt.Errorf("qq-running")
+
 // cfgOpenGates enables every category gate so the GUI whitelist check only
 // enforces structure + blacklist (see Scan; the user's filter is the
 // selection mechanism).
@@ -628,14 +632,20 @@ func (b *Backend) Clean(req CleanRequest) (CleanResult, error) {
 	if len(files) == 0 {
 		return CleanResult{}, fmt.Errorf("nothing selected to clean")
 	}
+	// 预检：QQ 运行中 → 返回哨兵错误，前端据以下发二次确认后带
+	// ignoreRunning=true 重试（clean 层另有自身检查，双保险）。
+	if !req.IgnoreRunning && clean.QQRunning() {
+		return CleanResult{}, errQQRunningSentinel
+	}
 	res, err := clean.Run(context.Background(), clean.Request{
-		Files:        files,
-		AllowedRoots: roots,
-		BackupDir:    req.BackupDir,
-		AuditLog:     auditLog,
-		Force:        req.Force,
-		Confirmed:    req.Confirmed,
-		Config:       cfgOpenGates(cfg), // 结构红线不变，分类门控随 GUI 放开
+		Files:         files,
+		AllowedRoots:  roots,
+		BackupDir:     req.BackupDir,
+		AuditLog:      auditLog,
+		Force:         req.Force,
+		Confirmed:     req.Confirmed,
+		IgnoreRunning: req.IgnoreRunning,
+		Config:        cfgOpenGates(cfg), // 结构红线不变，分类门控随 GUI 放开
 	})
 	if err != nil {
 		return CleanResult{}, err

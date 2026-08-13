@@ -33,7 +33,7 @@ type classifyEntry struct {
 
 // cleanRun converts manifest entries back into classify.FileEntry and runs
 // the shared clean package (the same redlines as the GUI path).
-func cleanRun(m report.Manifest, files []classifyEntry, backupDir, auditLog string, cfg rules.Config) (clean.Result, error) {
+func cleanRun(m report.Manifest, files []classifyEntry, backupDir, auditLog string, cfg rules.Config, ignoreRunning bool) (clean.Result, error) {
 	entries := make([]classify.FileEntry, 0, len(files))
 	for _, f := range files {
 		entries = append(entries, classify.FileEntry{
@@ -58,12 +58,13 @@ func cleanRun(m report.Manifest, files []classifyEntry, backupDir, auditLog stri
 		allowed = append(allowed, filepath.Clean(ntData))
 	}
 	return clean.Run(context.Background(), clean.Request{
-		Files:        entries,
-		AllowedRoots: allowed,
-		BackupDir:    backupDir,
-		AuditLog:     auditLog,
-		Force:        true, // gated by the --force flag in cleanCmd
-		Confirmed:    true, // gated by the interactive `yes` in cleanCmd
-		Config:       cfg,
+		Files:         entries,
+		AllowedRoots:  allowed,
+		BackupDir:     backupDir,
+		AuditLog:      auditLog,
+		Force:         true, // gated by the --force flag in cleanCmd
+		Confirmed:     true, // gated by the interactive `yes` in cleanCmd
+		IgnoreRunning: ignoreRunning,
+		Config:        cfg,
 	})
 }
