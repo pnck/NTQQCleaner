@@ -2,78 +2,33 @@ package rules
 
 import (
 	"path/filepath"
-	"regexp"
 	"strings"
+
+	"qqcleaner/internal/qq"
 )
 
-// monthRe matches QQ's {YYYY-MM} month directories.
-var monthRe = regexp.MustCompile(`^\d{4}-\d{2}$`)
+// 白名单/黑名单的政策层。结构事实（目录形态/状态目录/db 后缀）在
+// internal/qq 知识层；本层把它与 Config 政策结合。
 
-// Whitelisted reports whether a slash-separated path relative to an
-// account's nt_data may ever be deleted by this tool (docs/06 §2):
-//
-//	Pic|Video|Ptt|File|dataline/**        (Ori/Thumb/Temp subtrees)
-//	Emoji/emoji-recv/**                    (always)
-//	Emoji/BaseEmojiSyastems/ThumbTemp/**   (always; download residue)
-//	Emoji/marketface|personal_emoji|BaseEmojiSyastems/EmojiSystermResource
-//	                                       (only when their cfg gate is on)
-//
-// The clean layer re-verifies every file against this function plus
-// Blacklisted immediately before deletion.
+// Whitelisted 判断相对 nt_data 的路径是否可能被删除（docs/06 §2）。
+// clean 层在删除前会再次调用本函数做最终校验。
 func Whitelisted(rel string, cfg Config) bool {
-	segs := strings.Split(filepath.ToSlash(rel), "/")
-	if len(segs) < 2 {
-		return false
-	}
-	switch segs[0] {
-	case "Pic", "Video", "Ptt", "dataline":
-		// biz / {YYYY-MM} / {Ori|Thumb|Temp} / file
-		return len(segs) >= 4 && monthRe.MatchString(segs[1])
-	case "File":
-		// biz / {Ori|Thumb|Temp|file_assistant} / file (no month dir)
-		return len(segs) >= 3
-	case "Emoji":
-		if len(segs) < 3 {
-			return false
-		}
-		switch segs[1] {
-		case "emoji-recv":
-			// Emoji / emoji-recv / {YYYY-MM} / {Ori|Thumb} / file
-			return len(segs) >= 4 && monthRe.MatchString(segs[2])
-		case "BaseEmojiSyastems":
-			if len(segs) < 4 {
-				return false
-			}
-			if segs[2] == "ThumbTemp" {
-				return true // download residue, always cleanable
-			}
-			return cfg.CleanBaseEmoji // EmojiSystermResource
-		case "marketface":
-			return cfg.CleanMarketface
-		case "personal_emoji":
-			return cfg.CleanPersonalEmoji
-		}
-		return false
-	}
-	return false
+	return qq.Whitelisted(rel, qq.Gates{
+		CleanBaseEmoji:     cfg.CleanBaseEmoji,
+		CleanMarketface:    cfg.CleanMarketface,
+		CleanPersonalEmoji: cfg.CleanPersonalEmoji,
+	})
 }
 
-// hardBlockedSuffixes are SQLite artifacts and encrypted-DB sidecars that
-// must never be deleted, no matter where they appear (docs/06 §2).
-var hardBlockedSuffixes = []string{
-	".db", ".db-wal", ".db-shm", ".db-first.material", ".db-last.material",
-}
+// hardBlockedDirs / hardBlockedSuffixes 由 qq 知识层提供，
+// 在此构建快速查找表。
+var (
+	hardBlockedDirs     = toSet(qq.StateDirs())
+	hardBlockedSuffixes = qq.DBSuffixes()
+)
 
-// hardBlockedDirs are state/config dirs that must never be deleted.
-var hardBlockedDirs = map[string]bool{
-	"mmkv": true, "msf": true, "OnlineStatus": true, "UnitedConfig": true,
-	"config": true, "log": true, "log-cache": true, "avatar": true,
-	"nt_db": true,
-}
-
-// Blacklisted reports hard-blocked absolute paths (docs/06 §2): SQLite
-// artifacts, nt_db trees, and state/config dirs. It is applied at the
-// clean layer on top of Whitelisted.
+// Blacklisted 判断绝对路径是否命中硬黑名单：SQLite 及附属文件、
+// nt_db 树、状态/配置目录（docs/06 §2）。
 func Blacklisted(abs string) bool {
 	base := filepath.Base(abs)
 	for _, suf := range hardBlockedSuffixes {
@@ -88,4 +43,12 @@ func Blacklisted(abs string) bool {
 		}
 	}
 	return false
+}
+
+func toSet(xs []string) map[string]bool {
+	m := make(map[string]bool, len(xs))
+	for _, x := range xs {
+		m[x] = true
+	}
+	return m
 }

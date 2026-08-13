@@ -43,15 +43,22 @@ pnpm --dir frontend typecheck
   - pnpm 的 content-addressable store 落在 `/workspace/.pnpm-store`（已 gitignore）
 - 出站网络经 proxy 容器透明代理，npm/go 下载可用
 
-## 结构
+## 结构（分层：上层逻辑与平台/逆向结论解耦）
 
 ```
 main.go / main_wails.go / main_manifest.go   入口：scan/clean/gui 子命令
-internal/discovery  数据根发现 + 三源账号识别（docs/02）
-internal/classify   白名单遍历 + 文件分类（biz/sub/category/month/md5）
-internal/rules      价值打分（Score/Tier）、配置、白名单/黑名单（docs/03, 06）
+internal/platform    OS 适配层：Adapter 接口（QQProcesses/Reveal），
+                     darwin/windows/linux 各一个 build-tagged 实现。
+                     新增平台 = 新增一个适配器文件，上层零改动
+internal/qq          逆向结论知识层（唯一下沉点）：目录命名/文件名解析/
+                     目录分类/账号识别三源/各平台根路径/白名单结构/状态
+                     目录/db 后缀/类型优先级/官方阈值。换 QQ 版本或平台
+                     重新逆向时，只重写本包
+internal/discovery  数据根发现与账号组装（引用 qq 层，无逆向知识）
+internal/classify   白名单遍历 + FileEntry 组装（引用 qq 层）
+internal/rules      价值打分（Score/Tier）、配置、白名单/黑名单政策
 internal/report     UI/CLI 共享模型（不暴露绝对路径，预览走 /preview/{id}）
-internal/clean      删除执行：进程保护→白名单→备份/SHA-256→审计（docs/06）
+internal/clean      删除执行：进程保护（platform 层）→白名单→备份→审计
 internal/app        Engine（CLI/GUI 共享管线）+ Backend（GUI 绑定层）
 internal/testutil   fixtures：假 QQ 目录树（docs/05 §6），固定时钟 testutil.Now
 frontend/           React 19 + @tanstack/react-virtual 照片墙

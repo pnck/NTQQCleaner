@@ -7,8 +7,9 @@ package classify
 
 import (
 	"path/filepath"
-	"regexp"
 	"strings"
+
+	"qqcleaner/internal/qq"
 )
 
 // FileEntry is one classified cache file. Category is the rules-level
@@ -30,101 +31,12 @@ type FileEntry struct {
 	IsTemp   bool   `json:"isTemp"`
 }
 
+// BizDirs 等遍历白名单与分类逻辑见 qq 包（逆向结论层）。
+// 本包只负责「走文件系统 + 组装 FileEntry」，不含逆向知识。
 var (
-	nameRe  = regexp.MustCompile(`^([0-9a-f]{32})(?:_(\d+))?\.([A-Za-z0-9]+)$`)
-	monthRe = regexp.MustCompile(`^\d{4}-\d{2}$`)
-
-	// BizDirs is the traversal whitelist (docs/01 §2.1): the rich-media cache
-	// directories. Everything else under nt_data is configuration/state or
-	// encrypted DB and is never scanned.
-	BizDirs = []string{"Pic", "Video", "Ptt", "File", "dataline", "Emoji"}
+	BizDirs        = qq.BizDirs
+	DefaultSkipDirs = qq.DefaultSkipDirs
 )
-
-// DefaultSkipDirs are state/config dirs that must never appear in a scan
-// result (redline, docs/06 §2). They are filtered here AND re-verified in
-// the clean layer.
-var DefaultSkipDirs = map[string]bool{
-	"mmkv": true, "msf": true, "OnlineStatus": true, "UnitedConfig": true,
-	"config": true, "log": true, "log-cache": true, "avatar": true,
-	"nt_db": true,
-}
-
-// classifyRelative parses a slash-separated path relative to nt_data into
-// biz/category/sub/month. segments never contains the nt_data prefix.
-func classifyRelative(segments []string) (biz, category, sub, month string) {
-	if len(segments) < 2 {
-		return "", "", "", ""
-	}
-	biz = strings.ToLower(segments[0])
-	sub = segments[len(segments)-2] // leaf dir holding the file
-	for _, s := range segments {
-		if monthRe.MatchString(s) {
-			month = s
-			break
-		}
-	}
-	switch biz {
-	case "pic", "video", "ptt", "dataline":
-		// {YYYY-MM}/{Ori|Thumb|OriTemp|ThumbTemp}/file
-		sub = lastOf(segments, "Ori", "Thumb", "OriTemp", "ThumbTemp")
-		category = biz + "/" + strings.ToLower(sub)
-	case "file":
-		// No month dir: {Ori|Thumb|ThumbTemp|file_assistant}/...
-		sub = lastOf(segments, "Ori", "Thumb", "OriTemp", "ThumbTemp", "file_assistant")
-		category = biz + "/" + strings.ToLower(sub)
-	case "emoji":
-		sub, category = classifyEmoji(segments)
-	default:
-		category = "other"
-	}
-	return biz, category, sub, month
-}
-
-// lastOf returns the first match scanning from the tail, so nested layouts
-// (e.g. File/file_assistant/Thumb/...) resolve to the innermost sub dir.
-func lastOf(segments []string, candidates ...string) string {
-	for i := len(segments) - 1; i >= 0; i-- {
-		for _, c := range candidates {
-			if segments[i] == c {
-				return c
-			}
-		}
-	}
-	return ""
-}
-
-// classifyEmoji maps Emoji's five subclasses (docs/01 §3) to
-// (sub, category). Sub keeps the leaf dir for Ori/Thumb/Temp detection.
-func classifyEmoji(segments []string) (sub, category string) {
-	if len(segments) < 2 {
-		return "", "emoji/other"
-	}
-	switch segments[1] {
-	case "emoji-recv":
-		// {YYYY-MM}/{Ori|Thumb}/file — same shape as Pic
-		s := lastOf(segments, "Ori", "Thumb", "OriTemp", "ThumbTemp")
-		if s == "" {
-			s = segments[len(segments)-2]
-		}
-		return s, "emoji/emoji-recv/" + strings.ToLower(s)
-	case "BaseEmojiSyastems": // note QQ's misspelling, docs/01 §3
-		if len(segments) >= 3 && segments[2] == "ThumbTemp" {
-			return "ThumbTemp", "emoji/base-emoji/thumbtemp"
-		}
-		return "EmojiSystermResource", "emoji/base-emoji/resource"
-	case "marketface":
-		return segments[len(segments)-2], "emoji/marketface"
-	case "personal_emoji":
-		s := lastOf(segments, "Ori", "Thumb")
-		if s == "" {
-			s = segments[len(segments)-2]
-		}
-		return s, "emoji/personal-emoji/" + strings.ToLower(s)
-	case "emoji-related":
-		return "emoji-related", "emoji/emoji-related"
-	}
-	return segments[len(segments)-2], "emoji/other"
-}
 
 // newEntry builds a FileEntry from an absolute path relative to ntData.
 func newEntry(ntData, abs string, size int64, mtime int64) FileEntry {
@@ -133,7 +45,7 @@ func newEntry(ntData, abs string, size int64, mtime int64) FileEntry {
 		rel = abs
 	}
 	segs := strings.Split(filepath.ToSlash(rel), "/")
-	biz, category, sub, month := classifyRelative(segs)
+	biz, category, sub, month := qq.ClassifyRelative(segs)
 
 	e := FileEntry{
 		Path:     abs,
@@ -144,8 +56,8 @@ func newEntry(ntData, abs string, size int64, mtime int64) FileEntry {
 		Size:     size,
 		MTime:    mtime,
 	}
-	if m := nameRe.FindStringSubmatch(filepath.Base(abs)); m != nil {
-		e.MD5, e.SizeTag, e.Ext = m[1], m[2], strings.ToLower(m[3])
+	if md5, tag, ext, ok := qq.ParseFilename(filepath.Base(abs)); ok {
+		e.MD5, e.SizeTag, e.Ext = md5, tag, ext
 	} else if i := strings.LastIndexByte(filepath.Base(abs), '.'); i > 0 {
 		e.Ext = strings.ToLower(filepath.Base(abs)[i+1:])
 	}

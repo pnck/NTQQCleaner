@@ -2,62 +2,22 @@ package clean
 
 import (
 	"fmt"
-	"os/exec"
-	"runtime"
 	"strings"
+
+	"qqcleaner/internal/platform"
 )
 
-// qqRunningFunc is swapped out in tests; it wraps QQRunning.
-var qqRunningFunc = QQRunning
+// 进程守卫：检测能力在 internal/platform 适配层（每 OS 一个实现），
+// 这里保留可注入的函数变量供测试替换。
 
-// qqProcessesFunc supplies the matched process list for diagnostics; also
-// swapped in tests.
-var qqProcessesFunc = QQProcesses
+var qqRunningFunc = func() bool { return platform.IsQQRunning() }
 
-// QQProcesses returns the command lines of processes that look like the QQ
-// client (e.g. /Applications/QQ.app/Contents/MacOS/QQ). The pattern is
-// anchored on the binary inside the app bundle to avoid false positives.
-func QQProcesses() []string {
-	switch runtime.GOOS {
-	case "windows":
-		out, err := exec.Command("tasklist", "/FI", "IMAGENAME eq QQ.exe", "/FO", "CSV", "/NH").Output()
-		if err != nil {
-			return nil
-		}
-		var procs []string
-		for _, line := range strings.Split(string(out), "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" && strings.Contains(strings.ToLower(line), "qq.exe") {
-				procs = append(procs, line)
-			}
-		}
-		return procs
-	default: // darwin, linux
-		out, err := exec.Command("pgrep", "-fl", "QQ.app/Contents/MacOS/QQ").Output()
-		if err != nil {
-			return nil // pgrep exit 1 = no match
-		}
-		var procs []string
-		for _, line := range strings.Split(string(out), "\n") {
-			if strings.TrimSpace(line) != "" {
-				procs = append(procs, strings.TrimSpace(line))
-			}
-		}
-		return procs
-	}
-}
+var qqProcessesFunc = func() []string { return platform.Current().QQProcesses() }
 
-// QQRunning reports whether the QQ client is currently running. The cleaner
-// refuses to delete while QQ is up: QQ may be reading/writing its cache
-// concurrently, and deleting under it risks corrupting QQ's view of the
-// cache (Finder lets you, but Finder has no consistency contract).
-// Reference: docs/06_safety_redlines.md §5.
-func QQRunning() bool {
-	return len(QQProcesses()) > 0
-}
+// QQRunning 供 UI/Backend 预检使用。
+func QQRunning() bool { return qqRunningFunc() }
 
-// qqRunningError builds the refusal error with the matched processes so the
-// user can see exactly what triggered the guard.
+// qqRunningError 构建拒绝错误并附匹配进程，让用户看到什么触发了守卫。
 func qqRunningError() error {
 	procs := qqProcessesFunc()
 	if len(procs) == 0 {

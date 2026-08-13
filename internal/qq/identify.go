@@ -1,4 +1,4 @@
-package discovery
+package qq
 
 import (
 	"os"
@@ -8,23 +8,17 @@ import (
 	"strings"
 )
 
-// Account identification: three fully-plaintext sources map an instance hash
-// (nt_qq_<32hex>) to a QQ number. None of them touch the encrypted nt_db.
-// Reference: docs/02_account_identification.md
+// 账号识别：三个完全明文的来源把实例 hash（nt_qq_<32hex>）映射到
+// QQ 号。均不触碰加密的 nt_db（docs/02）。
 
-var monthRe = regexp.MustCompile(`^\d{4}-\d{2}$`)
-
-// IdentifyFromMmkv is source #1 (most reliable): global/nt_data/mmkv/mmkv.default
-// contains plaintext keys like ".../nt_qq_<hash>/nt_data/flashfransfer+<qq>_flash_...".
+// IdentifyFromMmkv 来源一（最可靠）：global/nt_data/mmkv/mmkv.default
+// 含明文 key：.../nt_qq_<hash>/nt_data/flashfransfer+<qq>_flash_...。
 func IdentifyFromMmkv(qqRoot, instanceHash string) (string, error) {
 	p := filepath.Join(qqRoot, "global", "nt_data", "mmkv", "mmkv.default")
 	data, err := os.ReadFile(p)
 	if err != nil {
 		return "", err
 	}
-	// nt_qq_<hash> then any non-digits (path separators, "flashfransfer+"),
-	// then a 5-12 digit QQ number, then "_flash" (so the digits are a QQ
-	// number, not some other number in the path).
 	re := regexp.MustCompile(`nt_qq_` + regexp.QuoteMeta(instanceHash) + `[^0-9]*?(\d{5,12})_flash`)
 	if m := re.FindSubmatch(data); len(m) == 2 {
 		return string(m[1]), nil
@@ -32,8 +26,8 @@ func IdentifyFromMmkv(qqRoot, instanceHash string) (string, error) {
 	return "", nil
 }
 
-// IdentifyFromUnitedConfig is source #2: nt_data/UnitedConfig/ contains a
-// "000" default dir and, per account, a subdirectory named after the QQ number.
+// IdentifyFromUnitedConfig 来源二：nt_data/UnitedConfig/ 除 "000" 外的
+// 数字子目录名即 QQ 号。
 func IdentifyFromUnitedConfig(ntData string) (string, error) {
 	entries, err := os.ReadDir(filepath.Join(ntData, "UnitedConfig"))
 	if err != nil {
@@ -51,9 +45,8 @@ func IdentifyFromUnitedConfig(ntData string) (string, error) {
 	return "", nil
 }
 
-// ListLoggedAccounts is source #3 (cross-check only): global/nt_data/Login/
-// holds a zero-byte ".<qq>" marker file per account that ever logged in.
-// It lists accounts but does not associate them with instance dirs.
+// ListLoggedAccounts 来源三（交叉验证）：global/nt_data/Login/ 下
+// 每个登录过的账号有一个 ".<qq号>" 空文件。只列出账号，不关联目录。
 func ListLoggedAccounts(qqRoot string) ([]string, error) {
 	entries, err := os.ReadDir(filepath.Join(qqRoot, "global", "nt_data", "Login"))
 	if err != nil {
@@ -71,8 +64,8 @@ func ListLoggedAccounts(qqRoot string) ([]string, error) {
 	return out, nil
 }
 
-// IdentifyAccount combines the three sources: mmkv first, UnitedConfig
-// fallback, "unknown" when nothing matches (docs/02 §5).
+// IdentifyAccount 三源综合（docs/02 §5）：mmkv 最可靠，
+// UnitedConfig 兜底，识别不到返回 ""（由上层显示 unknown）。
 func IdentifyAccount(qqRoot, instanceHash, ntData string) string {
 	qq, err := IdentifyFromMmkv(qqRoot, instanceHash)
 	if err == nil && qq != "" {

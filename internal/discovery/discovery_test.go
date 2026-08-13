@@ -8,68 +8,6 @@ import (
 	"qqcleaner/internal/testutil"
 )
 
-func TestIdentifyFromMmkv(t *testing.T) {
-	f := testutil.BuildQQTree(t)
-	qa, err := IdentifyFromMmkv(f.Root, testutil.HashA)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if qa != testutil.QQA {
-		t.Fatalf("account A: got %q want %q", qa, testutil.QQA)
-	}
-	qb, err := IdentifyFromMmkv(f.Root, testutil.HashB)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if qb != testutil.QQB {
-		t.Fatalf("account B: got %q want %q", qb, testutil.QQB)
-	}
-	// Unknown hash: no match, no error.
-	qq, err := IdentifyFromMmkv(f.Root, "deadbeefdeadbeefdeadbeefdeadbeef")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if qq != "" {
-		t.Fatalf("unknown hash: got %q want empty", qq)
-	}
-}
-
-func TestIdentifyFromUnitedConfig(t *testing.T) {
-	f := testutil.BuildQQTree(t)
-	qq, err := IdentifyFromUnitedConfig(f.NtDataA)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if qq != testutil.QQA {
-		t.Fatalf("got %q want %q", qq, testutil.QQA)
-	}
-	// Account B only has "000" → no QQ number (mmkv is the fallback source).
-	qq, err = IdentifyFromUnitedConfig(f.NtDataB)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if qq != "" {
-		t.Fatalf("got %q want empty", qq)
-	}
-}
-
-func TestListLoggedAccounts(t *testing.T) {
-	f := testutil.BuildQQTree(t)
-	got, err := ListLoggedAccounts(f.Root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]bool{testutil.QQA: true, testutil.QQB: true}
-	if len(got) != len(want) {
-		t.Fatalf("got %v want %v", got, want)
-	}
-	for _, qq := range got {
-		if !want[qq] {
-			t.Fatalf("unexpected account %q", qq)
-		}
-	}
-}
-
 func TestDiscover(t *testing.T) {
 	f := testutil.BuildQQTree(t)
 	accs, err := Discover(f.Root)

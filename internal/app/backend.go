@@ -6,9 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,6 +15,8 @@ import (
 	"qqcleaner/internal/classify"
 	"qqcleaner/internal/clean"
 	"qqcleaner/internal/discovery"
+	"qqcleaner/internal/platform"
+	"qqcleaner/internal/qq"
 	"qqcleaner/internal/report"
 	"qqcleaner/internal/rules"
 )
@@ -118,7 +118,7 @@ func (b *Backend) SetConfig(c rules.Config) error {
 // DiscoverRoots returns platform-default candidates plus any candidate that
 // actually exists, existing ones first.
 func (b *Backend) DiscoverRoots() []string {
-	cands := discovery.RootCandidates()
+	cands := qq.RootCandidates()
 	var existing, missing []string
 	for _, c := range cands {
 		if discovery.IsInstanceRoot(c) {
@@ -156,7 +156,7 @@ func (b *Backend) Scan(opts ScanOptions) error {
 	cfg = cfgOpenGates(cfg)
 	root := opts.Root
 	if root == "" {
-		cands := discovery.RootCandidates()
+		cands := qq.RootCandidates()
 		for _, c := range cands {
 			if discovery.IsInstanceRoot(c) {
 				root = c
@@ -539,22 +539,13 @@ func (b *Backend) outcomeRootsLocked() []string {
 }
 
 // Reveal opens the platform file manager with the file selected
-// (docs/07 §4.4: 仅展示不操作).
+// (docs/07 §4.4: 仅展示不操作)。实现委托 platform 适配层。
 func (b *Backend) Reveal(id int) error {
 	p, err := b.ResolvePreview(id)
 	if err != nil {
 		return err
 	}
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", "-R", p)
-	case "windows":
-		cmd = exec.Command("explorer", "/select,", p)
-	default:
-		return fmt.Errorf("reveal not supported on %s", runtime.GOOS)
-	}
-	return cmd.Start()
+	return platform.Current().Reveal(p)
 }
 
 // PreviewHandler serves /preview/{id} as the file's content (Wails

@@ -22,6 +22,7 @@ import (
 
 	"qqcleaner/internal/app"
 	"qqcleaner/internal/discovery"
+	"qqcleaner/internal/qq"
 	"qqcleaner/internal/report"
 	"qqcleaner/internal/rules"
 )
@@ -91,8 +92,8 @@ clean flags:
   --config PATH        config file
 
 Redlines (always enforced, see docs/06): dry-run by default, path
-whitelist/blacklist re-verified per file, QQ-running guard, backup or
-SHA-256 audit for every deletion, explicit --force + confirmation.
+whitelist/blacklist re-verified per file, QQ-running guard (--ignore-running
+覆盖需显式确认), audit log for every deletion, explicit --force + confirmation.
 `
 
 // configPath returns the default user config path (~/.qq-cleaner/config.yaml).
@@ -154,7 +155,7 @@ func scanCmd(args []string) error {
 }
 
 func autoDetectRoot() (string, error) {
-	cands := discovery.RootCandidates()
+	cands := qq.RootCandidates()
 	for _, c := range cands {
 		if discovery.IsInstanceRoot(c) {
 			return c, nil

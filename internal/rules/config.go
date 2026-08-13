@@ -10,11 +10,13 @@ import (
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+
+	"qqcleaner/internal/qq"
 )
 
 // QQOfficialThresholdSeconds = 259199 ≈ 3 days. Files newer than this are
-// never cleanable (QQ's own baseline, docs/03 §1).
-const QQOfficialThresholdSeconds int64 = 259199
+// never cleanable (QQ's own baseline, docs/03 §1)。数值来自 qq 知识层。
+const QQOfficialThresholdSeconds int64 = qq.QQOfficialThresholdSeconds
 
 // ScoreThresholds maps the 0-100 value score to tier labels (docs/03 §4).
 type ScoreThresholds struct {

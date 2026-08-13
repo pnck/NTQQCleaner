@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"qqcleaner/internal/classify"
+	"qqcleaner/internal/qq"
 )
 
 // Tier labels (docs/03 §4).
@@ -39,28 +40,9 @@ func BuildMD5Index(entries []classify.FileEntry) MD5Index {
 	return idx
 }
 
-// typeScore maps a category to its priority bucket (docs/03 §3).
-// P0 temp → 0, P1 thumb → 10, P2 emoji-recv ori → 20, P3 ori → 30,
-// P4 marketface → 35, P5 everything else (File/, personal emoji, base
-// emoji resources, ...) → 40.
+// typeScore 委托给 qq 知识层（逆向结论：docs/03 §3 的目录优先级表）。
 func typeScore(category string) int {
-	cat := strings.ToLower(category)
-	switch {
-	case strings.Contains(cat, "temp"):
-		return 0
-	case cat == "pic/thumb", cat == "video/thumb", cat == "ptt/thumb",
-		cat == "file/thumb", cat == "dataline/thumb",
-		cat == "emoji/emoji-recv/thumb":
-		return 10
-	case cat == "emoji/emoji-recv/ori":
-		return 20
-	case cat == "pic/ori", cat == "video/ori", cat == "dataline/ori", cat == "ptt/ori":
-		return 30
-	case cat == "emoji/marketface":
-		return 35
-	default:
-		return 40
-	}
+	return qq.TypeScore(category)
 }
 
 // timeScore maps age to points (docs/03 §4). L0 (just past QQ's 3-day
