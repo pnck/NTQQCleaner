@@ -1,0 +1,235 @@
+package clean
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"qqcleaner/internal/classify"
+	"qqcleaner/internal/rules"
+	"qqcleaner/internal/testutil"
+)
+
+// setQQRunning swaps the process guard for the duration of a test.
+func setQQRunning(t *testing.T, running bool) {
+	t.Helper()
+	old := qqRunningFunc
+	qqRunningFunc = func() bool { return running }
+	t.Cleanup(func() { qqRunningFunc = old })
+}
+
+// gateRequest builds a Request that should fail on a safety gate before
+// touching any filesystem path.
+func gateRequest(force, confirmed bool) Request {
+	return Request{
+		Files:        []classify.FileEntry{{Path: "/nonexistent/a", Size: 1}},
+		AllowedRoots: []string{"/nonexistent"},
+		AuditLog:     "/nonexistent/audit.log",
+		Force:        force,
+		Confirmed:    confirmed,
+		Config:       rules.Default(),
+	}
+}
+
+func TestRunRequiresForceAndConfirm(t *testing.T) {
+	setQQRunning(t, false)
+	if _, err := Run(context.Background(), gateRequest(false, true)); err != ErrNotForced {
+		t.Fatalf("Force=false: got %v want ErrNotForced", err)
+	}
+	if _, err := Run(context.Background(), gateRequest(true, false)); err != ErrNotConfirmed {
+		t.Fatalf("Confirmed=false: got %v want ErrNotConfirmed", err)
+	}
+}
+
+func TestRunRefusesWhileQQRunning(t *testing.T) {
+	setQQRunning(t, true)
+	if _, err := Run(context.Background(), gateRequest(true, true)); err != ErrQQRunning {
+		t.Fatalf("got %v want ErrQQRunning", err)
+	}
+}
+
+// TestRunMovesToBackup verifies the recoverable-move path and the audit
+// record (redline: no unrecorded deletion).
+func TestRunMovesToBackup(t *testing.T) {
+	setQQRunning(t, false)
+	base := t.TempDir()
+	src := filepath.Join(base, "Pic", "2023-01", "Thumb", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01_720.png")
+	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("fake thumbnail")
+	if err := os.WriteFile(src, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	backup := filepath.Join(t.TempDir(), "backup")
+	audit := filepath.Join(t.TempDir(), "audit.log")
+
+	entry := classify.FileEntry{
+		Path: src, Biz: "pic", Sub: "Thumb", Category: "pic/thumb",
+		Month: "2023-01", Size: int64(len(content)), IsThumb: true,
+		MTime: testutil.Now.AddDate(-2, 0, 0).Unix(), MD5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01",
+	}
+	r := Request{
+		Files:        []classify.FileEntry{entry},
+		AllowedRoots: []string{base},
+		BackupDir:    backup,
+		AuditLog:     audit,
+		Force:        true,
+		Confirmed:    true,
+		Config:       rules.Default(),
+	}
+	res, err := Run(context.Background(), r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Moved != 1 || res.BytesFreed != int64(len(content)) {
+		t.Fatalf("got %+v", res)
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Fatal("source still exists after move")
+	}
+	moved := filepath.Join(backup, filepath.Base(src))
+	got, err := os.ReadFile(moved)
+	if err != nil || string(got) != string(content) {
+		t.Fatalf("backup content mismatch: %v", err)
+	}
+	// Audit record: move action, original path, backup path.
+	line := readAuditLine(t, audit)
+	if line.Action != "move" || line.Path != src || line.BackupPath != moved {
+		t.Fatalf("audit: %+v", line)
+	}
+}
+
+// TestRunRemoveWithSHA verifies the hash-then-delete path when no backup
+// dir is configured.
+func TestRunRemoveWithSHA(t *testing.T) {
+	setQQRunning(t, false)
+	base := t.TempDir()
+	src := filepath.Join(base, "Pic", "2023-01", "Thumb", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01_720.png")
+	content := []byte("content to hash")
+	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	audit := filepath.Join(t.TempDir(), "audit.log")
+	r := Request{
+		Files: []classify.FileEntry{{
+			Path: src, Biz: "pic", Sub: "Thumb", Category: "pic/thumb",
+			Month: "2023-01", Size: int64(len(content)), IsThumb: true,
+			MTime: testutil.Now.AddDate(-2, 0, 0).Unix(), MD5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01",
+		}},
+		AllowedRoots: []string{base},
+		AuditLog:     audit,
+		Force:        true,
+		Confirmed:    true,
+		Config:       rules.Default(),
+	}
+	res, err := Run(context.Background(), r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Deleted != 1 {
+		t.Fatalf("got %+v", res)
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Fatal("file still exists")
+	}
+	sum := sha256.Sum256(content)
+	line := readAuditLine(t, audit)
+	if line.Action != "remove" || line.SHA256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("audit: %+v", line)
+	}
+}
+
+// TestRunSkipsBlockedPaths: redline paths are skipped with warnings, never
+// deleted, and the run continues.
+func TestRunSkipsBlockedPaths(t *testing.T) {
+	setQQRunning(t, false)
+	base := t.TempDir()
+	// A db sidecar inside a whitelisted-looking tree.
+	dbPath := filepath.Join(base, "Pic", "2023-01", "Thumb", "x.db-wal")
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dbPath, []byte("db"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A path outside the allowed roots.
+	outside := filepath.Join(t.TempDir(), "evil.png")
+	if err := os.WriteFile(outside, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	audit := filepath.Join(t.TempDir(), "audit.log")
+	r := Request{
+		Files: []classify.FileEntry{
+			{Path: dbPath, Biz: "pic", Sub: "Thumb", Category: "pic/thumb", Size: 2},
+			{Path: outside, Biz: "pic", Sub: "Thumb", Category: "pic/thumb", Size: 1},
+		},
+		AllowedRoots: []string{base},
+		AuditLog:     audit,
+		Force:        true,
+		Confirmed:    true,
+		Config:       rules.Default(),
+	}
+	res, err := Run(context.Background(), r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Skipped != 2 || res.Deleted != 0 || res.Moved != 0 {
+		t.Fatalf("got %+v", res)
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Fatal("blacklisted path was deleted")
+	}
+	if _, err := os.Stat(outside); err != nil {
+		t.Fatal("outside-root path was deleted")
+	}
+}
+
+func TestVerifyPath(t *testing.T) {
+	cfg := rules.Default()
+	root := "/data/nt_qq_xx/nt_data"
+	cases := []struct {
+		path    string
+		wantErr bool
+	}{
+		{"/data/nt_qq_xx/nt_data/Pic/2024-09/Thumb/a_720.png", false},
+		{"/data/nt_qq_xx/nt_data/Pic/2024-09/Ori/a.jpg", false},
+		{"/data/nt_qq_xx/nt_data/Pic/2024-09/Thumb/a.db", true},         // db suffix
+		{"/data/nt_qq_xx/nt_data/mmkv/mmkv.default", true},              // blocked dir
+		{"/data/nt_qq_xx/nt_db/message.db", true},                       // nt_db tree
+		{"/etc/passwd", true},                                           // outside roots
+		{"/data/nt_qq_xx/nt_data/Pic/a.png", true},                      // too shallow
+		{"/data/nt_qq_other/nt_data/Pic/2024-09/Thumb/a_720.png", true}, // different root
+	}
+	for _, c := range cases {
+		err := VerifyPath(c.path, []string{root}, cfg)
+		if (err != nil) != c.wantErr {
+			t.Errorf("VerifyPath(%q) err=%v wantErr=%v", c.path, err, c.wantErr)
+		}
+	}
+}
+
+func readAuditLine(t *testing.T, path string) auditEntry {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := strings.TrimSpace(string(data))
+	if line == "" {
+		t.Fatal("audit log empty")
+	}
+	var e auditEntry
+	if err := json.Unmarshal([]byte(line), &e); err != nil {
+		t.Fatalf("bad audit line %q: %v", line, err)
+	}
+	return e
+}
