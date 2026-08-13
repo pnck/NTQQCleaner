@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { filterToText, group, leaf, parseExpr, updateTree } from "../expression";
 import type { Condition, Expr, Sort } from "../types";
 import {
@@ -208,6 +209,10 @@ export function FilterEditor({
   const [filterName, setFilterName] = useState("");
   const [selected, setSelected] = useState("");
   const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
+  const dragFrom = useRef<number | null>(null);
+  const overRef = useRef<number | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
 
   // 仅切换视图时同步文本（表达式编辑为本地状态，不边输入边验证）
   useEffect(() => {
@@ -277,6 +282,53 @@ export function FilterEditor({
     onClose();
   };
 
+  // 指针拖拽排序：WKWebView 不触发 HTML5 的 dragstart/drop 事件，
+  // draggable 方案在 macOS GUI 里静默失效，改用 mousedown/mousemove/
+  // mouseup 自行实现（handle 按下开始，mouseup 落点插入）。
+  const startDrag = (i: number, e: ReactMouseEvent) => {
+    e.preventDefault();
+    dragFrom.current = i;
+    overRef.current = i;
+    setDragIdx(i);
+    setOverIdx(i);
+    const onMove = (ev: MouseEvent) => {
+      const items = listRef.current?.querySelectorAll<HTMLElement>("[data-fi]");
+      if (!items) return;
+      let best = -1;
+      let bestD = Infinity;
+      items.forEach((el, j) => {
+        const r = el.getBoundingClientRect();
+        const d = Math.abs(ev.clientY - (r.top + r.height / 2));
+        if (d < bestD) {
+          bestD = d;
+          best = j;
+        }
+      });
+      if (best >= 0 && best !== overRef.current) {
+        overRef.current = best;
+        setOverIdx(best);
+      }
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      const from = dragFrom.current;
+      const to = overRef.current;
+      dragFrom.current = null;
+      overRef.current = null;
+      setDragIdx(null);
+      setOverIdx(null);
+      if (from !== null && to !== null && from !== to) {
+        const next = [...filters];
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved);
+        onSaveFilters(next);
+      }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
   return (
     <div className="dialog-mask" onClick={onClose}>
       <div className="dialog dialog-wide" onClick={(e) => e.stopPropagation()}>
@@ -308,7 +360,7 @@ export function FilterEditor({
               <GroupBlock root={root} path={[]} depth={0} onChangeRoot={onChangeExpr} />
               {expr === null && <div className="cond-empty">无条件 = 显示全部</div>}
               <div className="row">
-                <label>排序（隐含拼接为表达式末尾的 order()）</label>
+                <label>排序</label>
                 <select
                   disabled={advanced}
                   value={`${sort.field}:${sort.desc}`}
@@ -367,7 +419,7 @@ export function FilterEditor({
           <button onClick={saveFilter}>保存</button>
         </div>
 
-        <div className="filter-list">
+        <div className="filter-list" ref={listRef}>
           <h3>筛选器列表（自定义的可拖拽排序，顺序即工具栏顺序）</h3>
           {BUILTIN_FILTERS.map((f) => (
             <div key={f.name} className="filter-item">
@@ -380,20 +432,16 @@ export function FilterEditor({
           {filters.map((f, i) => (
             <div
               key={f.name}
-              className={`filter-item${dragIdx === i ? " dragging" : ""}`}
-              draggable
-              onDragStart={() => setDragIdx(i)}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={() => {
-                if (dragIdx === null || dragIdx === i) return;
-                const next = [...filters];
-                const [moved] = next.splice(dragIdx, 1);
-                next.splice(i, 0, moved);
-                onSaveFilters(next);
-                setDragIdx(null);
-              }}
+              data-fi={i}
+              className={`filter-item${dragIdx === i ? " dragging" : ""}${
+                dragIdx !== null && overIdx === i && overIdx !== dragIdx ? " drop-target" : ""
+              }`}
             >
-              <span className="drag-handle" title="拖拽排序">
+              <span
+                className="drag-handle"
+                title="拖拽排序"
+                onMouseDown={(e) => startDrag(i, e)}
+              >
                 ⠿
               </span>
               <span style={{ flex: 1 }}>

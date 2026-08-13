@@ -693,6 +693,11 @@ button.chip {
   opacity: 0.4;
 }
 
+/* 拖拽中的插入落点提示（指针拖拽，WKWebView 无 HTML5 DnD） */
+.filter-item.drop-target {
+  box-shadow: 0 -2px 0 0 var(--accent);
+}
+
 /* 更多下拉 */
 .dropdown-wrap {
   position: relative;
