@@ -100,13 +100,22 @@ export function TopBar({
       {scanning ? (
         <>
           <button onClick={onStop}>停止</button>
-          <div className="progress-track">
-            <div className="progress-fill" style={{ width: `${pct}%` }} />
-          </div>
-          <span className="stage">
-            {progress.stage} · {progress.done}
-            {progress.total > 0 ? ` / ${progress.total}` : ""}
-          </span>
+          {progress.total > 0 ? (
+            <>
+              <div className="progress-track">
+                <div className="progress-fill" style={{ width: `${pct}%` }} />
+              </div>
+              <span className="stage">
+                {progress.stage} · {progress.done} / {progress.total}
+              </span>
+            </>
+          ) : (
+            <>
+              {/* 预计数阶段（总数未知）：不确定态动画条，无数字 */}
+              <div className="progress-track indeterminate" />
+              <span className="stage">正在统计文件数…</span>
+            </>
+          )}
         </>
       ) : (
         <>

@@ -148,6 +148,32 @@ input[type="checkbox"] {
   transition: width 0.15s;
 }
 
+/* 不确定态：预计数阶段的滑动光带 */
+.progress-track.indeterminate {
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-track.indeterminate::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  border-radius: 4px;
+  background: var(--accent);
+  animation: ind-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes ind-slide {
+  0% {
+    left: -40%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
 .topbar .stage {
   color: var(--text-dim);
   font-size: 12px;
