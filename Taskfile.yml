@@ -1,0 +1,152 @@
+# qq-cleaner 构建目标（https://taskfile.dev）
+#
+#   task build                当前主机的原生 GUI 二进制
+#   task build-cli            纯 CLI 二进制（无 GUI 依赖，任何环境可构建）
+#   task build-windows        交叉编译 windows/amd64 exe（任意主机）
+#   task build-darwin-arm64   macOS arm64 GUI —— 只能在 macOS 主机上跑
+#   task bundle               macOS .app 打包（需要 wails CLI）
+#   task dev                  wails dev 热重载（需要 wails CLI）
+#   task test / vet / fmt / smoke / clean
+#
+# 环境变量全部内联在 task 的 env: 里（无需每次命令行传 CGO_ENABLED=）；
+# GO 路径自动探测（PATH 里第一个 go；可用 GO=/opt/go/bin/go task xxx 覆盖）。
+#
+# 交叉编译现实（wails v2.14，已实测）：
+#   - Windows 后端纯 Go（WebView2 via syscall）→ 任意主机可交叉，产物真实可用
+#   - macOS 后端 ObjC/cgo（WKWebView）→ 需要 Xcode 工具链，必须在 Mac / macos CI 上构建
+#   - Linux 后端 webkit2gtk + cgo → 需要桌面环境与系统库
+#   - 裸 go build 必须带 production 标签：缺失会编入 Wails 的 stub
+#     （运行时报 "Wails applications will not build without the correct build tags"）
+
+version: "3"
+
+vars:
+  GO:
+    sh: command -v go
+  PNPM:
+    sh: command -v pnpm
+  GOOS:
+    sh: '{{.GO}} env GOOS'
+  APP: qq-cleaner
+  BINDIR: build/bin
+  LDFLAGS: "-s -w"
+  TAGS: wails,production
+  # Wails 2.14 darwin 端使用 UTType 但未链接 UniformTypeIdentifiers framework
+  # （macOS 11+，已知上游未修）——macOS 构建必须补这个 framework。
+  DARWIN_EXTRA_LDFLAGS: -framework UniformTypeIdentifiers
+
+tasks:
+  frontend:
+    desc: 构建内嵌前端 dist/（容器构建好即可，Mac 构建时直接复用；源码变更后 task frontend --force）
+    cmds:
+      # --config.verify-deps-before-run=warn：pnpm 11 从 workspace 成员目录
+      # 跑命令时不读根 pnpm-workspace.yaml 的 allowBuilds，deps 状态检查会
+      # 误报 ERR_PNPM_IGNORED_BUILDS（esbuild 经 optionalDependencies 无需
+      # postinstall，可正常工作）。旧版 pnpm 同样支持 --config. 语法。
+      - '{{.PNPM}} --config.verify-deps-before-run=warn --dir frontend build'
+    status:
+      - test -f frontend/dist/index.html
+
+  frontend:install:
+    desc: 安装前端依赖（开发前端时才需要，一次性）
+    cmds:
+      - '{{.PNPM}} --config.verify-deps-before-run=warn --dir frontend install'
+
+  build:
+    desc: 当前主机的原生 GUI 二进制
+    deps: [frontend]
+    cmds:
+      - '{{.GO}} build -tags {{.TAGS}} -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BINDIR}}/{{.APP}} .'
+    env:
+      CGO_ENABLED: "1"
+      CGO_LDFLAGS: '{{if eq .GOOS "darwin"}}{{.DARWIN_EXTRA_LDFLAGS}}{{end}}'
+
+  build-cli:
+    desc: 纯 CLI 二进制（无 GUI 依赖）
+    cmds:
+      - '{{.GO}} build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BINDIR}}/{{.APP}}-cli .'
+
+  build-windows:
+    desc: windows/amd64 GUI exe —— 任意主机可交叉编译（纯 Go 后端）
+    deps: [frontend]
+    cmds:
+      - '{{.GO}} build -tags {{.TAGS}} -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BINDIR}}/{{.APP}}-windows-amd64.exe .'
+    env:
+      CGO_ENABLED: "0"
+      GOOS: windows
+      GOARCH: amd64
+
+  build-darwin-arm64:
+    desc: macOS arm64 GUI —— 只能在 macOS 主机上构建（ObjC/cgo）
+    deps: [frontend]
+    cmds:
+      - '{{.GO}} build -tags {{.TAGS}} -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BINDIR}}/{{.APP}}-darwin-arm64 .'
+    env:
+      CGO_ENABLED: "1"
+      GOOS: darwin
+      GOARCH: arm64
+      CGO_LDFLAGS: "{{.DARWIN_EXTRA_LDFLAGS}}"
+
+  build-darwin-amd64:
+    desc: macOS amd64 GUI —— 只能在 macOS 主机上构建
+    deps: [frontend]
+    cmds:
+      - '{{.GO}} build -tags {{.TAGS}} -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BINDIR}}/{{.APP}}-darwin-amd64 .'
+    env:
+      CGO_ENABLED: "1"
+      GOOS: darwin
+      GOARCH: amd64
+      CGO_LDFLAGS: "{{.DARWIN_EXTRA_LDFLAGS}}"
+
+  bundle:
+    desc: macOS .app 打包（开发期常开 WebKit inspector；封版改用 bundle:release）
+    cmds:
+      - wails build -platform darwin/arm64 -clean -s -tags wails -devtools -trimpath -ldflags "{{.LDFLAGS}}"
+    env:
+      CGO_LDFLAGS: "{{.DARWIN_EXTRA_LDFLAGS}}"
+
+  bundle:release:
+    desc: macOS .app 封版打包（关闭 devtools）
+    cmds:
+      - wails build -platform darwin/arm64 -clean -s -tags wails -trimpath -ldflags "{{.LDFLAGS}}"
+    env:
+      CGO_LDFLAGS: "{{.DARWIN_EXTRA_LDFLAGS}}"
+
+  debug:
+    desc: macOS 调试构建（带 WebKit inspector，看前端 console 报错）
+    cmds:
+      - wails build -platform darwin/arm64 -clean -s -tags wails -devtools -trimpath
+    env:
+      CGO_LDFLAGS: "{{.DARWIN_EXTRA_LDFLAGS}}"
+
+  dev:
+    desc: wails dev 热重载（需 wails CLI 与桌面环境）
+    cmds:
+      - wails dev -tags wails
+    env:
+      CGO_LDFLAGS: "{{.DARWIN_EXTRA_LDFLAGS}}"
+
+  test:
+    desc: 全部 Go 测试
+    cmds:
+      - '{{.GO}} test ./...'
+
+  smoke:
+    desc: CLI 端到端冒烟（scan → manifest → clean 红线验证）
+    cmds:
+      - ./tests/cli_smoke.sh
+
+  vet:
+    desc: go vet
+    cmds:
+      - '{{.GO}} vet ./...'
+
+  fmt:
+    desc: gofmt 全部 Go 文件
+    cmds:
+      - '{{.GO}}fmt -l -w .'
+
+  clean:
+    desc: 删除构建产物
+    cmds:
+      - rm -rf build

@@ -1,0 +1,25 @@
+# build output
+build/
+bin/
+*.exe
+
+# frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/wailsjs/
+.pnpm-store/
+
+# go
+*.test
+
+# tool
+.qq-cleaner/
+*.log
+
+# os
+.DS_Store
+Thumbs.db
+
+# 本地容器编排（含 API key，勿提交）
+claude-code.yml
