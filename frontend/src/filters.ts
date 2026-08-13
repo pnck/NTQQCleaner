@@ -108,51 +108,56 @@ export interface NamedFilter {
   orders?: { field: string; desc: boolean }[]; // 表达式 order() 管道
   limit?: number; // take(n)
   offset?: number; // drop(n)
-  builtin?: boolean;
   pinned?: boolean; // 固定到工具栏直选
 }
 
 const MB = 1024 * 1024;
-const DEFAULT_SORT: Sort = { field: "size", desc: true };
+export const DEFAULT_SORT: Sort = { field: "size", desc: true };
 
-export const BUILTIN_FILTERS: NamedFilter[] = [
-  { name: "全部", expr: null, sort: DEFAULT_SORT, builtin: true },
+// SEED_FILTERS 仅是「首次启动」写入用户筛选器列表的种子：写入后它们就是
+// 普通筛选器，与用户自建的完全同权（可重排/修改/置顶/删除）。之后每次
+// 启动都以存储为准，删除即永久删除。
+export const SEED_FILTERS: NamedFilter[] = [
+  { name: "全部", expr: null, sort: DEFAULT_SORT, pinned: true },
   {
     name: "缩略图 · 90天前",
     expr: group("and", [leaf("thumb", "eq", "true"), leaf("age", "gte", "90")]),
     sort: { field: "size", desc: true },
-    builtin: true,
+    pinned: true,
   },
   {
     name: "下载残留（*Temp）",
     expr: leaf("temp", "eq", "true"),
     sort: { field: "size", desc: true },
-    builtin: true,
+    pinned: true,
   },
   {
     name: "一年前",
     expr: leaf("age", "gte", "365"),
     sort: { field: "mtime", desc: false },
-    builtin: true,
+    pinned: true,
   },
   {
     name: "大文件（>100MB）",
     expr: leaf("size", "gt", String(100 * MB)),
     sort: { field: "size", desc: true },
-    builtin: true,
+    pinned: true,
   },
   {
     name: "表情包",
     expr: leaf("category", "contains", "marketface"),
     sort: { field: "size", desc: true },
-    builtin: true,
+    pinned: true,
   },
 ];
 
 const KEY = "qq-cleaner-named-filters";
+// 种子合并标记：旧版本（内置筛选器硬编码在代码里）升级时只合并一次，
+// 之后存储就是唯一权威——用户删除内置筛选器后不会在下次启动被复活。
+const SEEDED_KEY = "qq-cleaner-named-filters-seeded";
 
-// loadUserFilters 读取用户筛选器；兼容旧存储（conditions 数组迁移为 AND 组）。
-export function loadUserFilters(): NamedFilter[] {
+// readStored 读取用户筛选器；兼容旧存储（conditions 数组迁移为 AND 组）。
+function readStored(): NamedFilter[] {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return [];
@@ -174,10 +179,19 @@ export function loadUserFilters(): NamedFilter[] {
   }
 }
 
-export function saveUserFilters(list: NamedFilter[]) {
-  localStorage.setItem(KEY, JSON.stringify(list));
+// loadFilters 返回完整筛选器列表。首次使用（或旧版本首次升级）时把内置
+// 种子写入存储——从此种子与自定义筛选器地位完全相同。同名条目保留用户
+// 已有的（用户版本优先），避免旧版本自定义筛选器与内置重名时产生重复。
+export function loadFilters(): NamedFilter[] {
+  const stored = readStored();
+  if (localStorage.getItem(SEEDED_KEY) === "1") return stored;
+  const names = new Set(stored.map((f) => f.name));
+  const merged = [...SEED_FILTERS.filter((s) => !names.has(s.name)).map((s) => ({ ...s })), ...stored];
+  localStorage.setItem(KEY, JSON.stringify(merged));
+  localStorage.setItem(SEEDED_KEY, "1");
+  return merged;
 }
 
-export function allFilters(user: NamedFilter[]): NamedFilter[] {
-  return [...BUILTIN_FILTERS, ...user];
+export function saveFilters(list: NamedFilter[]) {
+  localStorage.setItem(KEY, JSON.stringify(list));
 }

@@ -2,13 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { filterToText, group, leaf, parseExpr, updateTree } from "../expression";
 import type { Condition, Expr, Sort } from "../types";
-import {
-  BUILTIN_FILTERS,
-  FILTER_FIELDS,
-  OPS_LABEL,
-  fieldDef,
-  type NamedFilter,
-} from "../filters";
+import { FILTER_FIELDS, OPS_LABEL, fieldDef, type NamedFilter } from "../filters";
 
 interface Props {
   open: boolean;
@@ -420,15 +414,12 @@ export function FilterEditor({
         </div>
 
         <div className="filter-list" ref={listRef}>
-          <h3>筛选器列表（自定义的可拖拽排序，顺序即工具栏顺序）</h3>
-          {BUILTIN_FILTERS.map((f) => (
-            <div key={f.name} className="filter-item">
-              <span style={{ flex: 1 }}>{f.name}（内置）</span>
-              <button className="mini" onClick={() => onApply(f)}>
-                应用
-              </button>
+          <h3>筛选器列表（拖拽排序；置顶的按此顺序出现在工具栏）</h3>
+          {filters.length === 0 && (
+            <div className="filter-item" style={{ color: "var(--text-dim)", cursor: "default" }}>
+              暂无筛选器（保存一个筛选器后出现）
             </div>
-          ))}
+          )}
           {filters.map((f, i) => (
             <div
               key={f.name}

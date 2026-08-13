@@ -15,13 +15,7 @@ import {
   setSimpleExpr,
   toggleInExpr,
 } from "./expression";
-import {
-  allFilters,
-  loadUserFilters,
-  saveUserFilters,
-  BUILTIN_FILTERS,
-  type NamedFilter,
-} from "./filters";
+import { DEFAULT_SORT, loadFilters, saveFilters, type NamedFilter } from "./filters";
 import { applyTheme, getTheme, nextTheme, type Theme } from "./theme";
 import type {
   AccountReport,
@@ -63,7 +57,7 @@ export default function App() {
   const [limit, setLimit] = useState<number | undefined>(undefined);
   const [offset, setOffset] = useState<number | undefined>(undefined);
   const [sort, setSort] = useState<{ field: string; desc: boolean }>({ field: "size", desc: true });
-  const [userFilters, setUserFilters] = useState<NamedFilter[]>(loadUserFilters);
+  const [filters, setFilters] = useState<NamedFilter[]>(loadFilters);
   const [appliedFilter, setAppliedFilter] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
@@ -174,6 +168,17 @@ export default function App() {
     setLimit(f.limit);
     setOffset(f.offset);
     setAppliedFilter(f.name);
+    setMoreOpen(false);
+  }, []);
+
+  // 还原 = 清空筛选回到初始状态（不依赖「全部」是否仍存在于列表）
+  const resetFilter = useCallback(() => {
+    setExpr(null);
+    setSort({ ...DEFAULT_SORT });
+    setOrders([]);
+    setLimit(undefined);
+    setOffset(undefined);
+    setAppliedFilter("");
     setMoreOpen(false);
   }, []);
 
@@ -314,8 +319,9 @@ export default function App() {
     setRoots((rs) => (rs.includes(d) ? rs : [d, ...rs]));
   }, []);
 
-  const allFs = allFilters(userFilters);
-  const quickFilters = allFs.filter((f) => f.builtin || f.pinned);
+  // 内置筛选器已作为种子并入 filters（filters.ts loadFilters），此处只有
+  // 一个列表：工具栏 = 置顶的，更多 = 未置顶的。
+  const quickFilters = filters.filter((f) => f.pinned);
 
   return (
     <div className="app">
@@ -359,8 +365,8 @@ export default function App() {
                 <button
                   key={f.name}
                   className={`chip${active ? " on" : ""}`}
-                  onClick={() => (active ? applyFilter(BUILTIN_FILTERS[0]) : applyFilter(f))}
-                  title={active ? "点击还原「全部」" : "应用此筛选器"}
+                  onClick={() => (active ? resetFilter() : applyFilter(f))}
+                  title={active ? "点击清空筛选" : "应用此筛选器"}
                 >
                   {f.name}
                 </button>
@@ -376,13 +382,13 @@ export default function App() {
               </button>
               {moreOpen && (
                 <div className="dropdown">
-                  {/* 更多 = 工具栏（内置+置顶）以外的筛选器 */}
-                  {userFilters.filter((f) => !f.pinned).length === 0 && (
+                  {/* 更多 = 工具栏（置顶）以外的筛选器 */}
+                  {filters.filter((f) => !f.pinned).length === 0 && (
                     <div className="dropdown-item" style={{ color: "var(--text-dim)", cursor: "default" }}>
-                      暂无更多筛选器（未置顶的自定义筛选器会出现在这里）
+                      暂无更多筛选器（未置顶的筛选器会出现在这里）
                     </div>
                   )}
-                  {userFilters
+                  {filters
                     .filter((f) => !f.pinned)
                     .map((f) => (
                       <div key={f.name} className="dropdown-item">
@@ -392,11 +398,11 @@ export default function App() {
                         <button
                           className="mini"
                           onClick={() => {
-                            const next = userFilters.map((x) =>
+                            const next = filters.map((x) =>
                               x.name === f.name ? { ...x, pinned: true } : x,
                             );
-                            setUserFilters(next);
-                            saveUserFilters(next);
+                            setFilters(next);
+                            saveFilters(next);
                           }}
                           title="固定到工具栏直选"
                         >
@@ -512,10 +518,10 @@ export default function App() {
         onStagesChange={editStages}
         sort={sort}
         onSortChange={setSort}
-        filters={userFilters}
+        filters={filters}
         onSaveFilters={(list) => {
-          setUserFilters(list);
-          saveUserFilters(list);
+          setFilters(list);
+          saveFilters(list);
         }}
         onApply={applyFilter}
         onClose={() => setFilterOpen(false)}
