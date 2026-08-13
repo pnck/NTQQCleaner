@@ -1,6 +1,8 @@
 package rules
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestWhitelisted(t *testing.T) {
 	cfg := Default()
@@ -32,7 +34,7 @@ func TestWhitelisted(t *testing.T) {
 		{"Pic", false},
 	}
 	for _, c := range cases {
-		if got := Whitelisted(c.rel, cfg); got != c.want {
+		if got := Whitelisted(ntK(), c.rel, cfg); got != c.want {
 			t.Errorf("Whitelisted(%q) = %v, want %v", c.rel, got, c.want)
 		}
 	}
@@ -42,7 +44,7 @@ func TestWhitelisted(t *testing.T) {
 		"Emoji/marketface/123/x.png",
 		"Emoji/personal_emoji/Ori/x.png",
 	} {
-		if !Whitelisted(rel, cfg) {
+		if !Whitelisted(ntK(), rel, cfg) {
 			t.Errorf("Whitelisted(%q) = false with gates on, want true", rel)
 		}
 	}
@@ -68,7 +70,7 @@ func TestBlacklisted(t *testing.T) {
 		{"/data/nt_qq_xx/nt_data/Pic/2024-09/Ori/b.jpg", false},
 	}
 	for _, c := range cases {
-		if got := Blacklisted(c.abs); got != c.want {
+		if got := Blacklisted(ntK(), c.abs); got != c.want {
 			t.Errorf("Blacklisted(%q) = %v, want %v", c.abs, got, c.want)
 		}
 	}

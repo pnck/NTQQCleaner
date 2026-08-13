@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 
 	"qqcleaner/internal/classify"
 	"qqcleaner/internal/clean"
+	"qqcleaner/internal/qq"
+	_ "qqcleaner/internal/qqimpl" // 注册 probe（QQ 平台×版本 dispatcher）
 	"qqcleaner/internal/report"
 	"qqcleaner/internal/rules"
 )
@@ -57,6 +60,11 @@ func cleanRun(m report.Manifest, files []classifyEntry, backupDir, auditLog stri
 		}
 		allowed = append(allowed, filepath.Clean(ntData))
 	}
+	// 从清单根目录重新分派知识实现（与 GUI 同一 dispatcher）。
+	k := qq.Detect(m.Root)
+	if !k.ScanCapable() {
+		return clean.Result{}, fmt.Errorf("unsupported QQ data layout (detected: %s); cleaning disabled", k.Name())
+	}
 	return clean.Run(context.Background(), clean.Request{
 		Files:         entries,
 		AllowedRoots:  allowed,
@@ -65,6 +73,7 @@ func cleanRun(m report.Manifest, files []classifyEntry, backupDir, auditLog stri
 		Force:         true, // gated by the --force flag in cleanCmd
 		Confirmed:     true, // gated by the interactive `yes` in cleanCmd
 		IgnoreRunning: ignoreRunning,
+		K:             k,
 		Config:        cfg,
 	})
 }

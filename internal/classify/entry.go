@@ -8,8 +8,6 @@ package classify
 import (
 	"path/filepath"
 	"strings"
-
-	"qqcleaner/internal/qq"
 )
 
 // FileEntry is one classified cache file. Category is the rules-level
@@ -31,21 +29,23 @@ type FileEntry struct {
 	IsTemp   bool   `json:"isTemp"`
 }
 
-// BizDirs 等遍历白名单与分类逻辑见 qq 包（逆向结论层）。
-// 本包只负责「走文件系统 + 组装 FileEntry」，不含逆向知识。
-var (
-	BizDirs        = qq.BizDirs
-	DefaultSkipDirs = qq.DefaultSkipDirs
-)
+// Classifier 是 classify 层对 qq 知识实现的窄接口（消费方定义）。
+// 遍历白名单/分类/命名解析都属于逆向结论，由调用方注入。
+type Classifier interface {
+	BizDirs() []string
+	SkipDirs() map[string]bool
+	Classify(segments []string) (biz, category, sub, month string)
+	ParseFilename(base string) (md5, sizeTag, ext string, ok bool)
+}
 
 // newEntry builds a FileEntry from an absolute path relative to ntData.
-func newEntry(ntData, abs string, size int64, mtime int64) FileEntry {
+func newEntry(k Classifier, ntData, abs string, size int64, mtime int64) FileEntry {
 	rel, err := filepath.Rel(ntData, abs)
 	if err != nil {
 		rel = abs
 	}
 	segs := strings.Split(filepath.ToSlash(rel), "/")
-	biz, category, sub, month := qq.ClassifyRelative(segs)
+	biz, category, sub, month := k.Classify(segs)
 
 	e := FileEntry{
 		Path:     abs,
@@ -56,7 +56,7 @@ func newEntry(ntData, abs string, size int64, mtime int64) FileEntry {
 		Size:     size,
 		MTime:    mtime,
 	}
-	if md5, tag, ext, ok := qq.ParseFilename(filepath.Base(abs)); ok {
+	if md5, tag, ext, ok := k.ParseFilename(filepath.Base(abs)); ok {
 		e.MD5, e.SizeTag, e.Ext = md5, tag, ext
 	} else if i := strings.LastIndexByte(filepath.Base(abs), '.'); i > 0 {
 		e.Ext = strings.ToLower(filepath.Base(abs)[i+1:])

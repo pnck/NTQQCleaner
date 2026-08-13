@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"qqcleaner/internal/classify"
+	"qqcleaner/internal/qq/impl/nt"
 	"qqcleaner/internal/rules"
 	"qqcleaner/internal/testutil"
 )
@@ -31,6 +32,7 @@ func gateRequest(force, confirmed bool) Request {
 		AuditLog:     "/nonexistent/audit.log",
 		Force:        force,
 		Confirmed:    confirmed,
+		K:            ntKN(),
 		Config:       rules.Default(),
 	}
 }
@@ -110,6 +112,7 @@ func TestRunMovesToBackup(t *testing.T) {
 		AuditLog:     audit,
 		Force:        true,
 		Confirmed:    true,
+		K:            ntKN(),
 		Config:       rules.Default(),
 	}
 	res, err := Run(context.Background(), r)
@@ -158,6 +161,7 @@ func TestRunRemoveLogsPath(t *testing.T) {
 		AuditLog:     audit,
 		Force:        true,
 		Confirmed:    true,
+		K:            ntKN(),
 		Config:       rules.Default(),
 	}
 	res, err := Run(context.Background(), r)
@@ -204,6 +208,7 @@ func TestRunSkipsBlockedPaths(t *testing.T) {
 		AuditLog:     audit,
 		Force:        true,
 		Confirmed:    true,
+		K:            ntKN(),
 		Config:       rules.Default(),
 	}
 	res, err := Run(context.Background(), r)
@@ -238,7 +243,7 @@ func TestVerifyPath(t *testing.T) {
 		{"/data/nt_qq_other/nt_data/Pic/2024-09/Thumb/a_720.png", true}, // different root
 	}
 	for _, c := range cases {
-		err := VerifyPath(c.path, []string{root}, cfg)
+		err := VerifyPath(ntKN(), c.path, []string{root}, cfg)
 		if (err != nil) != c.wantErr {
 			t.Errorf("VerifyPath(%q) err=%v wantErr=%v", c.path, err, c.wantErr)
 		}
@@ -261,3 +266,6 @@ func readAuditLine(t *testing.T, path string) auditEntry {
 	}
 	return e
 }
+
+// ntKN 是测试用的 NT 知识实现。
+func ntKN() rules.Knowledge { return &nt.NT{} }

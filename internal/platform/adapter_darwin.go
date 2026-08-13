@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-type darwinAdapter struct{}
+type darwinAdapter struct{ unixBase }
 
 func defaultAdapter() Adapter { return darwinAdapter{} }
 

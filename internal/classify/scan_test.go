@@ -6,12 +6,13 @@ import (
 	"strings"
 	"testing"
 
+	"qqcleaner/internal/qq/impl/nt"
 	"qqcleaner/internal/testutil"
 )
 
 func TestScanClassifies(t *testing.T) {
 	f := testutil.BuildQQTree(t)
-	entries, err := Scan(context.Background(), f.NtDataA, Options{})
+	entries, err := Scan(context.Background(), f.NtDataA, Options{K: testK()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +60,7 @@ func TestScanClassifies(t *testing.T) {
 
 func TestScanMinSizeAndOnlyBizs(t *testing.T) {
 	f := testutil.BuildQQTree(t)
-	entries, err := Scan(context.Background(), f.NtDataA, Options{MinSize: 100 << 10})
+	entries, err := Scan(context.Background(), f.NtDataA, Options{K: testK(), MinSize: 100 << 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +69,7 @@ func TestScanMinSizeAndOnlyBizs(t *testing.T) {
 			t.Errorf("entry below min size: %s (%d)", e.Path, e.Size)
 		}
 	}
-	entries, err = Scan(context.Background(), f.NtDataA, Options{OnlyBizs: []string{"File"}})
+	entries, err = Scan(context.Background(), f.NtDataA, Options{K: testK(), OnlyBizs: []string{"File"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +87,7 @@ func TestScanCancel(t *testing.T) {
 	f := testutil.BuildQQTree(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := Scan(ctx, f.NtDataA, Options{}); err == nil {
+	if _, err := Scan(ctx, f.NtDataA, Options{K: testK()}); err == nil {
 		t.Fatal("expected context cancellation error")
 	}
 }
@@ -107,3 +108,6 @@ func keys(m map[string]FileEntry) []string {
 	}
 	return out
 }
+
+// testK 是测试用的 NT 知识实现。
+func testK() Classifier { return &nt.NT{} }

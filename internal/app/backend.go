@@ -36,7 +36,7 @@ type Backend struct {
 	scanning    bool
 	outcome     *Outcome
 	lastErr     string
-	previewBase string     // http://127.0.0.1:PORT（本地媒体预览服务）
+	previewBase string // http://127.0.0.1:PORT（本地媒体预览服务）
 	previewSrv  *http.Server
 	previewOnce sync.Once
 }
@@ -514,7 +514,7 @@ func (b *Backend) ResolvePreview(id int) (string, error) {
 	}
 	e := b.outcome.Entries[id]
 	roots := b.outcomeRootsLocked()
-	if err := clean.VerifyPath(e.Path, roots, b.cfg); err != nil {
+	if err := clean.VerifyPath(b.outcome.K, e.Path, roots, b.cfg); err != nil {
 		return "", err
 	}
 	if st, err := os.Stat(e.Path); err != nil || st.IsDir() {
@@ -636,6 +636,7 @@ func (b *Backend) Clean(req CleanRequest) (CleanResult, error) {
 		Force:         req.Force,
 		Confirmed:     req.Confirmed,
 		IgnoreRunning: req.IgnoreRunning,
+		K:             out.K,             // 本扫描分派的知识实现（白名单/打分）
 		Config:        cfgOpenGates(cfg), // 结构红线不变，分类门控随 GUI 放开
 	})
 	if err != nil {

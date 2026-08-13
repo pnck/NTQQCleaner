@@ -105,9 +105,9 @@ type Stats struct {
 // to keep and which copies in the current filter are removable.
 type DupGroup struct {
 	MD5        string `json:"md5"`
-	Count      int    `json:"count"`      // 全索引中的总份数
-	KeepID     int    `json:"keepId"`     // 建议保留的那份
-	KeepLabel  string `json:"keepLabel"`  // 保留份的展示信息（月份/子类型/文件名）
+	Count      int    `json:"count"`     // 全索引中的总份数
+	KeepID     int    `json:"keepId"`    // 建议保留的那份
+	KeepLabel  string `json:"keepLabel"` // 保留份的展示信息（月份/子类型/文件名）
 	KeepMTime  int64  `json:"keepMtime"`
 	DupIDs     []int  `json:"dupIds"`     // 当前筛选内可删的副本（不含保留份）
 	DupBytes   int64  `json:"dupBytes"`   // 可删副本合计大小

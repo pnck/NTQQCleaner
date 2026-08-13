@@ -43,23 +43,32 @@ pnpm --dir frontend typecheck
   - pnpm 的 content-addressable store 落在 `/workspace/.pnpm-store`（已 gitignore）
 - 出站网络经 proxy 容器透明代理，npm/go 下载可用
 
-## 结构（分层：上层逻辑与平台/逆向结论解耦）
+## 结构（三层变异轴：OS API × QQ 平台 × QQ 版本，全部解耦）
 
 ```
 main.go / main_wails.go / main_manifest.go   入口：scan/clean/gui 子命令
-internal/platform    OS 适配层：Adapter 接口（QQProcesses/Reveal），
-                     darwin/windows/linux 各一个 build-tagged 实现。
+internal/platform    OS 适配层：Adapter 接口（QQProcesses / DeleteFile /
+                     MoveFile / Reveal），darwin/windows/linux 各一个
+                     build-tagged 实现。删除/移动语义入本层（POSIX unlink
+                     与 Windows DeleteFile 不同：只读属性/共享模式/跨卷）。
                      新增平台 = 新增一个适配器文件，上层零改动
-internal/qq          逆向结论知识层（唯一下沉点）：目录命名/文件名解析/
-                     目录分类/账号识别三源/各平台根路径/白名单结构/状态
-                     目录/db 后缀/类型优先级/官方阈值。换 QQ 版本或平台
-                     重新逆向时，只重写本包
-internal/discovery  数据根发现与账号组装（引用 qq 层，无逆向知识）
-internal/classify   白名单遍历 + FileEntry 组装（引用 qq 层）
-internal/rules      价值打分（Score/Tier）、配置、白名单/黑名单政策
+internal/qq          QQ 知识层抽象 + 版本 dispatcher：
+                     Knowledge 接口 + probe 链注册表（Detect 从磁盘布局
+                     识别平台×版本族）。上层（discovery/classify/rules/
+                     clean）通过窄接口显式接收知识实现
+internal/qq/impl/nt      NT 架构实现（nt_qq_<32hex> 布局，macOS 已逆向；
+                         布局跨平台共享，根路径 per-OS 文件）
+internal/qq/impl/legacy  旧版占位（数字目录+msg3.0.db；ScanCapable=false
+                         保守拒绝，逆向完成后补全本包即可）
+internal/qqimpl          副作用导入注册 probe 与根路径；新增实现在此加一行
+internal/qq/generic.go   包内兜底：未知布局 fail-closed（拒绝扫描/清理，
+                         仅保留版本无关黑名单底线）
+internal/discovery  数据根发现与账号组装（经 Detect 分派）
+internal/classify   白名单遍历 + FileEntry 组装（Options.K 注入）
+internal/rules      价值打分（Score(K,...)）、配置、白名单/黑名单政策
 internal/report     UI/CLI 共享模型（不暴露绝对路径，预览走 /preview/{id}）
-internal/clean      删除执行：进程保护（platform 层）→白名单→备份→审计
-internal/app        Engine（CLI/GUI 共享管线）+ Backend（GUI 绑定层）
+internal/clean      删除执行：进程保护→白名单→适配器删除/移动→审计
+internal/app        Engine（Detect 分派 + 共享管线）+ Backend（GUI 绑定）
 internal/testutil   fixtures：假 QQ 目录树（docs/05 §6），固定时钟 testutil.Now
 frontend/           React 19 + @tanstack/react-virtual 照片墙
 tests/cli_smoke.sh CLI 端到端冒烟

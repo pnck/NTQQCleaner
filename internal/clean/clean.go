@@ -10,13 +10,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"qqcleaner/internal/classify"
+	"qqcleaner/internal/platform"
 	"qqcleaner/internal/rules"
 )
 
@@ -39,8 +39,10 @@ type Request struct {
 	// 并发写互不锁定；残余风险仅是缓存条目失效可重新生成。默认仍拒绝，
 	// 需用户在确认对话框显式选择「仍要清理」）。
 	IgnoreRunning bool
-	Config        rules.Config
-	Now           time.Time // zero = time.Now()
+	// K 是 QQ 知识实现（白名单/黑名单结构 + 打分），必需。
+	K      rules.Knowledge
+	Config rules.Config
+	Now    time.Time // zero = time.Now()
 }
 
 // Result summarizes a run. Errors are collected per-file so one failure
@@ -68,6 +70,9 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	}
 	if req.AuditLog == "" {
 		return Result{}, fmt.Errorf("audit log path is required (redline: no unrecorded deletion)")
+	}
+	if req.K == nil {
+		return Result{}, fmt.Errorf("knowledge implementation is required (fail-closed)")
 	}
 	if !req.IgnoreRunning && qqRunningFunc() {
 		return Result{}, qqRunningError()
@@ -101,7 +106,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		}
 		// Whitelist/blacklist re-verification (docs/06 §2): the scan result
 		// is not trusted, every path is checked again right here.
-		if err := VerifyPath(f.Path, req.AllowedRoots, req.Config); err != nil {
+		if err := VerifyPath(req.K, f.Path, req.AllowedRoots, req.Config); err != nil {
 			res.Skipped++
 			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", f.Path, err))
 			continue
@@ -112,7 +117,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		// (lower scores → stricter tiers). The clean layer never trusts the
 		// scan-time tier.
 		idx := rules.BuildMD5Index([]classify.FileEntry{f})
-		score := rules.Score(f, idx, req.Config, now)
+		score := rules.Score(req.K, f, idx, req.Config, now)
 		tier := rules.Tier(f, score, req.Config, now)
 		reason := rules.Reason(f, tier, idx)
 
@@ -133,7 +138,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 
 // VerifyPath enforces the redline path rules on an absolute path:
 // under an allowed nt_data root, whitelisted by structure, not blacklisted.
-func VerifyPath(abs string, allowedRoots []string, cfg rules.Config) error {
+func VerifyPath(k rules.Knowledge, abs string, allowedRoots []string, cfg rules.Config) error {
 	cleaned := filepath.Clean(abs)
 	var under string
 	for _, root := range allowedRoots {
@@ -153,18 +158,18 @@ func VerifyPath(abs string, allowedRoots []string, cfg rules.Config) error {
 	if strings.HasPrefix(rel, "..") {
 		return fmt.Errorf("path traversal blocked")
 	}
-	if rules.Blacklisted(cleaned) {
+	if rules.Blacklisted(k, cleaned) {
 		return fmt.Errorf("blacklisted path")
 	}
-	if !rules.Whitelisted(rel, cfg) {
+	if !rules.Whitelisted(k, rel, cfg) {
 		return fmt.Errorf("not whitelisted")
 	}
 	return nil
 }
 
-// deleteOne moves the file to the backup dir (recoverable) or, when no
-// backup dir is configured, hashes it for the audit record and removes it.
-// Every outcome is audited (docs/06 §3).
+// deleteOne moves the file to the backup dir (recoverable) or removes it.
+// 删除/移动的 OS 语义由 platform 适配层提供（POSIX unlink 与 Windows
+// DeleteFile 不同）。Every outcome is audited (docs/06 §3).
 func deleteOne(audit *auditLogger, f classify.FileEntry, backupDir, tier, reason string) error {
 	entry := auditEntry{
 		Path:   f.Path,
@@ -177,7 +182,7 @@ func deleteOne(audit *auditLogger, f classify.FileEntry, backupDir, tier, reason
 		if _, err := os.Lstat(dst); err == nil {
 			dst = uniquePath(dst) // avoid clobbering an existing backup
 		}
-		if err := moveFile(f.Path, dst); err != nil {
+		if err := platform.Current().MoveFile(f.Path, dst); err != nil {
 			return err
 		}
 		entry.Action, entry.BackupPath = "move", dst
@@ -185,48 +190,12 @@ func deleteOne(audit *auditLogger, f classify.FileEntry, backupDir, tier, reason
 		// 产品决策：删除前不再计算 SHA-256（对已删文件无恢复价值，
 		// 且大文件全量哈希拖慢清理）；审计日志记录路径/大小/时间/分级。
 		// 需要可恢复性请配置备份目录（移动而非删除）。
-		if err := os.Remove(f.Path); err != nil {
+		if err := platform.Current().DeleteFile(f.Path); err != nil {
 			return err
 		}
 		entry.Action = "remove"
 	}
 	return audit.Log(entry)
-}
-
-// moveFile renames within a volume and falls back to copy+delete across
-// volumes (backup dirs often live on another drive) (docs/06 §3).
-func moveFile(src, dst string) error {
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
-	}
-	if err := os.Rename(src, dst); err == nil {
-		return nil
-	}
-	// EXDEV or similar: copy then remove.
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	info, err := in.Stat()
-	if err != nil {
-		return err
-	}
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		os.Remove(dst)
-		return err
-	}
-	if err := out.Close(); err != nil {
-		os.Remove(dst)
-		return err
-	}
-	os.Chtimes(dst, info.ModTime(), info.ModTime())
-	return os.Remove(src)
 }
 
 func uniquePath(p string) string {

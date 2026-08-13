@@ -3,6 +3,7 @@ package classify
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -13,9 +14,11 @@ import (
 
 // Options controls a Scan. Progress is invoked from worker goroutines once
 // per file; callers must throttle (e.g. ≥100ms or every N files) themselves.
+// K 是必需的（qq 知识实现：遍历白名单/跳过目录/分类/命名解析）。
 type Options struct {
-	OnlyBizs []string        // empty = all of BizDirs
-	SkipDirs map[string]bool // extra dirs to skip (nil = DefaultSkipDirs)
+	K        Classifier
+	OnlyBizs []string        // empty = K 的全部白名单
+	SkipDirs map[string]bool // 额外的跳过目录（nil = K 的默认）
 	MinSize  int64           // ignore files smaller than this
 	Workers  int             // 0 = NumCPU, capped at len(BizDirs)
 	Progress func(stage string, done, total uint64)
@@ -25,11 +28,14 @@ type Options struct {
 // classified file. It performs a quick pre-count pass first so progress can
 // report a meaningful total (dir reads are cheap; per-file stats dominate).
 func Scan(ctx context.Context, ntData string, opts Options) ([]FileEntry, error) {
+	if opts.K == nil {
+		return nil, fmt.Errorf("classify: knowledge (Options.K) is required")
+	}
 	skip := opts.SkipDirs
 	if skip == nil {
-		skip = DefaultSkipDirs
+		skip = opts.K.SkipDirs()
 	}
-	roots, err := walkRoots(ntData, opts.OnlyBizs)
+	roots, err := walkRoots(opts.K, ntData, opts.OnlyBizs)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +76,7 @@ func Scan(ctx context.Context, ntData string, opts Options) ([]FileEntry, error)
 		go func() {
 			defer wg.Done()
 			for root := range jobs {
-				found, err := walkRoot(ctx, root, skip, opts.MinSize, func() {
+				found, err := walkRoot(ctx, opts.K, root, skip, opts.MinSize, func() {
 					atomic.AddUint64(&done, 1)
 					if opts.Progress != nil {
 						opts.Progress(root, atomic.LoadUint64(&done), total)
@@ -103,8 +109,8 @@ func Scan(ctx context.Context, ntData string, opts Options) ([]FileEntry, error)
 }
 
 // walkRoots resolves the whitelisted biz dirs that exist under ntData.
-func walkRoots(ntData string, only []string) ([]string, error) {
-	bizs := BizDirs
+func walkRoots(k Classifier, ntData string, only []string) ([]string, error) {
+	bizs := k.BizDirs()
 	if len(only) > 0 {
 		bizs = only
 	}
@@ -141,7 +147,7 @@ func countFiles(ctx context.Context, root string, skip map[string]bool) (uint64,
 	return n, err
 }
 
-func walkRoot(ctx context.Context, root string, skip map[string]bool, minSize int64, onFile func()) ([]FileEntry, error) {
+func walkRoot(ctx context.Context, k Classifier, root string, skip map[string]bool, minSize int64, onFile func()) ([]FileEntry, error) {
 	var out []FileEntry
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -168,7 +174,7 @@ func walkRoot(ctx context.Context, root string, skip map[string]bool, minSize in
 		if info.Size() < minSize {
 			return nil
 		}
-		out = append(out, newEntry(filepath.Dir(root), path, info.Size(), info.ModTime().Unix()))
+		out = append(out, newEntry(k, filepath.Dir(root), path, info.Size(), info.ModTime().Unix()))
 		if onFile != nil {
 			onFile()
 		}

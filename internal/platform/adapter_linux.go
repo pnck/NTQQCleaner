@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-type linuxAdapter struct{}
+type linuxAdapter struct{ unixBase }
 
 func defaultAdapter() Adapter { return linuxAdapter{} }
 

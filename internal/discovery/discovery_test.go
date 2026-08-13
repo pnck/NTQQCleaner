@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	_ "qqcleaner/internal/qqimpl" // 注册 probe（nt 布局探测）
 	"qqcleaner/internal/testutil"
 )
 

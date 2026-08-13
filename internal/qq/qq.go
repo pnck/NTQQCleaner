@@ -1,119 +1,100 @@
-// Package qq 是「逆向结论知识层」的唯一下沉点。
+// Package qq 是「逆向结论知识层」的抽象与调度（版本 dispatcher）。
 //
-// 这里的一切都来自对 QQ 客户端存储/清理逻辑的逆向结论
-// （docs/01-03、05）。不同操作系统上的 QQ 二进制可能被重新逆向分析、
-// 结论可能不同 —— 届时只需重写本包（同一份上层逻辑不变）。
-// 上层包（discovery/classify/rules）禁止内嵌逆向结论，一律引用本包。
+// 变异轴：不同平台上的 QQ binary 不一样、不同版本的 QQ 逻辑不一样。
+// 因此本包只定义接口与注册表，具体知识在 internal/qq/impl/* 实现包里：
+//   - impl/nt       NT 架构（nt_qq_<32hex> 布局，macOS 已逆向；布局跨平台共享）
+//   - impl/legacy   旧版（数字目录 + msg3.0.db，占位：保守不扫描）
+//   - generic       兜底（无任何知识，fail-closed：拒绝扫描/清理）
+//
+// 上层（discovery/classify/rules/clean/app）只依赖 Knowledge 接口；
+// 新增一个 QQ 平台/版本 = 新增一个 impl 包 + 注册 probe，上层零改动。
+// 注册通过 internal/qqimpl 的副作用导入完成。
 package qq
 
-import (
-	"regexp"
-	"strings"
-)
-
-// InstanceRe 匹配账号实例目录名：nt_qq_ + 32 位 hex。
-// 目录名是 MD5(MD5(uid)+"nt_kernel")，不可反推 QQ 号（docs/01 §1）。
-var InstanceRe = regexp.MustCompile(`^nt_qq_([0-9a-f]{32})$`)
-
-// MonthRe 匹配 QQ 的 {YYYY-MM} 月份目录（docs/01 §2.2）。
-var MonthRe = regexp.MustCompile(`^\d{4}-\d{2}$`)
-
-// NameRe 匹配缓存文件命名模板 {32位hex md5}[_{size}].{ext}
-// （docs/01 §2.2、§4.1；size 如 0/720/1080）。
-var nameRe = regexp.MustCompile(`^([0-9a-f]{32})(?:_(\d+))?\.([A-Za-z0-9]+)$`)
-
-// ParseFilename 按命名模板解析文件名；不匹配时 ok=false。
-func ParseFilename(base string) (md5, sizeTag, ext string, ok bool) {
-	m := nameRe.FindStringSubmatch(base)
-	if m == nil {
-		return "", "", "", false
-	}
-	return m[1], m[2], strings.ToLower(m[3]), true
+// Instance 是一个账号实例目录（NT: nt_qq_<32hex>；旧版: 数字目录）。
+type Instance struct {
+	DirName string
+	Hash    string
 }
 
-// BizDirs 是遍历白名单：富媒体缓存目录（docs/01 §2.1、06 §2）。
-var BizDirs = []string{"Pic", "Video", "Ptt", "File", "dataline", "Emoji"}
-
-// DefaultSkipDirs 是永不扫描的状态/配置目录（docs/06 §2 黑名单的
-// 目录部分；在 classify 层与 clean 层双重过滤）。
-var DefaultSkipDirs = map[string]bool{
-	"mmkv": true, "msf": true, "OnlineStatus": true, "UnitedConfig": true,
-	"config": true, "log": true, "log-cache": true, "avatar": true,
-	"nt_db": true,
+// Gates 是白名单结构校验需要的分类门控（由 rules.Config 映射而来）。
+type Gates struct {
+	CleanBaseEmoji     bool
+	CleanMarketface    bool
+	CleanPersonalEmoji bool
 }
 
-// ClassifyRelative 把相对 nt_data 的路径段解析为
-// (biz, category, sub, month)。category 是规则层使用的分类键；
-// sub 是文件所在叶子目录名（Ori/Thumb/*Temp/file_assistant/...）。
-func ClassifyRelative(segments []string) (biz, category, sub, month string) {
-	if len(segments) < 2 {
-		return "", "", "", ""
-	}
-	biz = strings.ToLower(segments[0])
-	sub = segments[len(segments)-2] // 叶子目录
-	for _, s := range segments {
-		if MonthRe.MatchString(s) {
-			month = s
-			break
-		}
-	}
-	switch biz {
-	case "pic", "video", "ptt", "dataline":
-		// {YYYY-MM}/{Ori|Thumb|OriTemp|ThumbTemp}/file
-		sub = lastOf(segments, "Ori", "Thumb", "OriTemp", "ThumbTemp")
-		category = biz + "/" + strings.ToLower(sub)
-	case "file":
-		// 无月份层：{Ori|Thumb|ThumbTemp|file_assistant}/...
-		sub = lastOf(segments, "Ori", "Thumb", "OriTemp", "ThumbTemp", "file_assistant")
-		category = biz + "/" + strings.ToLower(sub)
-	case "emoji":
-		sub, category = classifyEmoji(segments)
-	default:
-		category = "other"
-	}
-	return biz, category, sub, month
+// Knowledge 是一个「QQ 平台×版本族」的逆向结论实现。
+type Knowledge interface {
+	// Name 返回实现名（如 "nt" / "legacy" / "generic"）。
+	Name() string
+	// ScanCapable 是否具备扫描所需的全部知识；false 时上层拒绝扫描
+	// 与清理（fail-closed）。
+	ScanCapable() bool
+
+	// 账号实例与识别
+	InstanceDirs(root string) ([]Instance, error)
+	Identify(root string, inst Instance) string
+
+	// 布局与命名
+	BizDirs() []string
+	SkipDirs() map[string]bool
+	Classify(segments []string) (biz, category, sub, month string)
+	ParseFilename(base string) (md5, sizeTag, ext string, ok bool)
+	IsMonthDir(name string) bool
+
+	// 白名单/黑名单结构
+	Whitelisted(rel string, g Gates) bool
+	StateDirs() []string
+	DBSuffixes() []string
+
+	// 评分知识（docs/03 §3 目录优先级）
+	TypeScore(category string) int
 }
 
-// lastOf 从尾部找第一个命中的候选目录名（嵌套布局取最内层）。
-func lastOf(segments []string, candidates ...string) string {
-	for i := len(segments) - 1; i >= 0; i-- {
-		for _, c := range candidates {
-			if segments[i] == c {
-				return c
+// ---- 注册表：probe 链（版本 dispatcher）----
+
+var probes []func(root string) Knowledge
+
+// RegisterProbe 注册一个布局探测（注册顺序 = 优先级）。
+func RegisterProbe(p func(root string) Knowledge) { probes = append(probes, p) }
+
+// Detect 依据磁盘布局识别 QQ 平台×版本族。
+// 两遍扫描：第一遍取「具备扫描能力」的匹配实现（数据根中可能同时残留
+// 新旧布局，如数字目录+msg3.0.db 与 nt_qq_* 并存——旧布局会被识别但
+// 不具扫描能力）；第二遍取任一已识别实现（如 legacy，供上层报告
+// 具体的布局类型）；全部未命中返回 generic 兜底（fail-closed）。
+// 优先级与注册顺序解耦。
+func Detect(root string) Knowledge {
+	var recognized Knowledge
+	for _, p := range probes {
+		if k := p(root); k != nil {
+			if k.ScanCapable() {
+				return k
+			}
+			if recognized == nil {
+				recognized = k
 			}
 		}
 	}
-	return ""
+	if recognized != nil {
+		return recognized
+	}
+	return genericKnowledge{}
 }
 
-// classifyEmoji 映射 Emoji 五子类（docs/01 §3），注意 QQ 的拼写
-// BaseEmojiSyastems（Syastems 为官方拼写错误，保留）。
-func classifyEmoji(segments []string) (sub, category string) {
-	if len(segments) < 2 {
-		return "", "emoji/other"
+// ---- 根路径候选注册（各 impl 的 per-OS 文件注册）----
+
+var rootProviders []func() []string
+
+// RegisterRoots 注册一组本 OS 的默认数据根候选。
+func RegisterRoots(f func() []string) { rootProviders = append(rootProviders, f) }
+
+// RootCandidates 汇总所有实现的当前 OS 根路径候选。
+func RootCandidates() []string {
+	var out []string
+	for _, f := range rootProviders {
+		out = append(out, f()...)
 	}
-	switch segments[1] {
-	case "emoji-recv":
-		s := lastOf(segments, "Ori", "Thumb", "OriTemp", "ThumbTemp")
-		if s == "" {
-			s = segments[len(segments)-2]
-		}
-		return s, "emoji/emoji-recv/" + strings.ToLower(s)
-	case "BaseEmojiSyastems":
-		if len(segments) >= 3 && segments[2] == "ThumbTemp" {
-			return "ThumbTemp", "emoji/base-emoji/thumbtemp"
-		}
-		return "EmojiSystermResource", "emoji/base-emoji/resource"
-	case "marketface":
-		return segments[len(segments)-2], "emoji/marketface"
-	case "personal_emoji":
-		s := lastOf(segments, "Ori", "Thumb")
-		if s == "" {
-			s = segments[len(segments)-2]
-		}
-		return s, "emoji/personal-emoji/" + strings.ToLower(s)
-	case "emoji-related":
-		return "emoji-related", "emoji/emoji-related"
-	}
-	return segments[len(segments)-2], "emoji/other"
+	return out
 }

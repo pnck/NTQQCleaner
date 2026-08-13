@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"qqcleaner/internal/classify"
+	"qqcleaner/internal/qq/impl/nt"
 	"qqcleaner/internal/testutil"
 )
 
@@ -34,23 +35,23 @@ func TestScoreExamples(t *testing.T) {
 	// docs/03 §4 example 1: 7-year-old thumbnail whose Ori original exists.
 	// type=10, time=30 (month-archive), redund=20, size=3 → 63.
 	e := entry("pic/thumb", "Thumb", "2021-04", "aa", d(2021, 4, 15), 100<<10)
-	if got := Score(e, idx("aa", true, 2), cfg, now); got != 63 {
+	if got := Score(ntK(), e, idx("aa", true, 2), cfg, now); got != 63 {
 		t.Errorf("example 1: got %d want 63", got)
 	}
 	// example 2: recent thumbnail (31 days, L1) with Ori → 10+5+20+3=38.
 	e = entry("pic/thumb", "Thumb", "2026-07", "aa", d(2026, 7, 10), 100<<10)
-	if got := Score(e, idx("aa", true, 2), cfg, now); got != 38 {
+	if got := Score(ntK(), e, idx("aa", true, 2), cfg, now); got != 38 {
 		t.Errorf("example 2: got %d want 38", got)
 	}
 	// example 3: 3-year-old 100MB original video → 30+30+0+10=70.
 	e = entry("video/ori", "Ori", "2023-01", "bb", d(2023, 1, 15), 100<<20)
-	if got := Score(e, idx("bb", true, 1), cfg, now); got != 70 {
+	if got := Score(ntK(), e, idx("bb", true, 1), cfg, now); got != 70 {
 		t.Errorf("example 3: got %d want 70", got)
 	}
 	// Temp residue: fresh temps still score the minimum (0+0+0+3=3);
 	// Tier forces them safe regardless of age.
 	e = entry("pic/oritemp", "OriTemp", "2026-08", "cc", now.AddDate(0, 0, -1), 1<<10)
-	if got := Score(e, idx("cc", false, 1), cfg, now); got != 3 {
+	if got := Score(ntK(), e, idx("cc", false, 1), cfg, now); got != 3 {
 		t.Errorf("temp: got %d want 3", got)
 	}
 }
@@ -65,13 +66,13 @@ func TestTierFreshAndTemp(t *testing.T) {
 	}
 	// Temp is safe even when brand-new.
 	e = entry("pic/oritemp", "OriTemp", "2026-08", "bb", now, 1<<10)
-	if got := Tier(e, Score(e, idx("bb", false, 1), cfg, now), cfg, now); got != TierSafe {
+	if got := Tier(e, Score(ntK(), e, idx("bb", false, 1), cfg, now), cfg, now); got != TierSafe {
 		t.Errorf("fresh temp: got %s want safe", got)
 	}
 	// ...unless clean_temp is off.
 	cfg.CleanTemp = false
 	e = entry("pic/oritemp", "OriTemp", "2026-08", "bb", now, 1<<10)
-	if got := Tier(e, Score(e, idx("bb", false, 1), cfg, now), cfg, now); got != TierKeep {
+	if got := Tier(e, Score(ntK(), e, idx("bb", false, 1), cfg, now), cfg, now); got != TierKeep {
 		t.Errorf("gated temp: got %s want keep", got)
 	}
 }
@@ -84,39 +85,39 @@ func TestTierCategoryGates(t *testing.T) {
 
 	cfg := Default()
 	// Default config: thumb participates, ori is report-only.
-	if got := Tier(thumb, Score(thumb, idx("aa", false, 1), cfg, now), cfg, now); got != TierSuggest {
+	if got := Tier(thumb, Score(ntK(), thumb, idx("aa", false, 1), cfg, now), cfg, now); got != TierSuggest {
 		t.Errorf("thumb default: got %s want suggest", got)
 	}
-	if got := Tier(ori, Score(ori, idx("bb", true, 1), cfg, now), cfg, now); got != TierKeep {
+	if got := Tier(ori, Score(ntK(), ori, idx("bb", true, 1), cfg, now), cfg, now); got != TierKeep {
 		t.Errorf("ori default: got %s want keep", got)
 	}
 	cfg.CleanOri = true
 	cfg.Aggressive = true
-	if got := Tier(ori, Score(ori, idx("bb", true, 1), cfg, now), cfg, now); got != TierCaution {
+	if got := Tier(ori, Score(ntK(), ori, idx("bb", true, 1), cfg, now), cfg, now); got != TierCaution {
 		t.Errorf("ori enabled+aggressive: got %s want caution", got)
 	}
 	// File/ is one cautious unit gated by CleanFile — even its thumbnails.
 	fthumb := entry("file/thumb", "Thumb", "", "cc", old, 30<<10)
-	if got := Tier(fthumb, Score(fthumb, idx("cc", false, 1), cfg, now), cfg, now); got != TierKeep {
+	if got := Tier(fthumb, Score(ntK(), fthumb, idx("cc", false, 1), cfg, now), cfg, now); got != TierKeep {
 		t.Errorf("file/thumb default: got %s want keep", got)
 	}
 	cfg.CleanFile = true
-	score := Score(fthumb, idx("cc", false, 1), cfg, now)
+	score := Score(ntK(), fthumb, idx("cc", false, 1), cfg, now)
 	if got := Tier(fthumb, score, cfg, now); got != TierSuggest {
 		t.Errorf("file/thumb enabled: got %s want suggest (score %d)", got, score)
 	}
 	// marketface gated by CleanMarketface.
 	mf := entry("emoji/marketface", "123", "", "dd", d(2025, 1, 1), 10<<10)
-	if got := Tier(mf, Score(mf, idx("dd", false, 1), cfg, now), cfg, now); got != TierKeep {
+	if got := Tier(mf, Score(ntK(), mf, idx("dd", false, 1), cfg, now), cfg, now); got != TierKeep {
 		t.Errorf("marketface default: got %s want keep", got)
 	}
 	cfg.CleanMarketface = true
-	if got := Tier(mf, Score(mf, idx("dd", false, 1), cfg, now), cfg, now); got != TierCaution {
+	if got := Tier(mf, Score(ntK(), mf, idx("dd", false, 1), cfg, now), cfg, now); got != TierCaution {
 		t.Errorf("marketface enabled+aggressive: got %s want caution", got)
 	}
 	// personal emoji gated by its own flag.
 	pe := entry("emoji/personal-emoji/ori", "Ori", "", "ee", d(2024, 1, 1), 10<<10)
-	if got := Tier(pe, Score(pe, idx("ee", false, 1), cfg, now), cfg, now); got != TierKeep {
+	if got := Tier(pe, Score(ntK(), pe, idx("ee", false, 1), cfg, now), cfg, now); got != TierKeep {
 		t.Errorf("personal-emoji default: got %s want keep", got)
 	}
 }
@@ -126,7 +127,7 @@ func TestTierAggressive(t *testing.T) {
 	video := entry("video/ori", "Ori", "2023-01", "bb", d(2023, 1, 15), 100<<20) // score 70 → caution
 	cfg := Default()
 	cfg.CleanOri = true
-	score := Score(video, idx("bb", true, 1), cfg, now)
+	score := Score(ntK(), video, idx("bb", true, 1), cfg, now)
 	if got := Tier(video, score, cfg, now); got != TierKeep {
 		t.Errorf("non-aggressive: got %s want keep", got)
 	}
@@ -156,3 +157,6 @@ func TestBuildMD5Index(t *testing.T) {
 		t.Error("empty md5 indexed")
 	}
 }
+
+// ntK 是测试用的 NT 知识实现。
+func ntK() Knowledge { return &nt.NT{} }

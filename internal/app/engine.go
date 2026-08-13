@@ -11,6 +11,8 @@ import (
 
 	"qqcleaner/internal/classify"
 	"qqcleaner/internal/discovery"
+	"qqcleaner/internal/qq"
+	_ "qqcleaner/internal/qqimpl" // 注册 probe（QQ 平台×版本 dispatcher）
 	"qqcleaner/internal/report"
 	"qqcleaner/internal/rules"
 )
@@ -39,11 +41,19 @@ type Outcome struct {
 	OriID     map[string]int
 	ThumbID   map[string]int
 	Now       time.Time
+	// K 是本次扫描分派到的 QQ 知识实现（清理/预览校验时复用）。
+	K qq.Knowledge
 }
 
 // ScanAll scans every account under root (or just `accounts`), classifies,
 // scores and aggregates. Progress events are emitted throttled (~100ms).
 func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []string, minAgeDays int, minSize int64) (*Outcome, error) {
+	// 版本 dispatcher：从磁盘布局识别 QQ 平台×版本族，分派知识实现。
+	// 不支持的布局（generic）fail-closed。
+	k := qq.Detect(root)
+	if !k.ScanCapable() {
+		return nil, fmt.Errorf("unsupported QQ data layout (detected: %s); scanning disabled", k.Name())
+	}
 	accs, err := discovery.Discover(root)
 	if err != nil {
 		return nil, fmt.Errorf("discover %s: %w", root, err)
@@ -76,6 +86,7 @@ func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []
 		OriID:     make(map[string]int),
 		ThumbID:   make(map[string]int),
 		Now:       now(),
+		K:         k,
 	}
 
 	var (
@@ -103,6 +114,7 @@ func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []
 		// base = files accumulated from previous accounts (progress display).
 		base := atomic.LoadUint64(&doneFiles)
 		entries, err := classify.Scan(ctx, acc.NtData, classify.Options{
+			K:        k,
 			OnlyBizs: onlyBizs,
 			SkipDirs: e.Cfg.SkipDirSet(),
 			MinSize:  minSize,
@@ -130,7 +142,7 @@ func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []
 			id := len(out.Entries)
 			out.Entries = append(out.Entries, f)
 			t := now()
-			score := rules.Score(f, acctIdx, e.Cfg, t)
+			score := rules.Score(k, f, acctIdx, e.Cfg, t)
 			tier := rules.Tier(f, score, e.Cfg, t)
 			out.Tiers = append(out.Tiers, tier)
 			out.Reasons = append(out.Reasons, rules.Reason(f, tier, acctIdx))

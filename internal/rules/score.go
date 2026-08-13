@@ -8,6 +8,15 @@ import (
 	"qqcleaner/internal/qq"
 )
 
+// Knowledge 是 rules 层对 qq 知识实现的窄接口（消费方定义）：
+// 打分只需要目录优先级映射与白名单/黑名单结构事实。
+type Knowledge interface {
+	TypeScore(category string) int
+	Whitelisted(rel string, gates qq.Gates) bool
+	StateDirs() []string
+	DBSuffixes() []string
+}
+
 // Tier labels (docs/03 §4).
 const (
 	TierSafe    = "safe"
@@ -40,9 +49,9 @@ func BuildMD5Index(entries []classify.FileEntry) MD5Index {
 	return idx
 }
 
-// typeScore 委托给 qq 知识层（逆向结论：docs/03 §3 的目录优先级表）。
-func typeScore(category string) int {
-	return qq.TypeScore(category)
+// typeScore 委托知识层（逆向结论：docs/03 §3 的目录优先级表）。
+func typeScore(k Knowledge, category string) int {
+	return k.TypeScore(category)
 }
 
 // timeScore maps age to points (docs/03 §4). L0 (just past QQ's 3-day
@@ -113,9 +122,10 @@ func sizeScore(size int64) int {
 }
 
 // Score computes value_score 0..100 (lower = safer to clean).
-// score = type + time + redundancy + size (docs/03 §4).
-func Score(e classify.FileEntry, idx MD5Index, cfg Config, now time.Time) int {
-	return typeScore(e.Category) + timeScore(e, cfg, now) + redundancyScore(e, idx) + sizeScore(e.Size)
+// score = type + time + redundancy + size (docs/03 §4)。
+// 目录优先级映射来自注入的知识实现 k。
+func Score(k Knowledge, e classify.FileEntry, idx MD5Index, cfg Config, now time.Time) int {
+	return typeScore(k, e.Category) + timeScore(e, cfg, now) + redundancyScore(e, idx) + sizeScore(e.Size)
 }
 
 // fresh reports whether the file is at or below QQ's 3-day threshold

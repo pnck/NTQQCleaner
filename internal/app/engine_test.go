@@ -303,8 +303,8 @@ func TestMatchOne(t *testing.T) {
 		{Condition{"temp", "eq", "true"}, false},
 		{Condition{"month", "gte", "2022-01"}, true},
 		{Condition{"month", "lt", "2023-01"}, false},
-		{Condition{"age", "gte", "1000"}, true},  // ~3.5 years old
-		{Condition{"age", "lt", "100"}, false},   // older than 100 days
+		{Condition{"age", "gte", "1000"}, true}, // ~3.5 years old
+		{Condition{"age", "lt", "100"}, false},  // older than 100 days
 		{Condition{"size", "lt", "100000"}, true},
 		{Condition{"size", "gt", "100000"}, false},
 		{Condition{"md5", "contains", "aaaa"}, true},
@@ -401,9 +401,9 @@ func TestFilterStages(t *testing.T) {
 	}
 	// QueryRows：take(3) 在排序后应用
 	page, err := backend.QueryRows(PageQuery{
-		Filter: Filter{Limit: 3},
-		Sort:   Sort{Field: "size", Desc: true},
-		Page:   1,
+		Filter:   Filter{Limit: 3},
+		Sort:     Sort{Field: "size", Desc: true},
+		Page:     1,
 		PageSize: 200,
 	})
 	if err != nil {
@@ -414,8 +414,8 @@ func TestFilterStages(t *testing.T) {
 	}
 	// order() 管道自包含：order(size, desc) | take(3) —— 无需外部 Sort
 	page, err = backend.QueryRows(PageQuery{
-		Filter: Filter{Orders: []OrderStage{{Field: "size", Desc: true}}, Limit: 3},
-		Page:   1,
+		Filter:   Filter{Orders: []OrderStage{{Field: "size", Desc: true}}, Limit: 3},
+		Page:     1,
 		PageSize: 200,
 	})
 	if err != nil {
