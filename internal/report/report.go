@@ -11,6 +11,9 @@ type AccountReport struct {
 	LatestMonth string `json:"latestMonth"`
 	TotalFiles  int    `json:"totalFiles"`
 	TotalSize   int64  `json:"totalSize"`
+	// HashedFiles = 参与内容哈希（大小冲突候选）的文件数：二次扫描是否
+	// 生效的直接证据（0 表示本账号没有任何同大小文件对）。
+	HashedFiles int `json:"hashedFiles"`
 }
 
 // FileRow is one row in the UI's file browser (docs/07 §6). ThumbURL/OriURL

@@ -107,7 +107,13 @@ export default function App() {
         setPhase("ready");
         setScanGen((g) => g + 1);
         setError(d.error || "");
-        if (d.error) setToast(`扫描结束（含错误）：${d.error}`);
+        if (d.error) {
+          setToast(`扫描结束（含错误）：${d.error}`);
+        } else {
+          const files = d.accounts.reduce((a, x) => a + x.totalFiles, 0);
+          const hashed = d.accounts.reduce((a, x) => a + x.hashedFiles, 0);
+          setToast(`扫描完成：${files} 个文件，其中 ${hashed} 个参与内容哈希`);
+        }
       }),
       events.onError((d) => {
         setPhase("idle");

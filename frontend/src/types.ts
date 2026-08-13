@@ -8,6 +8,7 @@ export interface AccountReport {
   latestMonth: string;
   totalFiles: number;
   totalSize: number;
+  hashedFiles: number; // 参与内容哈希的文件数（二次扫描生效的直接证据）
 }
 
 export interface FileRow {

@@ -72,6 +72,11 @@ func TestEngineScanAll(t *testing.T) {
 	if len(out.Entries) != 13 || len(out.Reasons) != 13 {
 		t.Fatalf("entries/reasons: %d/%d want 13/13", len(out.Entries), len(out.Reasons))
 	}
+	// 二次扫描生效的直接证据：A 账号 6 个大小冲突候选（2×MD5A 80KB、
+	// MD5F/MD5G 60KB、x.png/my.png 10KB）；B 账号 1 个（MD5D 60KB）。
+	if a.HashedFiles != 6 || b.HashedFiles != 1 {
+		t.Fatalf("hashedFiles: A=%d B=%d want 6/1", a.HashedFiles, b.HashedFiles)
+	}
 }
 
 // TestContentHashAndReasons：二次扫描的内容哈希与三类关联标签。

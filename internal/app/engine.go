@@ -186,6 +186,7 @@ func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []
 			}
 			if f.ContentHash != "" {
 				out.ContentIndex[f.ContentHash] = append(out.ContentIndex[f.ContentHash], id)
+				rep.HashedFiles++
 			}
 			rep.TotalFiles++
 			rep.TotalSize += f.Size

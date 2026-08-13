@@ -164,6 +164,7 @@ func printScanReport(out *app.Outcome) {
 		fmt.Fprintf(w, "\n账号 %s\t→ QQ %s\t(最新月份 %s)\n", shortHash(a.Hash), orUnknown(a.QQNum), a.LatestMonth)
 		fmt.Fprintf(w, "  文件数\t%d\n", a.TotalFiles)
 		fmt.Fprintf(w, "  总大小\t%s\n", humanSize(a.TotalSize))
+		fmt.Fprintf(w, "  内容哈希\t%d\n", a.HashedFiles)
 	}
 	w.Flush()
 }
