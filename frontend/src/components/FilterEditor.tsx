@@ -97,7 +97,7 @@ function ConditionRow({
   );
 }
 
-// ---- 列表视图：嵌套且/或组（括号 = 嵌套组）----
+// ---- 列表视图（简易模式）：嵌套且/或组 ----
 
 function GroupBlock({
   root,
@@ -116,8 +116,7 @@ function GroupBlock({
   const kids = node.or ?? node.and ?? [];
 
   const apply = (upd: (n: Expr) => Expr | null) => onChangeRoot(updateTree(root, path, upd));
-  const setKind = (or: boolean) =>
-    apply((n) => group(or ? "or" : "and", n.or ?? n.and ?? []));
+  const setKind = (or: boolean) => apply((n) => group(or ? "or" : "and", n.or ?? n.and ?? []));
   const add = (child: Expr) =>
     apply((n) => {
       const arr = [...(n.or ?? n.and ?? [])];
@@ -179,7 +178,7 @@ function GroupBlock({
   );
 }
 
-// ---- 主对话框：列表 / 表达式 双视图 + 筛选器列表 ----
+// ---- 主对话框：列表（简易）/ 表达式（高级）双视图 + 筛选器列表 ----
 
 export function FilterEditor({
   open,
@@ -199,12 +198,19 @@ export function FilterEditor({
   const [view, setView] = useState<"list" | "text">("list");
   const [text, setText] = useState("");
   const [parseErr, setParseErr] = useState("");
+  const [applied, setApplied] = useState(false);
   const [filterName, setFilterName] = useState("");
   const [selected, setSelected] = useState("");
 
+  // 仅切换视图时同步文本（表达式编辑为本地状态，不边输入边验证）
   useEffect(() => {
-    if (open && view === "text") setText(filterToText(expr, limit, offset, orders));
-  }, [open, view, expr, limit, offset, orders]);
+    if (open && view === "text") {
+      setText(filterToText(expr, limit, offset, orders));
+      setParseErr("");
+      setApplied(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, view]);
 
   useEffect(() => {
     if (!open) return;
@@ -219,16 +225,23 @@ export function FilterEditor({
 
   const root = expr ?? group("and", []);
 
-  const onTextChange = (t: string) => {
-    setText(t);
-    const res = parseExpr(t);
+  // 管道含 order/take/drop = 高级函数 → 简易模式只读
+  const advanced = (orders?.length ?? 0) > 0 || limit !== undefined || offset !== undefined;
+
+  // 表达式视图：按钮验证并应用
+  const applyText = (): boolean => {
+    const res = parseExpr(text);
     if (res.error) {
       setParseErr(res.error);
-      return;
+      setApplied(false);
+      return false;
     }
     setParseErr("");
     onChangeExpr(res.expr ?? null);
     onStagesChange({ limit: res.limit, offset: res.offset, orders: res.orders });
+    setText(filterToText(res.expr ?? null, res.limit, res.offset, res.orders));
+    setApplied(true);
+    return true;
   };
 
   const saveFilter = () => {
@@ -252,6 +265,11 @@ export function FilterEditor({
     onSaveFilters(filters.map((f) => (f.name === name ? { ...f, pinned: !f.pinned } : f)));
   };
 
+  const finish = () => {
+    if (view === "text" && !applyText()) return; // 无效表达式：停留显示错误
+    onClose();
+  };
+
   return (
     <div className="dialog-mask" onClick={onClose}>
       <div className="dialog dialog-wide" onClick={(e) => e.stopPropagation()}>
@@ -261,93 +279,75 @@ export function FilterEditor({
           <label>视图</label>
           <span style={{ display: "flex", gap: 6 }}>
             <button className={view === "list" ? "primary" : ""} onClick={() => setView("list")}>
-              列表
+              列表（简易）
             </button>
             <button className={view === "text" ? "primary" : ""} onClick={() => setView("text")}>
-              表达式
+              表达式（高级）
             </button>
           </span>
         </div>
 
         {view === "list" ? (
-          <div className="cond-list">
-            <GroupBlock root={root} path={[]} depth={0} onChangeRoot={onChangeExpr} />
-            {expr === null && <div className="cond-empty">无条件 = 显示全部</div>}
-            <div className="row">
-              <label>取前 N 条（take）</label>
-              <input
-                type="number"
-                min={0}
-                placeholder="不限制"
-                value={limit ?? ""}
-                onChange={(e) =>
-                  onStagesChange({
-                    limit: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)),
-                    offset,
-                    orders,
-                  })
-                }
-                style={{ width: 90 }}
-              />
-              <label>跳过前 N 条（drop）</label>
-              <input
-                type="number"
-                min={0}
-                placeholder="0"
-                value={offset ?? ""}
-                onChange={(e) =>
-                  onStagesChange({
-                    limit,
-                    offset: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)),
-                    orders,
-                  })
-                }
-                style={{ width: 90 }}
-              />
-            </div>
-            {(orders?.length ?? 0) > 0 && (
-              <div className="cond-empty">
-                排序由表达式 order() 控制：
-                {orders!.map((o) => ` ${o.field} ${o.desc ? "↓" : "↑"}`).join("，")}
-                （在表达式视图中编辑）
+          <>
+            {advanced && (
+              <div className="advanced-banner">
+                当前筛选含有高级函数（order/take/drop 管道）——请在「表达式」模式下编辑
               </div>
             )}
-          </div>
+            <div
+              className="cond-list"
+              style={advanced ? { opacity: 0.5, pointerEvents: "none" } : undefined}
+            >
+              <GroupBlock root={root} path={[]} depth={0} onChangeRoot={onChangeExpr} />
+              {expr === null && <div className="cond-empty">无条件 = 显示全部</div>}
+              <div className="row">
+                <label>排序（隐含拼接为表达式末尾的 order()）</label>
+                <select
+                  disabled={advanced}
+                  value={`${sort.field}:${sort.desc}`}
+                  onChange={(e) => {
+                    const [field, desc] = e.target.value.split(":");
+                    onSortChange({ field, desc: desc === "true" });
+                  }}
+                >
+                  <option value="size:true">大小（大→小）</option>
+                  <option value="size:false">大小（小→大）</option>
+                  <option value="mtime:true">时间（新→旧）</option>
+                  <option value="mtime:false">时间（旧→新）</option>
+                  <option value="month:true">月份（新→旧）</option>
+                  <option value="month:false">月份（旧→新）</option>
+                </select>
+              </div>
+            </div>
+          </>
         ) : (
           <div className="expr-text-view">
             <textarea
               value={text}
-              onChange={(e) => onTextChange(e.target.value)}
+              onChange={(e) => {
+                setText(e.target.value);
+                setApplied(false);
+              }}
               placeholder={
                 "例：thumb = true AND age >= 90 | order(size, desc) | take(100)\n例：size > 104857600 | drop(10)  （除去最大的10个）\n例：biz in pic,video OR category ~ marketface\n字段：biz/sub/category/month/age/size/md5/reason/thumb/temp\n操作符：= != ~ in > >= < <=\n管道函数：order(field, asc|desc) · take(n) 取前 n · drop(n) 跳过前 n"
               }
-              rows={5}
+              rows={6}
             />
             {parseErr ? (
               <div className="parse-err">✗ {parseErr}</div>
-            ) : (
-              <div className="parse-ok">✓ 表达式有效</div>
-            )}
+            ) : applied ? (
+              <div className="parse-ok">✓ 已应用</div>
+            ) : null}
+            <div className="row">
+              <button className="primary" onClick={applyText}>
+                验证并应用
+              </button>
+              <span style={{ color: "var(--text-dim)", fontSize: 12 }}>
+                管道函数可放在任意位置（函数式组合）；order 决定 take/drop 的作用顺序
+              </span>
+            </div>
           </div>
         )}
-
-        <div className="row">
-          <label>排序（随筛选器保存）</label>
-          <select
-            value={`${sort.field}:${sort.desc}`}
-            onChange={(e) => {
-              const [field, desc] = e.target.value.split(":");
-              onSortChange({ field, desc: desc === "true" });
-            }}
-          >
-            <option value="size:true">大小（大→小）</option>
-            <option value="size:false">大小（小→大）</option>
-            <option value="mtime:true">时间（新→旧）</option>
-            <option value="mtime:false">时间（旧→新）</option>
-            <option value="month:true">月份（新→旧）</option>
-            <option value="month:false">月份（旧→新）</option>
-          </select>
-        </div>
 
         <div className="row">
           <label>保存当前为筛选器</label>
@@ -389,7 +389,7 @@ export function FilterEditor({
         <div className="actions">
           <button onClick={() => onChangeExpr(null)}>清空条件</button>
           <button onClick={onClose}>取消</button>
-          <button className="primary" onClick={onClose}>
+          <button className="primary" onClick={finish}>
             完成
           </button>
         </div>

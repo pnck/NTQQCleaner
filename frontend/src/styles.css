@@ -547,6 +547,16 @@ button.chip {
   padding: 2px 0;
 }
 
+.advanced-banner {
+  background: rgba(202, 138, 4, 0.15);
+  border: 1px solid rgba(202, 138, 4, 0.5);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 6px 10px;
+  margin: 4px 0;
+}
+
 .expr-text-view textarea {
   width: 100%;
   font: 12px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
