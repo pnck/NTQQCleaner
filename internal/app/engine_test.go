@@ -257,6 +257,17 @@ func TestBackendScanQueryPreviewClean(t *testing.T) {
 		t.Fatalf("preview path %s: %v", p, err)
 	}
 
+	// 索引内每一条目都必须可预览/揭示：keep 级（report-only）条目
+	// 如 marketface/personal_emoji（门控关闭时）此前被清理白名单
+	// 误拒（"not whitelisted"），「在文件夹中显示」报 Unhandled
+	// Promise Rejection。可清性门控只属于 Clean，不属于预览。
+	for i := range outcome(backend).Entries {
+		if _, err := backend.ResolvePreview(i); err != nil {
+			t.Fatalf("entry %d (%s) must resolve for preview/reveal: %v",
+				i, outcome(backend).Entries[i].Path, err)
+		}
+	}
+
 	// Clean the safe tier (the OriTemp) into a backup dir.
 	safeIDs := []int{}
 	for i, tier := range outcome(backend).Tiers {

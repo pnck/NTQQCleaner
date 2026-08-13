@@ -507,8 +507,11 @@ func (b *Backend) previewURL(id int) string {
 	return b.previewBase + "/preview/" + strconv.Itoa(id)
 }
 
-// ResolvePreview maps a preview ID to the absolute file path, re-checking
-// the whitelist (docs/07 §4.1: 白名单校验在 handler 内).
+// ResolvePreview maps a preview ID to the absolute file path. The path
+// comes from the scan index (server-side, not frontend input); it is
+// re-checked structurally (roots/traversal/blacklist, docs/07 §4.1) but
+// NOT against cleanability gates — keep-tier (report-only) entries must
+// remain viewable/revealable.
 func (b *Backend) ResolvePreview(id int) (string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -517,7 +520,7 @@ func (b *Backend) ResolvePreview(id int) (string, error) {
 	}
 	e := b.outcome.Entries[id]
 	roots := b.outcomeRootsLocked()
-	if err := clean.VerifyPath(b.outcome.K, e.Path, roots, b.cfg); err != nil {
+	if err := clean.VerifyStructural(b.outcome.K, e.Path, roots); err != nil {
 		return "", err
 	}
 	if st, err := os.Stat(e.Path); err != nil || st.IsDir() {

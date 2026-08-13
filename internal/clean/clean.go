@@ -136,9 +136,10 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	return res, nil
 }
 
-// VerifyPath enforces the redline path rules on an absolute path:
-// under an allowed nt_data root, whitelisted by structure, not blacklisted.
-func VerifyPath(k rules.Knowledge, abs string, allowedRoots []string, cfg rules.Config) error {
+// structuralRel enforces the structural red lines on an absolute path —
+// under an allowed nt_data root, no traversal, not blacklisted (状态目录/
+// db 后缀) — and returns the root-relative path.
+func structuralRel(k rules.Knowledge, abs string, allowedRoots []string) (string, error) {
 	cleaned := filepath.Clean(abs)
 	var under string
 	for _, root := range allowedRoots {
@@ -149,17 +150,31 @@ func VerifyPath(k rules.Knowledge, abs string, allowedRoots []string, cfg rules.
 		}
 	}
 	if under == "" {
-		return fmt.Errorf("outside allowed roots")
+		return "", fmt.Errorf("outside allowed roots")
 	}
 	rel, err := filepath.Rel(under, cleaned)
-	if err != nil {
-		return fmt.Errorf("bad path: %w", err)
-	}
-	if strings.HasPrefix(rel, "..") {
-		return fmt.Errorf("path traversal blocked")
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "", fmt.Errorf("path traversal blocked")
 	}
 	if rules.Blacklisted(k, cleaned) {
-		return fmt.Errorf("blacklisted path")
+		return "", fmt.Errorf("blacklisted path")
+	}
+	return rel, nil
+}
+
+// VerifyStructural enforces the structural red lines only (no category
+// gates). 预览/揭示用：可清性门控（emoji 等类别开关）不应阻止查看
+// keep 级（report-only）条目 —— 路径本身来自扫描索引，非前端输入。
+func VerifyStructural(k rules.Knowledge, abs string, allowedRoots []string) error {
+	_, err := structuralRel(k, abs, allowedRoots)
+	return err
+}
+
+// VerifyPath = VerifyStructural + 白名单（删除前的逐文件重验，docs/06 §5b）。
+func VerifyPath(k rules.Knowledge, abs string, allowedRoots []string, cfg rules.Config) error {
+	rel, err := structuralRel(k, abs, allowedRoots)
+	if err != nil {
+		return err
 	}
 	if !rules.Whitelisted(k, rel, cfg) {
 		return fmt.Errorf("not whitelisted")

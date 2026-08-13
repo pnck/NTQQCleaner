@@ -9,6 +9,7 @@ interface Props {
   row: FileRow | null;
   rows: FileRow[];
   onNavigate: (row: FileRow) => void;
+  onToast: (msg: string) => void;
 }
 
 // 大文件门限只针对「原文件」中的图片：图片无法流式，>50MB 需显式确认；
@@ -45,7 +46,7 @@ function playable(row: FileRow): boolean {
   );
 }
 
-export function PreviewPanel({ row, rows, onNavigate }: Props) {
+export function PreviewPanel({ row, rows, onNavigate, onToast }: Props) {
   // 初始态 = 缩略图 + 叠层图标；点击后切换为播放器/原文件（视频/音频即自动播放）。
   // 状态按 row.id 记录，切行时自动回到初始态。
   const [played, setPlayed] = useState<number | null>(null);
@@ -69,6 +70,9 @@ export function PreviewPanel({ row, rows, onNavigate }: Props) {
   const src = full ? row.oriUrl : row.thumbUrl;
   const bigImageGate = kind === "img" && full && row.size > BIG_IMAGE && forceBig !== row.id;
   const showOverlay = hasThumb && hasOri && !full;
+
+  const reveal = () =>
+    void api.reveal(row.id).catch((e) => onToast(`无法在文件夹中显示：${e}`));
 
   return (
     <aside className="preview">
@@ -108,7 +112,7 @@ export function PreviewPanel({ row, rows, onNavigate }: Props) {
           <div className="big-warn">
             此类型不支持内嵌预览
             <br />
-            <button onClick={() => void api.reveal(row.id)}>在文件夹中显示</button>
+            <button onClick={reveal}>在文件夹中显示</button>
           </div>
         ) : (
           <img src={src} draggable={false} alt={row.md5} />
@@ -146,7 +150,7 @@ export function PreviewPanel({ row, rows, onNavigate }: Props) {
           <span className="selectable">{row.md5 || "—"}</span>
         </div>
         <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-          <button onClick={() => void api.reveal(row.id)}>在文件夹中显示</button>
+          <button onClick={reveal}>在文件夹中显示</button>
         </div>
       </div>
     </aside>

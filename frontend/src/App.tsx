@@ -490,6 +490,7 @@ export default function App() {
           row={rows.find((r) => r.id === selected) ?? null}
           rows={rows}
           onNavigate={(r) => setSelected(r.id)}
+          onToast={setToast}
         />
       </div>
       <BottomBar
