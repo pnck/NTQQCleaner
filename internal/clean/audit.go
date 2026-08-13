@@ -1,18 +1,16 @@
 package clean
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"time"
 )
 
 // auditEntry is one JSONL record written for every deleted file
-// (docs/06 §3: deleting without a record is a bug).
+// (docs/06 §3: deleting without a record is a bug)。SHA256 字段保留
+// 为可选（默认不计算——见 clean.go deleteOne 的产品决策注释）。
 type auditEntry struct {
 	Time       string `json:"time"`
 	Action     string `json:"action"` // move | remove
@@ -50,19 +48,4 @@ func (a *auditLogger) Log(e auditEntry) error {
 	}
 	_, err = fmt.Fprintf(a.f, "%s\n", b)
 	return err
-}
-
-// sha256File hashes a file's content (used when deleting without backup,
-// so the record includes a content checksum for forensic recovery).
-func sha256File(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
 }

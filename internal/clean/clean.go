@@ -53,8 +53,8 @@ type Result struct {
 
 // Run executes the deletion pass. It refuses to run at all unless Force and
 // Confirmed are set and QQ is not running; per-file it re-verifies the
-// whitelist/blacklist, moves to the backup dir (or hashes + removes), and
-// appends an audit record for every single file.
+// whitelist/blacklist, moves to the backup dir (or removes), and appends an
+// audit record for every single file.
 func Run(ctx context.Context, req Request) (Result, error) {
 	if !req.Force {
 		return Result{}, ErrNotForced
@@ -62,11 +62,11 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if !req.Confirmed {
 		return Result{}, ErrNotConfirmed
 	}
-	if qqRunningFunc() {
-		return Result{}, ErrQQRunning
-	}
 	if req.AuditLog == "" {
 		return Result{}, fmt.Errorf("audit log path is required (redline: no unrecorded deletion)")
+	}
+	if qqRunningFunc() {
+		return Result{}, qqRunningError()
 	}
 	now := req.Now
 	if now.IsZero() {
@@ -90,7 +90,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		if time.Since(lastQQCheck) >= 30*time.Second {
 			if qqRunningFunc() {
 				res.Errors = append(res.Errors, "QQ started during cleanup; aborting")
-				return res, ErrQQRunning
+				return res, qqRunningError()
 			}
 			lastQQCheck = time.Now()
 		}
@@ -177,14 +177,13 @@ func deleteOne(audit *auditLogger, f classify.FileEntry, backupDir, tier, reason
 		}
 		entry.Action, entry.BackupPath = "move", dst
 	} else {
-		sum, err := sha256File(f.Path)
-		if err != nil {
-			return err
-		}
+		// 产品决策：删除前不再计算 SHA-256（对已删文件无恢复价值，
+		// 且大文件全量哈希拖慢清理）；审计日志记录路径/大小/时间/分级。
+		// 需要可恢复性请配置备份目录（移动而非删除）。
 		if err := os.Remove(f.Path); err != nil {
 			return err
 		}
-		entry.Action, entry.SHA256 = "remove", sum
+		entry.Action = "remove"
 	}
 	return audit.Log(entry)
 }

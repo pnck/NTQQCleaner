@@ -348,29 +348,34 @@ export default function App() {
               </button>
               {moreOpen && (
                 <div className="dropdown">
-                  {allFs.map((f) => (
-                    <div key={f.name} className="dropdown-item">
-                      <span style={{ flex: 1 }} onClick={() => applyFilter(f)}>
-                        {f.name}
-                        {f.builtin ? "" : "（我的）"}
-                        {f.pinned ? " ★" : ""}
-                      </span>
-                      {!f.builtin && (
+                  {/* 更多 = 工具栏（内置+置顶）以外的筛选器 */}
+                  {userFilters.filter((f) => !f.pinned).length === 0 && (
+                    <div className="dropdown-item" style={{ color: "var(--text-dim)", cursor: "default" }}>
+                      暂无更多筛选器（未置顶的自定义筛选器会出现在这里）
+                    </div>
+                  )}
+                  {userFilters
+                    .filter((f) => !f.pinned)
+                    .map((f) => (
+                      <div key={f.name} className="dropdown-item">
+                        <span style={{ flex: 1 }} onClick={() => applyFilter(f)}>
+                          {f.name}
+                        </span>
                         <button
                           className="mini"
                           onClick={() => {
                             const next = userFilters.map((x) =>
-                              x.name === f.name ? { ...x, pinned: !x.pinned } : x,
+                              x.name === f.name ? { ...x, pinned: true } : x,
                             );
                             setUserFilters(next);
                             saveUserFilters(next);
                           }}
+                          title="固定到工具栏直选"
                         >
-                          {f.pinned ? "取消置顶" : "置顶"}
+                          置顶
                         </button>
-                      )}
-                    </div>
-                  ))}
+                      </div>
+                    ))}
                 </div>
               )}
             </div>

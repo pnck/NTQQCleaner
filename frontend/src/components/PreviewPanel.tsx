@@ -11,7 +11,7 @@ interface Props {
   onNavigate: (row: FileRow) => void;
 }
 
-// 大文件门限只针对「原图」：图片无法流式，>50MB 需显式确认；
+// 大文件门限只针对「原文件」中的图片：图片无法流式，>50MB 需显式确认；
 // 视频/音频用 preload="none"，播放器立即渲染、点击播放才拉流。
 const BIG_IMAGE = 50 << 20;
 
@@ -22,7 +22,7 @@ const AUDIO_EXTS = ["amr", "silk", "mp3", "wav", "m4a", "aac"];
 type Kind = "img" | "video" | "audio" | "card";
 
 // 依据「选中的那个源」判断渲染方式：缩略图一律是图片；
-// 原图按扩展名/业务类型分派。
+// 原文件按扩展名/业务类型分派。
 function kindOf(row: FileRow, useOri: boolean): Kind {
   if (!useOri) return "img";
   const ext = row.ext.toLowerCase();
@@ -33,7 +33,9 @@ function kindOf(row: FileRow, useOri: boolean): Kind {
 }
 
 export function PreviewPanel({ row, rows, onNavigate }: Props) {
-  const [useOri, setUseOri] = useState(false);
+  // 三态：null = 自动（视频/语音/动图默认原文件，其余默认缩略图），
+  // true/false = 用户显式切换（此前布尔值无法覆盖自动默认 → 缩略图按钮失效）
+  const [oriMode, setOriMode] = useState<boolean | null>(null);
   const [forceBig, setForceBig] = useState(false);
 
   if (!row) {
@@ -49,11 +51,15 @@ export function PreviewPanel({ row, rows, onNavigate }: Props) {
 
   const hasThumb = row.thumbUrl !== "";
   const hasOri = row.oriUrl !== "";
-  // 视频/语音默认直接给原文件（preload=none 不产生流量）；图片默认缩略图
-  const effectiveOri = hasOri && (useOri || (!hasThumb && hasOri) || row.biz === "video" || row.biz === "ptt");
+  const defaultOri =
+    row.biz === "video" ||
+    row.biz === "ptt" ||
+    ["gif", "webp"].includes(row.ext.toLowerCase());
+  const effectiveOri = hasOri && (oriMode === true || (oriMode === null && (defaultOri || !hasThumb)));
   const kind = kindOf(row, effectiveOri);
   const src = effectiveOri ? row.oriUrl : row.thumbUrl;
   const bigImageGate = kind === "img" && effectiveOri && row.size > BIG_IMAGE && !forceBig;
+  const canToggle = hasThumb && hasOri;
 
   return (
     <aside className="preview">
@@ -69,36 +75,26 @@ export function PreviewPanel({ row, rows, onNavigate }: Props) {
         </span>
       </div>
 
-      {hasThumb && hasOri && (
-        <div className="nav">
-          <button
-            className={!effectiveOri ? "primary" : ""}
-            onClick={() => setUseOri(false)}
-            title="查看缩略图（秒开）"
-          >
-            缩略图
-          </button>
-          <button
-            className={effectiveOri ? "primary" : ""}
-            onClick={() => setUseOri(true)}
-            title="查看原文件（动图/视频/原图）"
-          >
-            原图
-          </button>
-        </div>
-      )}
-
       <div className="media">
+        {canToggle && (
+          <button
+            className="preview-chip"
+            onClick={() => setOriMode(!effectiveOri)}
+            title={effectiveOri ? "当前显示原文件，点击切换为缩略图" : "当前显示缩略图，点击切换为原文件"}
+          >
+            {effectiveOri ? "原文件 ⇄" : "缩略图 ⇄"}
+          </button>
+        )}
         {bigImageGate ? (
           <div className="big-warn">
-            原图 {fmtSize(row.size)}，不自动加载。
+            原文件 {fmtSize(row.size)}，不自动加载。
             <br />
             <button onClick={() => setForceBig(true)}>仍然加载</button>
           </div>
         ) : kind === "video" ? (
-          <video src={src} controls preload="none" />
+          <video key={src} src={src} controls preload="none" />
         ) : kind === "audio" ? (
-          <audio src={src} controls preload="none" />
+          <audio key={src} src={src} controls preload="none" />
         ) : kind === "card" ? (
           <div className="big-warn">
             此类型不支持内嵌预览

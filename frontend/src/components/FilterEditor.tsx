@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { filterToText, group, leaf, parseExpr, updateTree } from "../expression";
 import type { Condition, Expr, Sort } from "../types";
-import { FILTER_FIELDS, OPS_LABEL, allFilters, fieldDef, type NamedFilter } from "../filters";
+import {
+  BUILTIN_FILTERS,
+  FILTER_FIELDS,
+  OPS_LABEL,
+  fieldDef,
+  type NamedFilter,
+} from "../filters";
 
 interface Props {
   open: boolean;
@@ -201,6 +207,7 @@ export function FilterEditor({
   const [applied, setApplied] = useState(false);
   const [filterName, setFilterName] = useState("");
   const [selected, setSelected] = useState("");
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
 
   // 仅切换视图时同步文本（表达式编辑为本地状态，不边输入边验证）
   useEffect(() => {
@@ -361,27 +368,47 @@ export function FilterEditor({
         </div>
 
         <div className="filter-list">
-          <h3>筛选器列表</h3>
-          {allFilters(filters).map((f) => (
+          <h3>筛选器列表（自定义的可拖拽排序，顺序即工具栏顺序）</h3>
+          {BUILTIN_FILTERS.map((f) => (
             <div key={f.name} className="filter-item">
+              <span style={{ flex: 1 }}>{f.name}（内置）</span>
+              <button className="mini" onClick={() => onApply(f)}>
+                应用
+              </button>
+            </div>
+          ))}
+          {filters.map((f, i) => (
+            <div
+              key={f.name}
+              className={`filter-item${dragIdx === i ? " dragging" : ""}`}
+              draggable
+              onDragStart={() => setDragIdx(i)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => {
+                if (dragIdx === null || dragIdx === i) return;
+                const next = [...filters];
+                const [moved] = next.splice(dragIdx, 1);
+                next.splice(i, 0, moved);
+                onSaveFilters(next);
+                setDragIdx(null);
+              }}
+            >
+              <span className="drag-handle" title="拖拽排序">
+                ⠿
+              </span>
               <span style={{ flex: 1 }}>
                 {f.name}
-                {f.builtin ? "" : "（我的）"}
                 {f.pinned ? " ★" : ""}
               </span>
               <button className="mini" onClick={() => onApply(f)}>
                 应用
               </button>
-              {!f.builtin && (
-                <button className="mini" onClick={() => togglePin(f.name)}>
-                  {f.pinned ? "取消置顶" : "置顶"}
-                </button>
-              )}
-              {!f.builtin && (
-                <button className="mini" onClick={() => deleteFilter(f.name)}>
-                  删除
-                </button>
-              )}
+              <button className="mini" onClick={() => togglePin(f.name)}>
+                {f.pinned ? "取消置顶" : "置顶"}
+              </button>
+              <button className="mini" onClick={() => deleteFilter(f.name)}>
+                删除
+              </button>
             </div>
           ))}
         </div>

@@ -2,9 +2,8 @@ package clean
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,7 +47,8 @@ func TestRunRequiresForceAndConfirm(t *testing.T) {
 
 func TestRunRefusesWhileQQRunning(t *testing.T) {
 	setQQRunning(t, true)
-	if _, err := Run(context.Background(), gateRequest(true, true)); err != ErrQQRunning {
+	_, err := Run(context.Background(), gateRequest(true, true))
+	if err == nil || !errors.Is(err, ErrQQRunning) {
 		t.Fatalf("got %v want ErrQQRunning", err)
 	}
 }
@@ -105,13 +105,13 @@ func TestRunMovesToBackup(t *testing.T) {
 	}
 }
 
-// TestRunRemoveWithSHA verifies the hash-then-delete path when no backup
-// dir is configured.
-func TestRunRemoveWithSHA(t *testing.T) {
+// TestRunRemoveLogsPath verifies the delete path without a backup dir:
+// audit records the path only（产品决策：不再计算 SHA-256）。
+func TestRunRemoveLogsPath(t *testing.T) {
 	setQQRunning(t, false)
 	base := t.TempDir()
 	src := filepath.Join(base, "Pic", "2023-01", "Thumb", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01_720.png")
-	content := []byte("content to hash")
+	content := []byte("content")
 	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -141,9 +141,8 @@ func TestRunRemoveWithSHA(t *testing.T) {
 	if _, err := os.Stat(src); !os.IsNotExist(err) {
 		t.Fatal("file still exists")
 	}
-	sum := sha256.Sum256(content)
 	line := readAuditLine(t, audit)
-	if line.Action != "remove" || line.SHA256 != hex.EncodeToString(sum[:]) {
+	if line.Action != "remove" || line.Path != src || line.SHA256 != "" {
 		t.Fatalf("audit: %+v", line)
 	}
 }
