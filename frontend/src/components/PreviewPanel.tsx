@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { api } from "../api";
 import { explainReason } from "../reasons";
 import type { FileRow } from "../types";
@@ -32,26 +32,6 @@ function kindOf(row: FileRow, useOri: boolean): Kind {
   return "card";
 }
 
-// 复制到剪贴板：优先 Clipboard API，降级 execCommand（老 WebView 兼容）。
-function copyText(text: string) {
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).catch(() => legacyCopy(text));
-  } else {
-    legacyCopy(text);
-  }
-}
-
-function legacyCopy(text: string) {
-  const ta = document.createElement("textarea");
-  ta.value = text;
-  ta.style.position = "fixed";
-  ta.style.opacity = "0";
-  document.body.appendChild(ta);
-  ta.select();
-  document.execCommand("copy");
-  ta.remove();
-}
-
 // 可「播放」的媒体（视频/语音/动图）叠 ▶；静态图片叠 ⤢（查看原文件）。
 function playable(row: FileRow): boolean {
   const ext = row.ext.toLowerCase();
@@ -68,8 +48,6 @@ export function PreviewPanel({ row, rows, onNavigate }: Props) {
   // 状态按 row.id 记录，切行时自动回到初始态。
   const [played, setPlayed] = useState<number | null>(null);
   const [forceBig, setForceBig] = useState<number | null>(null);
-  const [copied, setCopied] = useState(false);
-  const copyTimer = useRef<number | null>(null);
 
   if (!row) {
     return (
@@ -89,13 +67,6 @@ export function PreviewPanel({ row, rows, onNavigate }: Props) {
   const src = full ? row.oriUrl : row.thumbUrl;
   const bigImageGate = kind === "img" && full && row.size > BIG_IMAGE && forceBig !== row.id;
   const showOverlay = hasThumb && hasOri && !full;
-
-  const onCopyMd5 = () => {
-    copyText(row.md5);
-    setCopied(true);
-    if (copyTimer.current) window.clearTimeout(copyTimer.current);
-    copyTimer.current = window.setTimeout(() => setCopied(false), 1500);
-  };
 
   return (
     <aside className="preview">
@@ -166,20 +137,11 @@ export function PreviewPanel({ row, rows, onNavigate }: Props) {
         </div>
         <div className="kv">
           <span className="k">修改时间</span>
-          <span>{fmtTime(row.mtime)}</span>
+          <span className="selectable">{fmtTime(row.mtime)}</span>
         </div>
         <div className="kv">
           <span className="k">md5</span>
-          {row.md5 ? (
-            <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-              <span className="selectable">{row.md5}</span>
-              <button className="mini" onClick={onCopyMd5} title="复制 md5">
-                {copied ? "已复制" : "复制"}
-              </button>
-            </span>
-          ) : (
-            <span>—</span>
-          )}
+          <span className="selectable">{row.md5 || "—"}</span>
         </div>
         <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
           <button onClick={() => void api.reveal(row.id)}>在文件夹中显示</button>
