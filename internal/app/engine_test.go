@@ -656,27 +656,27 @@ func TestSelectAssociated(t *testing.T) {
 	}
 
 	// ori：两个 MD5A 缩略图 → 同一张原图（去重）。
-	oris := out.selectAssociated(thumbs, "ori")
+	oris := out.selectAssociated(thumbs, []string{"ori"})
 	if len(oris) != 1 || oris[0] != oriID {
 		t.Fatalf("select(ori) on thumbs: got %v want [%d]", oris, oriID)
 	}
 	// ori：原文件保留自身。
-	if got := out.selectAssociated([]int{oriID}, "ori"); len(got) != 1 || got[0] != oriID {
+	if got := out.selectAssociated([]int{oriID}, []string{"ori"}); len(got) != 1 || got[0] != oriID {
 		t.Fatalf("select(ori) on ori: got %v want self", got)
 	}
-	// ori：无配对（marketface 无 md5）→ 移除。
-	if got := out.selectAssociated([]int{market}, "ori"); len(got) != 0 {
+	// ori：无配对（marketface 无 md5）→ 无贡献。
+	if got := out.selectAssociated([]int{market}, []string{"ori"}); len(got) != 0 {
 		t.Fatalf("select(ori) on unpaired: got %v want empty", got)
 	}
 
 	// thumb：原文件 → 其全部缩略图（多尺寸）。
-	got := out.selectAssociated([]int{oriID}, "thumb")
+	got := out.selectAssociated([]int{oriID}, []string{"thumb"})
 	if len(got) != 2 || got[0] != thumbs[0] || got[1] != thumbs[1] {
 		t.Fatalf("select(thumb) on ori: got %v want %v", got, thumbs)
 	}
 
 	// dup：60KB 组任意一员 → 全组 3 份（含自身，跨账号）。
-	dups := out.selectAssociated([]int{dupF}, "dup")
+	dups := out.selectAssociated([]int{dupF}, []string{"dup"})
 	if len(dups) != 3 {
 		t.Fatalf("select(dup) on 60KB member: got %d want 3", len(dups))
 	}
@@ -690,6 +690,29 @@ func TestSelectAssociated(t *testing.T) {
 		t.Fatalf("select(dup) must keep the listed file itself, got %v want id %d", dups, dupF)
 	}
 
+	// 正交并集：select(ori, thumb) 在缩略图上 → {缩略图自身 ∪ 原图} = 整族。
+	family := out.selectAssociated(thumbs, []string{"ori", "thumb"})
+	if len(family) != 3 { // 2 thumbs + 1 ori（去重）
+		t.Fatalf("select(ori,thumb) family: got %d want 3: %v", len(family), family)
+	}
+	for _, want := range append(append([]int{}, thumbs...), oriID) {
+		found := false
+		for _, d := range family {
+			if d == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("select(ori,thumb) missing id %d: %v", want, family)
+		}
+	}
+	// 正交并集：select(thumb, dup) 在 60KB 组一员上 → 全组 3 份（组内
+	// 都是缩略图且无配对 ori，thumb 维度贡献自身）。
+	all := out.selectAssociated([]int{dupF}, []string{"thumb", "dup"})
+	if len(all) != 3 {
+		t.Fatalf("select(thumb,dup): got %d want 3", len(all))
+	}
+
 	// 经 Filter 走完整管道：md5F 的筛选 + select(dup) → 全组 3 条。
 	backend := NewBackend("", nil)
 	cap := newCaptureEmitter()
@@ -698,7 +721,7 @@ func TestSelectAssociated(t *testing.T) {
 		t.Fatal(err)
 	}
 	cap.waitFor(t, EvDone)
-	stats, err := backend.GetStats(Filter{Expr: leaf("md5", "eq", testutil.MD5F), Select: "dup"})
+	stats, err := backend.GetStats(Filter{Expr: leaf("md5", "eq", testutil.MD5F), Select: []string{"dup"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -706,21 +729,20 @@ func TestSelectAssociated(t *testing.T) {
 		t.Fatalf("select(dup) via Filter: got %d want 3", stats.Count)
 	}
 	// 缩略图筛选 + select(ori)：只有 MD5A 有原图 → 1 条。
-	oriStats, err := backend.GetStats(Filter{Expr: leaf("thumb", "eq", "true"), Select: "ori"})
+	oriStats, err := backend.GetStats(Filter{Expr: leaf("thumb", "eq", "true"), Select: []string{"ori"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if oriStats.Count != 1 {
 		t.Fatalf("select(ori) via Filter: got %d want 1 (only MD5A has an Ori)", oriStats.Count)
 	}
-	// 未知 select 类别：fail-closed（空集，与未知字段/操作符一致）。
-	// 前端解析器会直接报错；这里的空集是 API 误用时的安全兜底。
-	noop, err := backend.GetStats(Filter{Expr: leaf("thumb", "eq", "true"), Select: "nonsense"})
+	// 未知 select 类别：无贡献（前端解析器严格校验；这里是 API 误用兜底）。
+	noop, err := backend.GetStats(Filter{Expr: leaf("thumb", "eq", "true"), Select: []string{"nonsense"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if noop.Count != 0 {
-		t.Fatalf("unknown select kind must fail closed: got %d want 0", noop.Count)
+		t.Fatalf("unknown select kind must contribute nothing: got %d want 0", noop.Count)
 	}
 }
 

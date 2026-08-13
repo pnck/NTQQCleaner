@@ -242,7 +242,7 @@ func (o *Outcome) matchedIDs(f Filter) []int {
 // order(), callers sort by the UI sort field first (QueryRows) or leave
 // the natural order (aggregates).
 func (o *Outcome) applyStages(ids []int, f Filter) []int {
-	if f.Select != "" {
+	if len(f.Select) > 0 {
 		ids = o.selectAssociated(ids, f.Select)
 	}
 	for _, ord := range f.Orders {
@@ -261,16 +261,17 @@ func (o *Outcome) applyStages(ids []int, f Filter) []int {
 }
 
 // selectAssociated 把结果集替换为其中文件关联的另一组文件（docs/04 §3
-// 管道 select()）：
+// 管道 select()）。kinds 是正交的展开维度，取**并集**（去重）：
 //   - ori   ：缩略图 → 其原文件；原文件保留自身；无配对（无 md5/无 Ori）
-//     的文件移除
-//   - thumb ：原文件 → 其全部缩略图（多尺寸）；缩略图保留自身；无配对的移除
+//     的文件对本维度无贡献
+//   - thumb ：原文件 → 其全部缩略图（多尺寸）；缩略图保留自身
 //   - dup   ：展开为内容哈希组（字节级相同的全部文件，含列表内的自身）；
-//     无哈希（大小唯一）的文件移除
+//     无哈希（大小唯一）的文件对本维度无贡献
+// 未知类别视为无贡献（前端解析器已严格校验，这里防 API 误用）。
 //
 // 关联依据：ori/thumb 走文件名 md5 配对（同名关系）；dup 走二次扫描的
 // SHA-256 内容组（同名 ≠ 同内容，同内容可能不同名）。
-func (o *Outcome) selectAssociated(ids []int, kind string) []int {
+func (o *Outcome) selectAssociated(ids []int, kinds []string) []int {
 	seen := make(map[int]bool, len(ids)*2)
 	var out []int
 	add := func(id int) {
@@ -281,29 +282,31 @@ func (o *Outcome) selectAssociated(ids []int, kind string) []int {
 	}
 	for _, id := range ids {
 		e := o.Entries[id]
-		switch kind {
-		case "ori":
-			if strings.EqualFold(e.Sub, "Ori") {
-				add(id)
-				continue
-			}
-			if ori, ok := o.OriID[e.MD5]; ok {
-				add(ori)
-			}
-		case "thumb":
-			if e.IsThumb {
-				add(id)
-				continue
-			}
-			for _, t := range o.ThumbIDs[e.MD5] {
-				add(t)
-			}
-		case "dup":
-			if e.ContentHash == "" {
-				continue
-			}
-			for _, d := range o.ContentIndex[e.ContentHash] {
-				add(d)
+		for _, kind := range kinds {
+			switch kind {
+			case "ori":
+				if strings.EqualFold(e.Sub, "Ori") {
+					add(id)
+					continue
+				}
+				if ori, ok := o.OriID[e.MD5]; ok {
+					add(ori)
+				}
+			case "thumb":
+				if e.IsThumb {
+					add(id)
+					continue
+				}
+				for _, t := range o.ThumbIDs[e.MD5] {
+					add(t)
+				}
+			case "dup":
+				if e.ContentHash == "" {
+					continue
+				}
+				for _, d := range o.ContentIndex[e.ContentHash] {
+					add(d)
+				}
 			}
 		}
 	}

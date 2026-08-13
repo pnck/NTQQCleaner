@@ -54,7 +54,7 @@ export default function App() {
 
   // 筛选状态 = 表达式树 + select/order/take/drop 管道（左栏/快捷控件/筛选器编辑器共享）
   const [expr, setExpr] = useState<Expr | null>(null);
-  const [sel, setSel] = useState<string | undefined>(undefined);
+  const [sel, setSel] = useState<string[]>([]);
   const [orders, setOrders] = useState<{ field: string; desc: boolean }[]>([]);
   const [limit, setLimit] = useState<number | undefined>(undefined);
   const [offset, setOffset] = useState<number | undefined>(undefined);
@@ -166,7 +166,7 @@ export default function App() {
   const applyFilter = useCallback((f: NamedFilter) => {
     setExpr(f.expr ? JSON.parse(JSON.stringify(f.expr)) : null);
     setSort({ ...f.sort });
-    setSel(f.select);
+    setSel(f.select ?? []);
     setOrders((f.orders ?? []).map((o) => ({ ...o })));
     setLimit(f.limit);
     setOffset(f.offset);
@@ -178,7 +178,7 @@ export default function App() {
   const resetFilter = useCallback(() => {
     setExpr(null);
     setSort({ ...DEFAULT_SORT });
-    setSel(undefined);
+    setSel([]);
     setOrders([]);
     setLimit(undefined);
     setOffset(undefined);
@@ -191,13 +191,13 @@ export default function App() {
       limit?: number;
       offset?: number;
       orders?: { field: string; desc: boolean }[];
-      select?: string;
+      select?: string[];
     }) => {
       setAppliedFilter("");
       setLimit(s.limit);
       setOffset(s.offset);
       setOrders(s.orders ?? []);
-      setSel(s.select);
+      setSel(s.select ?? []);
     },
     [],
   );

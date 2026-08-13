@@ -11,12 +11,12 @@ interface Props {
   limit?: number;
   offset?: number;
   orders?: { field: string; desc: boolean }[];
-  select?: string;
+  select?: string[];
   onStagesChange: (s: {
     limit?: number;
     offset?: number;
     orders?: { field: string; desc: boolean }[];
-    select?: string;
+    select?: string[];
   }) => void;
   sort: Sort;
   onSortChange: (s: Sort) => void;
@@ -26,12 +26,12 @@ interface Props {
   onClose: () => void;
 }
 
-// select() 管道的可选项：把结果集替换为其中文件关联的另一组文件。
-const SELECT_OPTIONS = [
-  { value: "", label: "不展开（仅当前列表）" },
-  { value: "ori", label: "展开为原文件（缩略图→其原图/原文件）" },
-  { value: "thumb", label: "展开为缩略图（原文件→其全部缩略图）" },
-  { value: "dup", label: "展开为重复副本（内容相同的全部文件）" },
+// select() 管道的三个正交维度（可多选，并集展开）：把结果集替换为其中
+// 文件关联的另一组文件。
+const SELECT_KINDS = [
+  { value: "ori", label: "原文件" },
+  { value: "thumb", label: "缩略图" },
+  { value: "dup", label: "重复副本" },
 ] as const;
 
 // ---- 条件叶子行 ----
@@ -386,17 +386,35 @@ export function FilterEditor({
               </div>
               <div className="row">
                 <label>关联展开</label>
-                <select
-                  value={select ?? ""}
-                  onChange={(e) => onStagesChange({ select: e.target.value || undefined })}
-                  title="select() 管道：把当前结果替换为其中文件关联的其它文件"
+                <span
+                  style={{ display: "flex", gap: 12, alignItems: "center", fontSize: 12 }}
+                  title="select() 管道：把当前结果替换为其中文件关联的其它文件（可多选，正交并集）"
                 >
-                  {SELECT_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
+                  {SELECT_KINDS.map((k) => {
+                    const on = (select ?? []).includes(k.value);
+                    return (
+                      <label
+                        key={k.value}
+                        style={{ display: "flex", gap: 4, alignItems: "center" }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={(e) => {
+                            const next = new Set(select ?? []);
+                            if (e.target.checked) next.add(k.value);
+                            else next.delete(k.value);
+                            onStagesChange({ select: next.size > 0 ? [...next] : undefined });
+                          }}
+                        />
+                        {k.label}
+                      </label>
+                    );
+                  })}
+                  {(select?.length ?? 0) === 0 && (
+                    <span style={{ color: "var(--text-dim)" }}>（不展开）</span>
+                  )}
+                </span>
               </div>
             </div>
           </>
@@ -425,8 +443,8 @@ export function FilterEditor({
               </div>
               <div>操作符：= != ~ in &gt; &gt;= &lt; &lt;=</div>
               <div>
-                管道：select(ori|thumb|dup) 关联展开 · order(field, asc|desc) 排序 ·
-                take(n) 取前 n · drop(n) 跳过前 n
+                管道：select(ori|thumb|dup, 可多个) 关联展开 · order(field, asc|desc)
+                排序 · take(n) 取前 n · drop(n) 跳过前 n
               </div>
             </div>
             {parseErr ? (

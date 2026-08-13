@@ -69,7 +69,7 @@ type OrderStage struct {
 type Filter struct {
 	Account string       `json:"account"` // instance hash, "" = all
 	Expr    *Expr        `json:"expr"`    // nil = everything
-	Select  string       `json:"select,omitempty"` // ori|thumb|dup 关联展开
+	Select  []string     `json:"select,omitempty"` // ori/thumb/dup 关联展开（可多个，正交并集）
 	Orders  []OrderStage `json:"orders,omitempty"`
 	Limit   int          `json:"limit,omitempty"`  // take(n)
 	Offset  int          `json:"offset,omitempty"` // drop(n)

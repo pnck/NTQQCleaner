@@ -143,7 +143,7 @@ export interface ParseResult {
   limit?: number;
   offset?: number;
   orders?: { field: string; desc: boolean }[];
-  select?: string; // select(ori|thumb|dup)
+  select?: string[]; // select(ori|thumb|dup)
 }
 
 export function parseExpr(text: string): ParseResult {
@@ -231,7 +231,7 @@ export function parseExpr(text: string): ParseResult {
   // take(n) / drop(n)
   let limit: number | undefined;
   let offset: number | undefined;
-  let select: string | undefined;
+  let select: string[] | undefined;
   const orders: { field: string; desc: boolean }[] = [];
   let t = peek();
   while (t && t.t === "pipe") {
@@ -246,20 +246,33 @@ export function parseExpr(text: string): ParseResult {
     const fn = fnTok.v.toLowerCase();
     if (fn === "select") {
       if (peek()?.t !== "lparen") {
-        return { expr: null, error: `select 需要括号参数，如 select(ori)` };
+        return { expr: null, error: `select 需要括号参数，如 select(ori, thumb)` };
       }
       pos++;
-      const kindTok = next();
-      const kind =
-        kindTok && kindTok.t !== "lparen" && kindTok.t !== "rparen" && kindTok.t !== "pipe"
-          ? kindTok.v.toLowerCase()
-          : "";
-      if (!["ori", "thumb", "dup"].includes(kind)) {
-        return { expr: null, error: `select() 的参数必须是 ori / thumb / dup 之一` };
+      const kinds: string[] = [];
+      for (;;) {
+        const kindTok = next();
+        if (!kindTok || (kindTok.t !== "word" && kindTok.t !== "str")) {
+          return { expr: null, error: `select() 的参数必须是 ori / thumb / dup（可多个，逗号分隔）` };
+        }
+        // tokenizer 会把逗号并进单词（只有尾逗号被剥离），拆开以支持
+        // select(ori,thumb) 与 select(ori, thumb) 两种写法。
+        for (const part of kindTok.v.toLowerCase().split(",")) {
+          if (part === "") continue;
+          if (!["ori", "thumb", "dup"].includes(part)) {
+            return { expr: null, error: `select() 的参数必须是 ori / thumb / dup 之一（收到「${part}」）` };
+          }
+          if (!kinds.includes(part)) kinds.push(part);
+        }
+        if (kinds.length === 0) {
+          return { expr: null, error: `select() 需要至少一个参数` };
+        }
+        if (peek()?.t === "rparen") {
+          pos++;
+          break;
+        }
       }
-      if (peek()?.t !== "rparen") return { expr: null, error: `select() 括号未闭合` };
-      pos++;
-      select = kind;
+      select = kinds;
       t = peek();
       continue;
     }
@@ -337,10 +350,10 @@ export function filterToText(
   limit?: number,
   offset?: number,
   orders?: { field: string; desc: boolean }[],
-  select?: string,
+  select?: string[],
 ): string {
   let s = exprToText(expr);
-  if (select) s = s ? `${s} | select(${select})` : `select(${select})`;
+  if (select && select.length > 0) s = s ? `${s} | select(${select.join(", ")})` : `select(${select.join(", ")})`;
   for (const o of orders ?? []) {
     s = s ? `${s} | order(${o.field}, ${o.desc ? "desc" : "asc"})` : `order(${o.field}, ${o.desc ? "desc" : "asc"})`;
   }

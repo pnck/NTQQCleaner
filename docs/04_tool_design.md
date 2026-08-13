@@ -112,12 +112,13 @@ runtime.EventsEmit(ctx, "scan:progress", map[string]any{"done": n, "total": tota
 
 - 语义顺序：**select → order → drop → take**（关联展开先改成员集合，排序只改
   顺序，take/drop 在最后）
-- `select` 语义：
-  - `ori`：缩略图 → 其原文件（文件名 md5 配对）；原文件保留自身；无配对移除
+- `select` 的三个维度**正交**，可多选取并集：`select(ori, thumb, dup)`：
+  - `ori`：缩略图 → 其原文件（文件名 md5 配对）；原文件保留自身；无配对无贡献
   - `thumb`：原文件 → 其全部缩略图（多尺寸）；缩略图保留自身
-  - `dup`：展开为内容哈希组（字节级相同的全部文件，含列表内自身）；无哈希（大小唯一）移除
+  - `dup`：展开为内容哈希组（字节级相同的全部文件，含列表内自身）；无哈希（大小唯一）无贡献
 - 典型用法：`thumb = true AND age >= 90 | select(ori) | take(100)`
-  （把 90 天前的缩略图圈定，展开为其原图再看前 100 个）
+  （把 90 天前的缩略图圈定，展开为其原图再看前 100 个）；
+  `select(ori, thumb)` = 圈定文件的完整家族（原图 + 全部缩略图）
 
 ---
 
