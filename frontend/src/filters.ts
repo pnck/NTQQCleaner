@@ -111,6 +111,7 @@ export interface NamedFilter {
   name: string;
   expr: Expr | null;
   sort: Sort;
+  select?: string; // select(ori|thumb|dup) 关联展开管道
   orders?: { field: string; desc: boolean }[]; // 表达式 order() 管道
   limit?: number; // take(n)
   offset?: number; // drop(n)

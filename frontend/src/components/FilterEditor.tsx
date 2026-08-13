@@ -11,10 +11,12 @@ interface Props {
   limit?: number;
   offset?: number;
   orders?: { field: string; desc: boolean }[];
+  select?: string;
   onStagesChange: (s: {
     limit?: number;
     offset?: number;
     orders?: { field: string; desc: boolean }[];
+    select?: string;
   }) => void;
   sort: Sort;
   onSortChange: (s: Sort) => void;
@@ -23,6 +25,14 @@ interface Props {
   onApply: (f: NamedFilter) => void;
   onClose: () => void;
 }
+
+// select() 管道的可选项：把结果集替换为其中文件关联的另一组文件。
+const SELECT_OPTIONS = [
+  { value: "", label: "不展开（仅当前列表）" },
+  { value: "ori", label: "展开为原文件（缩略图→其原图/原文件）" },
+  { value: "thumb", label: "展开为缩略图（原文件→其全部缩略图）" },
+  { value: "dup", label: "展开为重复副本（内容相同的全部文件）" },
+] as const;
 
 // ---- 条件叶子行 ----
 
@@ -188,6 +198,7 @@ export function FilterEditor({
   limit,
   offset,
   orders,
+  select,
   onStagesChange,
   sort,
   onSortChange,
@@ -212,12 +223,12 @@ export function FilterEditor({
   // 点击「应用」）时重置为当前筛选的规范文本——列表应用随动到表达式视图。
   useEffect(() => {
     if (open && view === "text") {
-      setText(filterToText(expr, limit, offset, orders));
+      setText(filterToText(expr, limit, offset, orders, select));
       setParseErr("");
       setApplied(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, view, expr, limit, offset, orders]);
+  }, [open, view, expr, limit, offset, orders, select]);
 
   useEffect(() => {
     if (!open) return;
@@ -233,6 +244,7 @@ export function FilterEditor({
   const root = expr ?? group("and", []);
 
   // 管道含 order/take/drop = 高级函数 → 简易模式只读
+  // （select 是独立下拉，两个视图都可编辑，不参与 advanced 判定）
   const advanced = (orders?.length ?? 0) > 0 || limit !== undefined || offset !== undefined;
 
   // 表达式视图：按钮验证并应用
@@ -245,8 +257,8 @@ export function FilterEditor({
     }
     setParseErr("");
     onChangeExpr(res.expr ?? null);
-    onStagesChange({ limit: res.limit, offset: res.offset, orders: res.orders });
-    setText(filterToText(res.expr ?? null, res.limit, res.offset, res.orders));
+    onStagesChange({ limit: res.limit, offset: res.offset, orders: res.orders, select: res.select });
+    setText(filterToText(res.expr ?? null, res.limit, res.offset, res.orders, res.select));
     setApplied(true);
     return true;
   };
@@ -256,7 +268,7 @@ export function FilterEditor({
     if (!name) return;
     const next = [
       ...filters.filter((f) => f.name !== name),
-      { name, expr, sort, limit, offset, orders },
+      { name, expr, sort, limit, offset, orders, select },
     ];
     onSaveFilters(next);
     setSelected(name);
@@ -372,6 +384,20 @@ export function FilterEditor({
                   <option value="month:false">月份（旧→新）</option>
                 </select>
               </div>
+              <div className="row">
+                <label>关联展开</label>
+                <select
+                  value={select ?? ""}
+                  onChange={(e) => onStagesChange({ select: e.target.value || undefined })}
+                  title="select() 管道：把当前结果替换为其中文件关联的其它文件"
+                >
+                  {SELECT_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </>
         ) : (
@@ -398,7 +424,10 @@ export function FilterEditor({
                 字段：biz/sub/category/month/age/size/md5/contentHash/reason/thumb/temp
               </div>
               <div>操作符：= != ~ in &gt; &gt;= &lt; &lt;=</div>
-              <div>管道：order(field, asc|desc) 排序 · take(n) 取前 n · drop(n) 跳过前 n</div>
+              <div>
+                管道：select(ori|thumb|dup) 关联展开 · order(field, asc|desc) 排序 ·
+                take(n) 取前 n · drop(n) 跳过前 n
+              </div>
             </div>
             {parseErr ? (
               <div className="parse-err">✗ {parseErr}</div>

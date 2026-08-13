@@ -58,6 +58,7 @@ type Tok =
   | { t: "word"; v: string }
   | { t: "str"; v: string }
   | { t: "op"; v: string }
+  | { t: "pipe" }
   | { t: "lparen" }
   | { t: "rparen" };
 
@@ -77,6 +78,13 @@ function tokenize(text: string): Tok[] {
     }
     if (ch === ")") {
       toks.push({ t: "rparen" });
+      i++;
+      continue;
+    }
+    if (ch === "|") {
+      // 管道分隔符：此前被单词扫描吞掉，任何带 | 的表达式都会报
+      // 「无法解析」——管道（order/take/drop/select）全部失效。
+      toks.push({ t: "pipe" });
       i++;
       continue;
     }
@@ -135,6 +143,7 @@ export interface ParseResult {
   limit?: number;
   offset?: number;
   orders?: { field: string; desc: boolean }[];
+  select?: string; // select(ori|thumb|dup)
 }
 
 export function parseExpr(text: string): ParseResult {
@@ -218,21 +227,52 @@ export function parseExpr(text: string): ParseResult {
   const res = parseOr();
   if (res.error) return res;
 
-  // 尾部最小函数管道：| order(field, asc|desc) / take(n) / drop(n)
+  // 尾部最小函数管道：| select(ori|thumb|dup) / order(field, asc|desc) /
+  // take(n) / drop(n)
   let limit: number | undefined;
   let offset: number | undefined;
+  let select: string | undefined;
   const orders: { field: string; desc: boolean }[] = [];
   let t = peek();
-  while (t && t.t === "word") {
-    const fn = t.v.toLowerCase();
-    if (fn === "order") {
+  while (t && t.t === "pipe") {
+    pos++;
+    const fnTok = next();
+    if (!fnTok || fnTok.t !== "word") {
+      return {
+        expr: null,
+        error: "| 后需要函数名：select(ori|thumb|dup) / order(field, asc|desc) / take(n) / drop(n)",
+      };
+    }
+    const fn = fnTok.v.toLowerCase();
+    if (fn === "select") {
+      if (peek()?.t !== "lparen") {
+        return { expr: null, error: `select 需要括号参数，如 select(ori)` };
+      }
       pos++;
+      const kindTok = next();
+      const kind =
+        kindTok && kindTok.t !== "lparen" && kindTok.t !== "rparen" && kindTok.t !== "pipe"
+          ? kindTok.v.toLowerCase()
+          : "";
+      if (!["ori", "thumb", "dup"].includes(kind)) {
+        return { expr: null, error: `select() 的参数必须是 ori / thumb / dup 之一` };
+      }
+      if (peek()?.t !== "rparen") return { expr: null, error: `select() 括号未闭合` };
+      pos++;
+      select = kind;
+      t = peek();
+      continue;
+    }
+    if (fn === "order") {
       if (peek()?.t !== "lparen") {
         return { expr: null, error: `order 需要括号参数，如 order(size, desc)` };
       }
       pos++;
       const fieldTok = next();
-      const field = fieldTok && fieldTok.t !== "lparen" && fieldTok.t !== "rparen" ? fieldTok.v : "";
+      const field =
+        fieldTok && fieldTok.t !== "lparen" && fieldTok.t !== "rparen" && fieldTok.t !== "pipe"
+          ? fieldTok.v
+          : "";
       if (!ORDERABLE_FIELDS.includes(field)) {
         return {
           expr: null,
@@ -240,7 +280,10 @@ export function parseExpr(text: string): ParseResult {
         };
       }
       const dirTok = next();
-      const dir = dirTok && dirTok.t !== "lparen" && dirTok.t !== "rparen" ? dirTok.v.toLowerCase() : "desc";
+      const dir =
+        dirTok && dirTok.t !== "lparen" && dirTok.t !== "rparen" && dirTok.t !== "pipe"
+          ? dirTok.v.toLowerCase()
+          : "desc";
       if (dir !== "asc" && dir !== "desc") {
         return { expr: null, error: `order() 的方向只能是 asc 或 desc` };
       }
@@ -250,22 +293,24 @@ export function parseExpr(text: string): ParseResult {
       t = peek();
       continue;
     }
-    if (fn !== "take" && fn !== "drop") break;
-    pos++;
-    if (peek()?.t !== "lparen") {
-      return { expr: null, error: `函数 ${fn} 需要括号参数，如 ${fn}(10)` };
+    if (fn === "take" || fn === "drop") {
+      if (peek()?.t !== "lparen") {
+        return { expr: null, error: `函数 ${fn} 需要括号参数，如 ${fn}(10)` };
+      }
+      pos++;
+      const numTok = next();
+      if (!numTok || (numTok.t !== "word" && numTok.t !== "str") || !/^\d+$/.test(numTok.v)) {
+        return { expr: null, error: `${fn}() 的参数必须是非负整数` };
+      }
+      if (peek()?.t !== "rparen") return { expr: null, error: `${fn}() 括号未闭合` };
+      pos++;
+      const n = Number(numTok.v);
+      if (fn === "take") limit = n;
+      else offset = n;
+      t = peek();
+      continue;
     }
-    pos++;
-    const numTok = next();
-    if (!numTok || (numTok.t !== "word" && numTok.t !== "str") || !/^\d+$/.test(numTok.v)) {
-      return { expr: null, error: `${fn}() 的参数必须是非负整数` };
-    }
-    if (peek()?.t !== "rparen") return { expr: null, error: `${fn}() 括号未闭合` };
-    pos++;
-    const n = Number(numTok.v);
-    if (fn === "take") limit = n;
-    else offset = n;
-    t = peek();
+    return { expr: null, error: `未知管道函数「${fnTok.v}」（可用 select / order / take / drop）` };
   }
 
   if (pos < toks.length) {
@@ -277,20 +322,25 @@ export function parseExpr(text: string): ParseResult {
           ? t.v
           : t.t === "lparen"
             ? "("
-            : ")";
+            : t.t === "rparen"
+              ? ")"
+              : "|";
     return { expr: null, error: `无法解析「${v}」：两个条件之间需要 AND 或 OR 连接` };
   }
-  return { expr: res.expr ?? null, limit, offset, orders };
+  return { expr: res.expr ?? null, limit, offset, orders, select };
 }
 
-// filterToText 序列化完整筛选（表达式 + order/drop/take 管道，规范顺序）。
+// filterToText 序列化完整筛选（表达式 + select/order/drop/take 管道，
+// 规范顺序与后端 applyStages 一致：select → order → drop → take）。
 export function filterToText(
   expr: Expr | null | undefined,
   limit?: number,
   offset?: number,
   orders?: { field: string; desc: boolean }[],
+  select?: string,
 ): string {
   let s = exprToText(expr);
+  if (select) s = s ? `${s} | select(${select})` : `select(${select})`;
   for (const o of orders ?? []) {
     s = s ? `${s} | order(${o.field}, ${o.desc ? "desc" : "asc"})` : `order(${o.field}, ${o.desc ? "desc" : "asc"})`;
   }

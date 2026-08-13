@@ -62,12 +62,14 @@ type OrderStage struct {
 
 // Filter selects a subset of the scanned index. The UI's left tree,
 // quick toggles and the filter editor all compile down to one Expr,
-// plus optional pipeline stages: order(field, asc|desc)、
-// drop(n) = 跳过前 n 条、take(n) = 取排序后前 n 条。
-// 语义顺序：order → drop → take（排序在 take/drop 之前，筛选器自包含）。
+// plus optional pipeline stages: select(kind)（关联展开）、
+// order(field, asc|desc)、drop(n) = 跳过前 n 条、take(n) = 取排序后前 n 条。
+// 语义顺序：select → order → drop → take（关联展开先改成员集合，
+// 排序只改顺序，take/drop 在最后——筛选器自包含）。
 type Filter struct {
 	Account string       `json:"account"` // instance hash, "" = all
 	Expr    *Expr        `json:"expr"`    // nil = everything
+	Select  string       `json:"select,omitempty"` // ori|thumb|dup 关联展开
 	Orders  []OrderStage `json:"orders,omitempty"`
 	Limit   int          `json:"limit,omitempty"`  // take(n)
 	Offset  int          `json:"offset,omitempty"` // drop(n)

@@ -39,7 +39,8 @@ type Outcome struct {
 	Reasons      []string
 	ByAccount    map[string][]int
 	OriID        map[string]int
-	ThumbID      map[string]int
+	ThumbID      map[string]int   // 预览配对：每个 md5 取第一个缩略图
+	ThumbIDs     map[string][]int // select(thumb)：每个 md5 的全部缩略图
 	ContentIndex map[string][]int
 	Now          time.Time
 	// K 是本次扫描分派到的 QQ 知识实现（清理/预览校验时复用）。
@@ -85,6 +86,7 @@ func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []
 		ByAccount:    make(map[string][]int, len(accs)),
 		OriID:        make(map[string]int),
 		ThumbID:      make(map[string]int),
+		ThumbIDs:     make(map[string][]int),
 		ContentIndex: make(map[string][]int),
 		Now:          now(),
 		K:            k,
@@ -179,6 +181,7 @@ func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []
 					if _, ok := out.ThumbID[f.MD5]; !ok {
 						out.ThumbID[f.MD5] = id
 					}
+					out.ThumbIDs[f.MD5] = append(out.ThumbIDs[f.MD5], id)
 				}
 			}
 			if f.ContentHash != "" {
@@ -234,10 +237,14 @@ func (o *Outcome) matchedIDs(f Filter) []int {
 	return out
 }
 
-// applyStages applies the pipeline stages in order: order()（稳定多键排序）
-// → drop → take. When the filter carries no order(), callers sort by the
-// UI sort field first (QueryRows) or leave the natural order (aggregates).
+// applyStages applies the pipeline stages in order: select()（关联展开）
+// → order()（稳定多键排序）→ drop → take. When the filter carries no
+// order(), callers sort by the UI sort field first (QueryRows) or leave
+// the natural order (aggregates).
 func (o *Outcome) applyStages(ids []int, f Filter) []int {
+	if f.Select != "" {
+		ids = o.selectAssociated(ids, f.Select)
+	}
 	for _, ord := range f.Orders {
 		sortIDs(o, ids, Sort{Field: ord.Field, Desc: ord.Desc})
 	}
@@ -251,6 +258,56 @@ func (o *Outcome) applyStages(ids []int, f Filter) []int {
 		ids = ids[:f.Limit]
 	}
 	return ids
+}
+
+// selectAssociated 把结果集替换为其中文件关联的另一组文件（docs/04 §3
+// 管道 select()）：
+//   - ori   ：缩略图 → 其原文件；原文件保留自身；无配对（无 md5/无 Ori）
+//     的文件移除
+//   - thumb ：原文件 → 其全部缩略图（多尺寸）；缩略图保留自身；无配对的移除
+//   - dup   ：展开为内容哈希组（字节级相同的全部文件，含列表内的自身）；
+//     无哈希（大小唯一）的文件移除
+//
+// 关联依据：ori/thumb 走文件名 md5 配对（同名关系）；dup 走二次扫描的
+// SHA-256 内容组（同名 ≠ 同内容，同内容可能不同名）。
+func (o *Outcome) selectAssociated(ids []int, kind string) []int {
+	seen := make(map[int]bool, len(ids)*2)
+	var out []int
+	add := func(id int) {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	for _, id := range ids {
+		e := o.Entries[id]
+		switch kind {
+		case "ori":
+			if strings.EqualFold(e.Sub, "Ori") {
+				add(id)
+				continue
+			}
+			if ori, ok := o.OriID[e.MD5]; ok {
+				add(ori)
+			}
+		case "thumb":
+			if e.IsThumb {
+				add(id)
+				continue
+			}
+			for _, t := range o.ThumbIDs[e.MD5] {
+				add(t)
+			}
+		case "dup":
+			if e.ContentHash == "" {
+				continue
+			}
+			for _, d := range o.ContentIndex[e.ContentHash] {
+				add(d)
+			}
+		}
+	}
+	return out
 }
 
 // evalExpr evaluates the boolean tree against one entry.

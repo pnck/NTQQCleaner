@@ -52,8 +52,9 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [scanGen, setScanGen] = useState(0);
 
-  // 筛选状态 = 表达式树 + order/take/drop 管道（左栏/快捷控件/筛选器编辑器共享）
+  // 筛选状态 = 表达式树 + select/order/take/drop 管道（左栏/快捷控件/筛选器编辑器共享）
   const [expr, setExpr] = useState<Expr | null>(null);
+  const [sel, setSel] = useState<string | undefined>(undefined);
   const [orders, setOrders] = useState<{ field: string; desc: boolean }[]>([]);
   const [limit, setLimit] = useState<number | undefined>(undefined);
   const [offset, setOffset] = useState<number | undefined>(undefined);
@@ -74,12 +75,12 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(getTheme());
 
   const filter = useMemo(
-    () => ({ account, expr, orders, limit, offset }),
-    [account, expr, orders, limit, offset],
+    () => ({ account, expr, select: sel, orders, limit, offset }),
+    [account, expr, sel, orders, limit, offset],
   );
   const queryKey = useMemo(
-    () => JSON.stringify([expr, orders, limit, offset, sort, account, scanGen]),
-    [expr, orders, limit, offset, sort, account, scanGen],
+    () => JSON.stringify([expr, sel, orders, limit, offset, sort, account, scanGen]),
+    [expr, sel, orders, limit, offset, sort, account, scanGen],
   );
   const pageQuery: PageQuery = useMemo(
     () => ({ filter, sort, page: 1, pageSize: 200 }),
@@ -165,6 +166,7 @@ export default function App() {
   const applyFilter = useCallback((f: NamedFilter) => {
     setExpr(f.expr ? JSON.parse(JSON.stringify(f.expr)) : null);
     setSort({ ...f.sort });
+    setSel(f.select);
     setOrders((f.orders ?? []).map((o) => ({ ...o })));
     setLimit(f.limit);
     setOffset(f.offset);
@@ -176,6 +178,7 @@ export default function App() {
   const resetFilter = useCallback(() => {
     setExpr(null);
     setSort({ ...DEFAULT_SORT });
+    setSel(undefined);
     setOrders([]);
     setLimit(undefined);
     setOffset(undefined);
@@ -184,11 +187,17 @@ export default function App() {
   }, []);
 
   const editStages = useCallback(
-    (s: { limit?: number; offset?: number; orders?: { field: string; desc: boolean }[] }) => {
+    (s: {
+      limit?: number;
+      offset?: number;
+      orders?: { field: string; desc: boolean }[];
+      select?: string;
+    }) => {
       setAppliedFilter("");
       setLimit(s.limit);
       setOffset(s.offset);
       setOrders(s.orders ?? []);
+      setSel(s.select);
     },
     [],
   );
@@ -539,6 +548,7 @@ export default function App() {
         limit={limit}
         offset={offset}
         orders={orders}
+        select={sel}
         onStagesChange={editStages}
         sort={sort}
         onSortChange={setSort}

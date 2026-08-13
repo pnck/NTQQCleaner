@@ -625,6 +625,105 @@ func TestGetDupes(t *testing.T) {
 	}
 }
 
+// TestSelectAssociated：select() 管道的三种关联展开（docs/04 §3）。
+//   - ori  ：缩略图 → 其原文件；原文件保留自身；无配对移除
+//   - thumb：原文件 → 其全部缩略图
+//   - dup  ：展开为内容哈希组（字节级相同，含自身）
+func TestSelectAssociated(t *testing.T) {
+	f := testutil.BuildQQTree(t)
+	out, err := testEngine().ScanAll(context.Background(), f.Root, nil, nil, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oriID := -1
+	thumbs := []int{}
+	dupF := -1
+	market := -1
+	for id, e := range out.Entries {
+		switch {
+		case e.MD5 == testutil.MD5A && e.Sub == "Ori":
+			oriID = id
+		case e.MD5 == testutil.MD5A && e.IsThumb:
+			thumbs = append(thumbs, id)
+		case e.MD5 == testutil.MD5F:
+			dupF = id
+		case filepath.Base(e.Path) == "x.png":
+			market = id
+		}
+	}
+	if oriID < 0 || len(thumbs) != 2 || dupF < 0 || market < 0 {
+		t.Fatalf("fixture lookup failed: ori=%d thumbs=%v dupF=%d market=%d", oriID, thumbs, dupF, market)
+	}
+
+	// ori：两个 MD5A 缩略图 → 同一张原图（去重）。
+	oris := out.selectAssociated(thumbs, "ori")
+	if len(oris) != 1 || oris[0] != oriID {
+		t.Fatalf("select(ori) on thumbs: got %v want [%d]", oris, oriID)
+	}
+	// ori：原文件保留自身。
+	if got := out.selectAssociated([]int{oriID}, "ori"); len(got) != 1 || got[0] != oriID {
+		t.Fatalf("select(ori) on ori: got %v want self", got)
+	}
+	// ori：无配对（marketface 无 md5）→ 移除。
+	if got := out.selectAssociated([]int{market}, "ori"); len(got) != 0 {
+		t.Fatalf("select(ori) on unpaired: got %v want empty", got)
+	}
+
+	// thumb：原文件 → 其全部缩略图（多尺寸）。
+	got := out.selectAssociated([]int{oriID}, "thumb")
+	if len(got) != 2 || got[0] != thumbs[0] || got[1] != thumbs[1] {
+		t.Fatalf("select(thumb) on ori: got %v want %v", got, thumbs)
+	}
+
+	// dup：60KB 组任意一员 → 全组 3 份（含自身，跨账号）。
+	dups := out.selectAssociated([]int{dupF}, "dup")
+	if len(dups) != 3 {
+		t.Fatalf("select(dup) on 60KB member: got %d want 3", len(dups))
+	}
+	found := false
+	for _, d := range dups {
+		if d == dupF {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("select(dup) must keep the listed file itself, got %v want id %d", dups, dupF)
+	}
+
+	// 经 Filter 走完整管道：md5F 的筛选 + select(dup) → 全组 3 条。
+	backend := NewBackend("", nil)
+	cap := newCaptureEmitter()
+	backend.SetEmitter(cap)
+	if err := backend.Scan(ScanOptions{Root: f.Root, MinAgeDays: 0}); err != nil {
+		t.Fatal(err)
+	}
+	cap.waitFor(t, EvDone)
+	stats, err := backend.GetStats(Filter{Expr: leaf("md5", "eq", testutil.MD5F), Select: "dup"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Count != 3 {
+		t.Fatalf("select(dup) via Filter: got %d want 3", stats.Count)
+	}
+	// 缩略图筛选 + select(ori)：只有 MD5A 有原图 → 1 条。
+	oriStats, err := backend.GetStats(Filter{Expr: leaf("thumb", "eq", "true"), Select: "ori"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if oriStats.Count != 1 {
+		t.Fatalf("select(ori) via Filter: got %d want 1 (only MD5A has an Ori)", oriStats.Count)
+	}
+	// 未知 select 类别：fail-closed（空集，与未知字段/操作符一致）。
+	// 前端解析器会直接报错；这里的空集是 API 误用时的安全兜底。
+	noop, err := backend.GetStats(Filter{Expr: leaf("thumb", "eq", "true"), Select: "nonsense"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if noop.Count != 0 {
+		t.Fatalf("unknown select kind must fail closed: got %d want 0", noop.Count)
+	}
+}
+
 // TestBackendCleanSafetyGates: the backend refuses clean without a scan,
 // and refuses any clean without force/confirm.
 func TestBackendCleanSafetyGates(t *testing.T) {

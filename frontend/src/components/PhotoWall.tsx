@@ -62,8 +62,10 @@ const Cell = memo(function Cell({ row, selected, checked, onSelect, onToggle }: 
             </span>
           }
         >
+          {/* 全部标签并排（如「缩略图 · 原图仍在 · 重复出现」）：重复/配对
+              标识直接在卡片可见，不只藏在 tooltip 里 */}
           <span className="reason-label" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {reasons[0]?.label ?? ""}
+            {reasons.map((r) => r.label).join(" · ")}
           </span>
         </Tooltip>
         {row.month && <span style={{ color: "var(--text-dim)", flex: "none" }}>{row.month}</span>}

@@ -49,6 +49,7 @@ export interface OrderStage {
 export interface Filter {
   account: string;
   expr?: Expr | null; // null/undefined = 全部
+  select?: string; // select(ori|thumb|dup)：关联展开（先于 order/take/drop）
   orders?: OrderStage[]; // order(field, asc|desc) 管道
   limit?: number; // take(n)：排序后取前 n 条
   offset?: number; // drop(n)：跳过前 n 条

@@ -100,6 +100,25 @@ runtime.EventsEmit(ctx, "scan:progress", map[string]any{"done": n, "total": tota
 - 进度节流：每 ≥100ms 或每 1000 文件 emit 一次，避免前端卡顿
 - 原生对话框（删除确认/目录选择）直接用 `runtime.MessageDialog` / `runtime.OpenDirectoryDialog`
 
+**筛选表达式管道**（`Filter`，前后端一致）：
+
+```
+条件布尔树（AND/OR 组 + 条件叶子，支持括号/引号）
+  | select(ori|thumb|dup)    关联展开：把结果集替换为其中文件关联的其它文件
+  | order(field, asc|desc)   排序（可叠加 = 多关键字）
+  | drop(n)                  跳过前 n 条
+  | take(n)                  取前 n 条
+```
+
+- 语义顺序：**select → order → drop → take**（关联展开先改成员集合，排序只改
+  顺序，take/drop 在最后）
+- `select` 语义：
+  - `ori`：缩略图 → 其原文件（文件名 md5 配对）；原文件保留自身；无配对移除
+  - `thumb`：原文件 → 其全部缩略图（多尺寸）；缩略图保留自身
+  - `dup`：展开为内容哈希组（字节级相同的全部文件，含列表内自身）；无哈希（大小唯一）移除
+- 典型用法：`thumb = true AND age >= 90 | select(ori) | take(100)`
+  （把 90 天前的缩略图圈定，展开为其原图再看前 100 个）
+
 ---
 
 ## 4. 模块实现要点（Go 骨架）
