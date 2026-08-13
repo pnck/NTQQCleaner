@@ -121,11 +121,16 @@ input[type="checkbox"] {
 /* ① 顶栏 */
 .topbar {
   display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar-row {
+  display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
 
@@ -133,12 +138,20 @@ input[type="checkbox"] {
   flex: 1;
 }
 
+/* 进度区：固定在顶栏分隔线处（第二行），三阶段共用同一位置与尺寸 */
+.topbar-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 12px 6px;
+  border-top: 1px solid var(--border);
+}
+
 .topbar .progress-track {
-  flex: 1;
-  min-width: 140px;
-  height: 8px;
+  width: 100%;
+  height: 6px;
   background: var(--panel-2);
-  border-radius: 4px;
+  border-radius: 3px;
   overflow: hidden;
 }
 
@@ -174,10 +187,15 @@ input[type="checkbox"] {
   }
 }
 
+/* stage 文字单开一行：固定行高 + 省略号，长度变化不推动布局 */
 .topbar .stage {
   color: var(--text-dim);
-  font-size: 12px;
-  min-width: 180px;
+  font-size: 11px;
+  line-height: 14px;
+  height: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 主体三栏 */

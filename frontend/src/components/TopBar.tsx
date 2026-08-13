@@ -73,66 +73,64 @@ export function TopBar({
   const pct = progress.total > 0 ? Math.min(100, (progress.done / progress.total) * 100) : 0;
   return (
     <div className="topbar">
-      <span style={{ fontWeight: 600 }}>QQ Cleaner</span>
-      <select value={root} onChange={(e) => onRootChange(e.target.value)}>
-        <option value="">选择数据根…</option>
-        {roots.map((r) => (
-          <option key={r} value={r}>
-            {r}
-          </option>
-        ))}
-      </select>
-      <button onClick={onPickRoot} title="浏览选择 QQ 数据根目录">
-        浏览…
-      </button>
-      <select
-        value={account}
-        onChange={(e) => onAccountChange(e.target.value)}
-        disabled={accounts.length === 0}
-      >
-        <option value="">全部账号</option>
-        {accounts.map((a) => (
-          <option key={a.hash} value={a.hash}>
-            QQ {a.qqNum || "unknown"}（{a.latestMonth || "无活动"}）
-          </option>
-        ))}
-      </select>
-      {scanning ? (
-        <>
+      <div className="topbar-row">
+        <span style={{ fontWeight: 600 }}>QQ Cleaner</span>
+        <select value={root} onChange={(e) => onRootChange(e.target.value)}>
+          <option value="">选择数据根…</option>
+          {roots.map((r) => (
+            <option key={r} value={r}>
+              {r}
+            </option>
+          ))}
+        </select>
+        <button onClick={onPickRoot} title="浏览选择 QQ 数据根目录">
+          浏览…
+        </button>
+        <select
+          value={account}
+          onChange={(e) => onAccountChange(e.target.value)}
+          disabled={accounts.length === 0}
+        >
+          <option value="">全部账号</option>
+          {accounts.map((a) => (
+            <option key={a.hash} value={a.hash}>
+              QQ {a.qqNum || "unknown"}（{a.latestMonth || "无活动"}）
+            </option>
+          ))}
+        </select>
+        {scanning ? (
           <button onClick={onStop}>停止</button>
-          {progress.total > 0 ? (
-            <>
-              <div className="progress-track">
-                <div className="progress-fill" style={{ width: `${pct}%` }} />
-              </div>
-              <span className="stage">
-                {progress.stage} · {progress.done} / {progress.total}
-              </span>
-            </>
-          ) : (
-            <>
-              {/* 预计数阶段（总数未知）：不确定态动画条，无数字 */}
-              <div className="progress-track indeterminate" />
-              <span className="stage">正在统计文件数…</span>
-            </>
-          )}
-        </>
-      ) : (
-        <>
+        ) : (
           <button className="primary" onClick={onScan} disabled={!root}>
             扫描
           </button>
-        </>
+        )}
+        <div className="grow" />
+        <button
+          className="icon-btn"
+          onClick={onCycleTheme}
+          title={`主题：${THEME_LABEL[theme]}（点击切换）`}
+        >
+          <ThemeIcon theme={theme} />
+        </button>
+        <button onClick={onOpenSettings}>设置</button>
+      </div>
+      {/* 进度区固定在顶栏分隔线处：三阶段（预计数/首扫/哈希扫）共用同一
+          位置与尺寸，仅提示文字变化；文字单开一行，长度变化不推动布局。 */}
+      {scanning && (
+        <div className="topbar-progress">
+          <div className={`progress-track${progress.total === 0 ? " indeterminate" : ""}`}>
+            {progress.total > 0 && (
+              <div className="progress-fill" style={{ width: `${pct}%` }} />
+            )}
+          </div>
+          <span className="stage">
+            {progress.total > 0
+              ? `${progress.stage} · ${progress.done} / ${progress.total}`
+              : "正在统计文件数…"}
+          </span>
+        </div>
       )}
-      <div className="grow" />
-      <button
-        className="icon-btn"
-        onClick={onCycleTheme}
-        title={`主题：${THEME_LABEL[theme]}（点击切换）`}
-      >
-        <ThemeIcon theme={theme} />
-      </button>
-      <button onClick={onOpenSettings}>设置</button>
     </div>
   );
 }

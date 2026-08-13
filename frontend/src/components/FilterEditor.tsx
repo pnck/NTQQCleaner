@@ -208,7 +208,8 @@ export function FilterEditor({
   const overRef = useRef<number | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  // 仅切换视图时同步文本（表达式编辑为本地状态，不边输入边验证）
+  // 表达式文本同步：打开/切视图，或外部 expr/管道变化（如在筛选器列表
+  // 点击「应用」）时重置为当前筛选的规范文本——列表应用随动到表达式视图。
   useEffect(() => {
     if (open && view === "text") {
       setText(filterToText(expr, limit, offset, orders));
@@ -216,7 +217,7 @@ export function FilterEditor({
       setApplied(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, view]);
+  }, [open, view, expr, limit, offset, orders]);
 
   useEffect(() => {
     if (!open) return;
@@ -381,11 +382,24 @@ export function FilterEditor({
                 setText(e.target.value);
                 setApplied(false);
               }}
-              placeholder={
-                "例：thumb = true AND age >= 90 | order(size, desc) | take(100)\n例：size > 104857600 | drop(10)  （除去最大的10个）\n例：biz in pic,video OR category ~ marketface\n字段：biz/sub/category/month/age/size/md5/contentHash/reason/thumb/temp\n操作符：= != ~ in > >= < <=\n管道函数：order(field, asc|desc) · take(n) 取前 n · drop(n) 跳过前 n"
-              }
-              rows={6}
+              placeholder="输入表达式，如：thumb = true AND age >= 90 | take(100)"
+              rows={5}
             />
+            {/* 常驻参考：不随输入消失，随时可查语法 */}
+            <div className="expr-help">
+              <div>例：thumb = true AND age &gt;= 90 | order(size, desc) | take(100)</div>
+              <div>例：size &gt; 104857600 | drop(10) （除去最大的10个）</div>
+              <div>例：biz in pic,video OR category ~ marketface</div>
+              <div>
+                括号：( 与 ) 嵌套分组，如 biz = pic AND (size &gt; 1048576 OR month &lt;
+                2025-01)
+              </div>
+              <div>
+                字段：biz/sub/category/month/age/size/md5/contentHash/reason/thumb/temp
+              </div>
+              <div>操作符：= != ~ in &gt; &gt;= &lt; &lt;=</div>
+              <div>管道：order(field, asc|desc) 排序 · take(n) 取前 n · drop(n) 跳过前 n</div>
+            </div>
             {parseErr ? (
               <div className="parse-err">✗ {parseErr}</div>
             ) : applied ? (

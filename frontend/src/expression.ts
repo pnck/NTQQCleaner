@@ -44,8 +44,10 @@ export function exprToText(e: Expr | null | undefined): string {
   const isOr = Array.isArray(e.or);
   const parts = (e.or ?? e.and ?? []).map((sub) => {
     const inner = exprToText(sub);
+    // 任何嵌套组都加括号，忠实镜像列表视图的分组结构（含单子组）。
+    // 解析后单子组与其子条件语义等价，规范化消失无害。
     const kids = sub.or ?? sub.and;
-    return kids && kids.length > 1 ? `(${inner})` : inner;
+    return kids ? `(${inner})` : inner;
   });
   return parts.join(isOr ? " OR " : " AND ");
 }
@@ -111,7 +113,14 @@ function tokenize(text: string): Tok[] {
       j++;
     }
     const w = text.slice(i, j).replace(/,+$/, "");
-    if (w) toks.push({ t: "word", v: w });
+    if (!w) {
+      i = j;
+      continue;
+    }
+    // `in` 是关键字操作符（左栏业务类型多选会序列化成 `biz in pic,video`）；
+    // 曾作为普通单词解析导致「缺少操作符」——in 值里不允许出现字段名 in。
+    if (w.toLowerCase() === "in") toks.push({ t: "op", v: "in" });
+    else toks.push({ t: "word", v: w });
     i = j;
   }
   return toks;
