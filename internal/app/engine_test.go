@@ -223,6 +223,21 @@ func TestBackendScanQueryPreviewClean(t *testing.T) {
 		t.Fatal("no Ori row in fixture")
 	}
 
+	// OriExt：预览端据此分派原文件的播放器。凡有 OriURL 的行必须带
+	// OriExt（缩略图行取配对原文件的扩展名，不能用自己的 ext——视频
+	// 缩略图行会因此把 mp4 塞进 <img>）；Ori 行则等于自身扩展名。
+	for _, r := range allRows.Rows {
+		if r.OriURL == "" {
+			continue
+		}
+		if r.OriExt == "" {
+			t.Fatalf("row %d has OriURL but empty OriExt", r.ID)
+		}
+		if r.Sub == "Ori" && r.OriExt != r.Ext {
+			t.Fatalf("Ori row %d: OriExt=%q != Ext=%q", r.ID, r.OriExt, r.Ext)
+		}
+	}
+
 	// Preview: resolve a thumb ID and serve it.
 	thumbID := -1
 	for _, r := range page.Rows {

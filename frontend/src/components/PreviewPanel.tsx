@@ -22,10 +22,11 @@ const AUDIO_EXTS = ["amr", "silk", "mp3", "wav", "m4a", "aac"];
 type Kind = "img" | "video" | "audio" | "card";
 
 // 依据「选中的那个源」判断渲染方式：缩略图一律是图片；
-// 原文件按扩展名/业务类型分派。
+// 原文件按其自身扩展名（OriExt，后端取自配对原文件，而非行自身 ext）
+// 与业务类型分派。
 function kindOf(row: FileRow, useOri: boolean): Kind {
   if (!useOri) return "img";
-  const ext = row.ext.toLowerCase();
+  const ext = (row.oriExt || row.ext).toLowerCase();
   if (row.biz === "ptt" || AUDIO_EXTS.includes(ext)) return "audio";
   if (VIDEO_EXTS.includes(ext)) return "video";
   if (IMG_EXTS.includes(ext)) return "img";
@@ -33,8 +34,9 @@ function kindOf(row: FileRow, useOri: boolean): Kind {
 }
 
 // 可「播放」的媒体（视频/语音/动图）叠 ▶；静态图片叠 ⤢（查看原文件）。
+// 判断依据同样取原文件（OriExt），避免视频缩略图行被误判为静态图片。
 function playable(row: FileRow): boolean {
-  const ext = row.ext.toLowerCase();
+  const ext = (row.oriExt || row.ext).toLowerCase();
   return (
     row.biz === "video" ||
     row.biz === "ptt" ||

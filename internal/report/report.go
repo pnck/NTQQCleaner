@@ -55,6 +55,7 @@ type FileRow struct {
 	Reason   string `json:"reason"`
 	ThumbURL string `json:"thumbUrl"`
 	OriURL   string `json:"oriUrl"`
+	OriExt   string `json:"oriExt"` // 配对原文件的扩展名（预览端据此分派播放器）；无原文件为空
 }
 
 // GroupStat is an aggregation bucket for the left tree (biz × month).

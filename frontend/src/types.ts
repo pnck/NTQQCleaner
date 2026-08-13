@@ -32,6 +32,7 @@ export interface FileRow {
   reason: string;
   thumbUrl: string;
   oriUrl: string;
+  oriExt: string; // 配对原文件的扩展名（据此分派播放器），无原文件为空
 }
 
 // 条件叶子：{字段, 操作符, 值}。
