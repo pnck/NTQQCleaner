@@ -205,6 +205,24 @@ func TestBackendScanQueryPreviewClean(t *testing.T) {
 		t.Fatalf("month groups: got %d want 5", len(months))
 	}
 
+	// 原文件行必须有 OriURL（视频/动图的直接预览入口，此前漏设导致视频无法预览）
+	allRows, err := backend.QueryRows(PageQuery{Filter: Filter{}, Page: 1, PageSize: 500})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oriRowFound := false
+	for _, r := range allRows.Rows {
+		if r.Sub == "Ori" {
+			oriRowFound = true
+			if r.OriURL == "" {
+				t.Fatalf("Ori row %d has empty OriURL", r.ID)
+			}
+		}
+	}
+	if !oriRowFound {
+		t.Fatal("no Ori row in fixture")
+	}
+
 	// Preview: resolve a thumb ID and serve it.
 	thumbID := -1
 	for _, r := range page.Rows {

@@ -302,10 +302,13 @@ func (b *Backend) fileRowLocked(out *Outcome, id int) report.FileRow {
 	}
 	row.ThumbURL = b.previewURL(id)
 	if e.IsThumb {
+		// 缩略图行：OriURL 指向同 md5 的原文件
 		if oriID, ok := out.OriID[e.MD5]; ok {
 			row.OriURL = b.previewURL(oriID)
 		}
 	} else if e.Sub == "Ori" {
+		// 原文件行：OriURL 就是它自己（视频/动图/原图的直接预览入口）
+		row.OriURL = b.previewURL(id)
 		if thumbID, ok := out.ThumbID[e.MD5]; ok {
 			row.ThumbURL = b.previewURL(thumbID)
 		}
