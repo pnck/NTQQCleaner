@@ -487,6 +487,12 @@ button.chip {
   word-break: break-all;
 }
 
+/* md5 值：全局 user-select:none 之外单独放开选择 */
+.preview .detail .selectable {
+  user-select: text;
+  cursor: text;
+}
+
 .preview .big-warn {
   padding: 30px;
   text-align: center;
