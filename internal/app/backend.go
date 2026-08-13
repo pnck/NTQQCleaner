@@ -469,7 +469,13 @@ func (b *Backend) GetGroups(f Filter, by string) ([]report.GroupStat, error) {
 	for _, g := range groups {
 		out = append(out, *g)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Size > out[j].Size })
+	if by == "month" {
+		// 月份按时间倒序（YYYY-MM 字典序即时间序，新→旧），与工具栏
+		// 「月份」排序默认方向一致；业务类型仍按可清大小倒序。
+		sort.Slice(out, func(i, j int) bool { return out[i].Key > out[j].Key })
+	} else {
+		sort.Slice(out, func(i, j int) bool { return out[i].Size > out[j].Size })
+	}
 	return out, nil
 }
 

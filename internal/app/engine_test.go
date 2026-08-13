@@ -179,12 +179,24 @@ func TestBackendScanQueryPreviewClean(t *testing.T) {
 	if len(groups) != 3 { // pic, emoji, file
 		t.Fatalf("biz groups: got %d want 3", len(groups))
 	}
+	for i := 1; i < len(groups); i++ {
+		if groups[i].Size > groups[i-1].Size {
+			t.Errorf("biz groups not sorted by size desc: %v then %v", groups[i-1].Key, groups[i].Key)
+		}
+	}
 	months, err := backend.GetGroups(Filter{}, "month")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(months) != 5 { // 2023-01, 2026-07, 2026-08, 2024-05, 2022-01
 		t.Fatalf("month groups: got %d want 5", len(months))
+	}
+	// 月份按时间倒序（新→旧），而非按大小排序。
+	wantMonths := []string{"2026-08", "2026-07", "2024-05", "2023-01", "2022-01"}
+	for i, want := range wantMonths {
+		if months[i].Key != want {
+			t.Fatalf("month order: got %v want %v", months[i].Key, wantMonths)
+		}
 	}
 
 	// 原文件行必须有 OriURL（视频/动图的直接预览入口，此前漏设导致视频无法预览）
