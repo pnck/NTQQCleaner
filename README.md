@@ -8,13 +8,13 @@
 
 - QQ 缓存可达数十 GB（图片/视频/表情长期累积），自带清理一刀切 3 天
 - 缓存大头是**缩略图**（Thumb 可占 Pic 的 66%），且**可从原图重建 → 删除零数据损失**
-- 本工具按「业务类型 × 时间层 × 价值分级」打分，用户按自己的记忆做最终判断
+- 本工具按「业务类型 × 时间 × 命名筛选器」组织扫描结果，用户按自己的记忆做最终判断
 
 ## 功能线（docs/README §1）
 
 1. **缩略图删减**（零损失清理，跨 biz 统一评估）
 2. **按业务类型清理**（Pic/Video/Ptt/Emoji/File/dataline，Emoji 分五细类）
-3. **超龄/价值分级**（🟢可安全 / 🟡建议 / 🟠谨慎 / 🔴保留）
+3. **命名筛选器**（条件 + 排序 + take/drop 管道，可保存/置顶直选；去重建议）
 
 ## 快速开始
 
@@ -57,7 +57,7 @@ task dev          # 热重载开发（需 wails CLI + pnpm）
 ## 架构
 
 ```
-discover → classify → rules.Score/Tier → report ──(dry-run)──▶ UI 展示
+discover → classify → reason/关联索引 → report ──(dry-run)──▶ UI 展示
                                               └─(用户确认)──▶ clean
 ```
 
@@ -65,7 +65,7 @@ discover → classify → rules.Score/Tier → report ──(dry-run)──▶ U
 |---|---|---|
 | `internal/discovery` | 数据根发现、三源账号识别（mmkv/UnitedConfig/Login，全明文） | docs/01, 02 |
 | `internal/classify` | 白名单遍历、文件分类（biz/category/month/md5/size-tag） | docs/01 §2 |
-| `internal/rules` | 价值打分（type+time+redundancy+size）、分级、配置、白名单 | docs/03 |
+| `internal/rules` | 白名单/黑名单政策 + reason 标签 + 配置 | docs/03 |
 | `internal/clean` | 删除执行：进程保护→白名单→备份/SHA-256→审计日志 | docs/06 |
 | `internal/app` | Engine（CLI/GUI 共享管线）+ Backend（GUI 绑定，分页/统计/预览） | docs/04 |
 | `frontend/` | React 19 + TanStack Virtual：虚拟化照片墙、懒加载缩略图、预览面板 | docs/07 |
@@ -89,7 +89,7 @@ task smoke                 # CLI 端到端冒烟：scan → manifest → clean�
 |---|---|
 | `docs/01_data_structure.md` | 缓存目录结构全解 |
 | `docs/02_account_identification.md` | 账号明文识别方案 |
-| `docs/03_clean_rules.md` | 清理规则与价值分级 |
+| `docs/03_clean_rules.md` | 清理规则与可清性政策 |
 | `docs/04_tool_design.md` | 架构与实现指导 |
 | `docs/05_sample_data.md` | 开发机样例（测试验证参考） |
 | `docs/06_safety_redlines.md` | 安全红线（硬约束） |

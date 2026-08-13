@@ -65,7 +65,7 @@ internal/qq/generic.go   包内兜底：未知布局 fail-closed（拒绝扫描/
                          仅保留版本无关黑名单底线）
 internal/discovery  数据根发现与账号组装（经 Detect 分派）
 internal/classify   白名单遍历 + FileEntry 组装（Options.K 注入）
-internal/rules      价值打分（Score(K,...)）、配置、白名单/黑名单政策
+internal/rules      白名单/黑名单政策 + reason 标签（Reason） + 配置
 internal/report     UI/CLI 共享模型（不暴露绝对路径，预览走 /preview/{id}）
 internal/clean      删除执行：进程保护→白名单→适配器删除/移动→审计
 internal/app        Engine（Detect 分派 + 共享管线）+ Backend（GUI 绑定）
@@ -78,6 +78,6 @@ tests/cli_smoke.sh CLI 端到端冒烟
 
 - **安全红线在 Go 侧**，前端不可信（docs/06 §5b）：删除前逐文件重验白名单/黑名单；dry-run 零写入；无 --force + 确认则不可删
 - 产品决策（偏离 docs/06）：① QQ 运行守卫默认拒绝，但经二次确认可带 `IgnoreRunning` 覆盖（POSIX 下 unlink 不被写锁阻塞，残余风险仅是缓存条目失效可重下）；② 无备份目录时审计只记路径不再算 SHA-256
-- 打分模型：score = type(0-40) + time(0-30) + redundancy(0-20) + size(0-10)；tier：safe/suggest/caution/keep；🟠 需 aggressive
+- **无打分/分级模型**（已整体移除）：可清性 = 白名单类别门控（config clean_*，GUI 全部放开）+ 结构红线；选择权在用户筛选器。Reason 只是说明标签，不决定可清性
 - 测试时钟用 `testutil.Now`（2026-08-10）注入；fixture mtime 固定，断言可复现
 - 前端页面大小 200 行，PhotoWall 虚拟化 + 无限分页；行状态（rows/checked）由 App 持有

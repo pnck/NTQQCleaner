@@ -170,4 +170,4 @@ qq/
 │   └── mmkv/                              # 应被 skip
 └── nt_qq_bbbb.../nt_data/Pic/2022-01/Thumb/{md5}_720.jpg
 ```
-用 `touch -d` 设置不同 mtime，验证各时间层与分级结果。
+用 `touch -d` 设置不同 mtime，验证扫描基线（MinAgeDays）与 age/month 筛选结果。

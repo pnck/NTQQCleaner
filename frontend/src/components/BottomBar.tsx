@@ -22,7 +22,7 @@ export function BottomBar({
 }: Props) {
   return (
     <div className="bottombar">
-      <span className="tier-stat">
+      <span className="stat">
         当前筛选 <b>{stats.count}</b> 个文件 · <b>{fmtSize(stats.size)}</b>
       </span>
       <div className="grow" />

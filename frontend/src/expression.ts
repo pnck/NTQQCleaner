@@ -118,7 +118,7 @@ function tokenize(text: string): Tok[] {
 }
 
 // order() 可用的排序字段（与后端 sortIDs 一致）
-export const ORDERABLE_FIELDS = ["size", "mtime", "month", "md5", "tier"];
+export const ORDERABLE_FIELDS = ["size", "mtime", "month", "md5"];
 
 export interface ParseResult {
   expr: Expr | null;

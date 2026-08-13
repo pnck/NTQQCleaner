@@ -5,8 +5,12 @@ import (
 )
 
 func TestWhitelisted(t *testing.T) {
-	cfg := Default()
-	cases := []struct {
+	// 结构用例：门控全部打开时，纯结构校验（黑名单类别另测）。
+	open := Default()
+	open.CleanTemp, open.CleanThumb, open.CleanOri = true, true, true
+	open.CleanFile, open.CleanBaseEmoji, open.CleanMarketface, open.CleanPersonalEmoji = true, true, true, true
+
+	structural := []struct {
 		rel  string
 		want bool
 	}{
@@ -24,28 +28,40 @@ func TestWhitelisted(t *testing.T) {
 		{"Emoji/emoji-recv/2024-05/Thumb/abc_720.png", true},
 		{"Emoji/emoji-recv/Thumb/abc.png", false}, // missing month level
 		{"Emoji/BaseEmojiSyastems/ThumbTemp/x.zip", true},
-		{"Emoji/BaseEmojiSyastems/EmojiSystermResource/😀/png/x.png", false}, // needs CleanBaseEmoji
-		{"Emoji/marketface/123/x.png", false},                               // needs CleanMarketface
-		{"Emoji/personal_emoji/Ori/x.png", false},                           // needs CleanPersonalEmoji
+		{"Emoji/BaseEmojiSyastems/EmojiSystermResource/😀/png/x.png", true},
+		{"Emoji/marketface/123/x.png", true},
+		{"Emoji/personal_emoji/Ori/x.png", true},
 		{"mmkv/mmkv.default", false},
 		{"UnitedConfig/000/x", false},
 		{"log/2026-08/x.log", false},
 		{"", false},
 		{"Pic", false},
+		{"Pic/2024-09/Xyz/abc.png", false}, // unknown sub dir fails closed
 	}
-	for _, c := range cases {
-		if got := Whitelisted(ntK(), c.rel, cfg); got != c.want {
-			t.Errorf("Whitelisted(%q) = %v, want %v", c.rel, got, c.want)
+	for _, c := range structural {
+		if got := Whitelisted(ntK(), c.rel, open); got != c.want {
+			t.Errorf("Whitelisted(%q) with gates open = %v, want %v", c.rel, got, c.want)
 		}
 	}
-	cfg.CleanBaseEmoji, cfg.CleanMarketface, cfg.CleanPersonalEmoji = true, true, true
-	for _, rel := range []string{
-		"Emoji/BaseEmojiSyastems/EmojiSystermResource/😀/png/x.png",
-		"Emoji/marketface/123/x.png",
-		"Emoji/personal_emoji/Ori/x.png",
-	} {
-		if !Whitelisted(ntK(), rel, cfg) {
-			t.Errorf("Whitelisted(%q) = false with gates on, want true", rel)
+
+	// 门控用例：CLI 保守默认（clean_ori/clean_file/emoji 全部关闭）。
+	def := Default()
+	gated := []struct {
+		rel  string
+		want bool
+	}{
+		{"Pic/2024-09/Thumb/abc_720.png", true},     // clean_thumb=true
+		{"Pic/2024-09/Ori/abc.jpg", false},         // clean_ori=false → 只报告
+		{"Pic/2024-09/OriTemp/abc.tmp", true},      // clean_temp=true
+		{"File/Thumb/abc.png", false},              // clean_file=false
+		{"Emoji/emoji-recv/2024-05/Ori/abc.png", false}, // clean_ori=false
+		{"Emoji/BaseEmojiSyastems/EmojiSystermResource/😀/png/x.png", false},
+		{"Emoji/marketface/123/x.png", false},
+		{"Emoji/personal_emoji/Ori/x.png", false},
+	}
+	for _, c := range gated {
+		if got := Whitelisted(ntK(), c.rel, def); got != c.want {
+			t.Errorf("Whitelisted(%q) with defaults = %v, want %v", c.rel, got, c.want)
 		}
 	}
 }

@@ -34,13 +34,12 @@ type ScanOptions struct {
 	MinAgeDays int      `json:"minAgeDays"`
 	MinSize    int64    `json:"minSize"`
 	OnlyBizs   []string `json:"onlyBizs"`
-	Aggressive bool     `json:"aggressive"`
 }
 
 // Condition is one leaf of a filter expression (Jira-style):
 // {field, operator, value}.
 type Condition struct {
-	Field string `json:"field"` // biz|sub|category|month|age|size|md5|reason|thumb|temp|tier
+	Field string `json:"field"` // biz|sub|category|month|age|size|md5|reason|thumb|temp
 	Op    string `json:"op"`    // eq|ne|in|gt|gte|lt|lte|contains
 	Value string `json:"value"`
 }
@@ -57,7 +56,7 @@ type Expr struct {
 // OrderStage is one order() pipeline function: sort by field asc/desc.
 // Multiple stages sort stably in sequence (= 多关键字排序).
 type OrderStage struct {
-	Field string `json:"field"` // size|mtime|month|md5|tier
+	Field string `json:"field"` // size|mtime|month|md5
 	Desc  bool   `json:"desc"`
 }
 
@@ -76,7 +75,7 @@ type Filter struct {
 
 // Sort orders query results.
 type Sort struct {
-	Field string `json:"field"` // size|mtime|tier|md5
+	Field string `json:"field"` // size|mtime|month|md5
 	Desc  bool   `json:"desc"`
 }
 

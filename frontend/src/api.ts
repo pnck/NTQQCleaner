@@ -16,7 +16,6 @@ import type {
   ScanDone,
   ScanOptions,
   Stats,
-  TierTotals,
 } from "./types";
 
 declare global {
@@ -61,7 +60,6 @@ export const api = {
   scanState: () =>
     call<{ scanning: boolean; root: string; accounts: AccountReport[] }>("ScanState"),
   queryRows: (q: PageQuery) => call<PageResult>("QueryRows", q),
-  getTotals: (f: Filter) => call<TierTotals>("GetTotals", f),
   getStats: (f: Filter) => call<Stats>("GetStats", f),
   getIDs: (f: Filter) => call<number[]>("GetIDs", f),
   getDupes: (f: Filter) => call<DupGroup[]>("GetDupes", f),

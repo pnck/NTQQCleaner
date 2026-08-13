@@ -51,7 +51,7 @@ func testEngine() *Engine {
 }
 
 // TestEngineScanAll is the full integration: fixture → discover → classify
-// → score → aggregate, asserting the exact tiers derived by hand.
+// → reason/关联索引 → aggregate.
 func TestEngineScanAll(t *testing.T) {
 	f := testutil.BuildQQTree(t)
 	out, err := testEngine().ScanAll(context.Background(), f.Root, nil, nil, 0, 0)
@@ -68,17 +68,8 @@ func TestEngineScanAll(t *testing.T) {
 	if b.Hash != testutil.HashB || b.QQNum != testutil.QQB || b.TotalFiles != 1 {
 		t.Fatalf("account B: %+v", b)
 	}
-	if a.Totals.Safe != 1<<10 { // the OriTemp residue
-		t.Fatalf("A safe: got %d want 1024", a.Totals.Safe)
-	}
-	if a.Totals.Suggest != (80<<10)+(50<<10) { // 2026-07 thumb + emoji-recv thumb
-		t.Fatalf("A suggest: got %d", a.Totals.Suggest)
-	}
-	if b.Totals.Suggest != 60<<10 {
-		t.Fatalf("B suggest: got %d", b.Totals.Suggest)
-	}
-	if len(out.Entries) != 11 || len(out.Tiers) != 11 {
-		t.Fatalf("entries/tiers: %d/%d want 11/11", len(out.Entries), len(out.Tiers))
+	if len(out.Entries) != 11 || len(out.Reasons) != 11 {
+		t.Fatalf("entries/reasons: %d/%d want 11/11", len(out.Entries), len(out.Reasons))
 	}
 }
 
@@ -164,15 +155,6 @@ func TestBackendScanQueryPreviewClean(t *testing.T) {
 		}
 	}
 
-	// Totals over the emoji biz.
-	totals, err := backend.GetTotals(Filter{Expr: leaf("biz", "eq", "emoji")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if totals.Suggest != 50<<10 {
-		t.Fatalf("emoji suggest: got %d", totals.Suggest)
-	}
-
 	// Stats + GetIDs for the select-all-in-filter flow.
 	stats, err := backend.GetStats(thumbFilter)
 	if err != nil {
@@ -239,16 +221,7 @@ func TestBackendScanQueryPreviewClean(t *testing.T) {
 	}
 
 	// Preview: resolve a thumb ID and serve it.
-	thumbID := -1
-	for _, r := range page.Rows {
-		if r.Tier == rules.TierSuggest {
-			thumbID = r.ID
-			break
-		}
-	}
-	if thumbID < 0 {
-		t.Fatal("no suggest thumb row")
-	}
+	thumbID := page.Rows[0].ID
 	p, err := backend.ResolvePreview(thumbID)
 	if err != nil {
 		t.Fatal(err)
@@ -268,18 +241,19 @@ func TestBackendScanQueryPreviewClean(t *testing.T) {
 		}
 	}
 
-	// Clean the safe tier (the OriTemp) into a backup dir.
-	safeIDs := []int{}
-	for i, tier := range outcome(backend).Tiers {
-		if tier == rules.TierSafe {
-			safeIDs = append(safeIDs, i)
+	// Clean the OriTemp residue into a backup dir（选择权在勾选，红线在
+	// clean 层逐文件重验）。
+	tempIDs := []int{}
+	for i, e := range outcome(backend).Entries {
+		if e.IsTemp {
+			tempIDs = append(tempIDs, i)
 		}
 	}
-	if len(safeIDs) != 1 {
-		t.Fatalf("safe ids: got %v want 1", safeIDs)
+	if len(tempIDs) != 1 {
+		t.Fatalf("temp ids: got %v want 1", tempIDs)
 	}
 	backup := filepath.Join(t.TempDir(), "backup")
-	res, err := backend.Clean(CleanRequest{IDs: safeIDs, BackupDir: backup, Force: true, Confirmed: true})
+	res, err := backend.Clean(CleanRequest{IDs: tempIDs, BackupDir: backup, Force: true, Confirmed: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +309,6 @@ func TestMatchOne(t *testing.T) {
 		{Condition{"size", "gt", "100000"}, false},
 		{Condition{"md5", "contains", "aaaa"}, true},
 		{Condition{"md5", "eq", "nope"}, false},
-		{Condition{"tier", "in", "keep,suggest"}, true},
 		{Condition{"nonsense", "eq", "x"}, false}, // unknown field fails closed
 	}
 	for _, c := range cases {
@@ -532,7 +505,7 @@ func TestSetConfigPersists(t *testing.T) {
 	}
 	// Invalid configs are rejected.
 	bad := rules.Default()
-	bad.ScoreThresholds.Safe = 99
+	bad.MinFileSizeBytes = -1
 	if err := backend.SetConfig(bad); err == nil {
 		t.Fatal("invalid config accepted")
 	}

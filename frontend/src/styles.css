@@ -360,13 +360,6 @@ button.chip {
   color: var(--text-dim);
 }
 
-.cell .tier-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex: none;
-}
-
 .cell .cell-check {
   position: absolute;
   top: 4px;
@@ -509,7 +502,7 @@ button.chip {
   border-top: 1px solid var(--border);
 }
 
-.bottombar .tier-stat {
+.bottombar .stat {
   font-size: 12px;
 }
 

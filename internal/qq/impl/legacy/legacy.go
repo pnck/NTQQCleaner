@@ -56,4 +56,3 @@ func (*Legacy) StateDirs() []string                     { return []string{"nt_db
 func (*Legacy) DBSuffixes() []string {
 	return []string{".db", ".db-wal", ".db-shm"}
 }
-func (*Legacy) TypeScore(category string) int { return 40 }

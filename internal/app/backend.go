@@ -144,15 +144,12 @@ func (b *Backend) Scan(opts ScanOptions) error {
 		return fmt.Errorf("scan already running")
 	}
 	if opts.MinAgeDays <= 0 {
-		opts.MinAgeDays = 3 // align with QQ's own 3-day baseline
+		opts.MinAgeDays = rules.DefaultMinAgeDays // 对齐 QQ 官方 3 天基线
 	}
 	cfg := b.cfg
-	if opts.Aggressive {
-		cfg.Aggressive = true
-	}
-	// GUI 模式：分类门控（clean_*）全部放开。价值判断已移交用户的
-	// 筛选器（显式选择什么就清理什么）；结构性红线（nt_db/db 文件/
-	// mmkv 等黑名单、路径穿越）在 clean 层照常强制。CLI 保持保守默认。
+	// GUI 模式：分类门控（clean_*）全部放开。选择权在用户的筛选器
+	// （显式勾选什么就清理什么）；结构性红线（nt_db/db 文件/mmkv 等
+	// 黑名单、路径穿越）在 clean 层照常强制。CLI 保持保守默认。
 	cfg = cfgOpenGates(cfg)
 	root := opts.Root
 	if root == "" {
@@ -297,7 +294,6 @@ func (b *Backend) fileRowLocked(out *Outcome, id int) report.FileRow {
 		Size:   e.Size,
 		MTime:  e.MTime,
 		Ext:    e.Ext,
-		Tier:   out.Tiers[id],
 		Reason: out.Reasons[id],
 	}
 	row.ThumbURL = b.previewURL(id)
@@ -321,7 +317,6 @@ func (b *Backend) fileRowLocked(out *Outcome, id int) report.FileRow {
 
 // sortIDs sorts matched IDs by field (docs/07 §5 中栏).
 func sortIDs(out *Outcome, ids []int, s Sort) {
-	order := map[string]int{"safe": 0, "suggest": 1, "caution": 2, "keep": 3}
 	sort.SliceStable(ids, func(i, j int) bool {
 		a, b := out.Entries[ids[i]], out.Entries[ids[j]]
 		var less bool
@@ -330,8 +325,6 @@ func sortIDs(out *Outcome, ids []int, s Sort) {
 			less = a.Size < b.Size
 		case "mtime":
 			less = a.MTime < b.MTime
-		case "tier":
-			less = order[out.Tiers[ids[i]]] < order[out.Tiers[ids[j]]]
 		case "month":
 			less = a.Month < b.Month
 		default: // md5
@@ -344,24 +337,8 @@ func sortIDs(out *Outcome, ids []int, s Sort) {
 	})
 }
 
-// GetTotals aggregates tiers over a filter (docs/07 §5 底栏).
-func (b *Backend) GetTotals(f Filter) (report.TierTotals, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.outcome == nil {
-		return report.TierTotals{}, fmt.Errorf("no scan results yet")
-	}
-	var t report.TierTotals
-	for _, id := range b.outcome.applyStages(b.outcome.matchedIDs(f), f) {
-		t.Add(b.outcome.Tiers[id], b.outcome.Entries[id].Size)
-	}
-	return t, nil
-}
-
 // GetStats returns the file count and total size of a filter
-// (bottom bar). The tier totals are intentionally not part of the
-// primary UI anymore: the safety tiers are a reference field, not the
-// browsing axis (user-editable filters are).
+// (bottom bar).
 func (b *Backend) GetStats(f Filter) (Stats, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -487,7 +464,6 @@ func (b *Backend) GetGroups(f Filter, by string) ([]report.GroupStat, error) {
 		}
 		g.Count++
 		g.Size += e.Size
-		g.Totals.Add(b.outcome.Tiers[id], e.Size)
 	}
 	out := make([]report.GroupStat, 0, len(groups))
 	for _, g := range groups {
@@ -510,7 +486,7 @@ func (b *Backend) previewURL(id int) string {
 // ResolvePreview maps a preview ID to the absolute file path. The path
 // comes from the scan index (server-side, not frontend input); it is
 // re-checked structurally (roots/traversal/blacklist, docs/07 §4.1) but
-// NOT against cleanability gates — keep-tier (report-only) entries must
+// NOT against cleanability gates — report-only（门控关闭类别）条目必须
 // remain viewable/revealable.
 func (b *Backend) ResolvePreview(id int) (string, error) {
 	b.mu.Lock()
@@ -587,8 +563,6 @@ func cfgOpenGates(cfg rules.Config) rules.Config {
 	cfg.CleanMarketface = true
 	cfg.CleanPersonalEmoji = true
 	cfg.CleanFile = true
-	cfg.CleanLog = true
-	cfg.CleanAvatar = true
 	return cfg
 }
 
@@ -612,12 +586,9 @@ func (b *Backend) Clean(req CleanRequest) (CleanResult, error) {
 		if id < 0 || id >= len(out.Entries) {
 			continue
 		}
-		tier := out.Tiers[id]
-		// Only cleanable tiers can be selected; the clean layer re-verifies.
-		switch tier {
-		case rules.TierSafe, rules.TierSuggest, rules.TierCaution:
-			files = append(files, out.Entries[id])
-		}
+		// 选择权在用户的勾选；每个文件在 clean.Run 内被重新校验
+		// （白名单/黑名单/路径穿越，docs/06 §5b）。
+		files = append(files, out.Entries[id])
 	}
 	roots := b.outcomeRootsLocked()
 	auditLog := b.auditPath

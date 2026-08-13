@@ -1,13 +1,6 @@
 // Mirrors the Go JSON contracts in internal/report + internal/app.
 // Keep in sync when backend types change.
 
-export interface TierTotals {
-  safe: number;
-  suggest: number;
-  caution: number;
-  keep: number;
-}
-
 export interface AccountReport {
   hash: string;
   qqNum: string;
@@ -15,8 +8,6 @@ export interface AccountReport {
   latestMonth: string;
   totalFiles: number;
   totalSize: number;
-  totals: TierTotals;
-  byBiz: Record<string, TierTotals>;
 }
 
 export interface FileRow {
@@ -28,7 +19,6 @@ export interface FileRow {
   size: number;
   mtime: number;
   ext: string;
-  tier: string;
   reason: string;
   thumbUrl: string;
   oriUrl: string;
@@ -50,7 +40,7 @@ export interface Expr {
 }
 
 export interface OrderStage {
-  field: string; // size|mtime|month|md5|tier
+  field: string; // size|mtime|month|md5
   desc: boolean;
 }
 
@@ -68,7 +58,7 @@ export interface Stats {
 }
 
 export interface Sort {
-  field: string; // size | mtime | tier | md5
+  field: string; // size | mtime | month | md5
   desc: boolean;
 }
 
@@ -89,7 +79,6 @@ export interface GroupStat {
   key: string;
   count: number;
   size: number;
-  totals: TierTotals;
 }
 
 export interface ScanOptions {
@@ -98,7 +87,6 @@ export interface ScanOptions {
   minAgeDays: number;
   minSize: number;
   onlyBizs: string[];
-  aggressive: boolean;
 }
 
 export interface ScanDone {
@@ -132,11 +120,6 @@ export interface CleanResult {
 }
 
 export interface Config {
-  defaultThresholdSeconds: number;
-  timeTierDays: number[];
-  archiveMonthOlderThanMonths: number;
-  scoreThresholds: { safe: number; suggest: number; caution: number };
-  aggressive: boolean;
   cleanTemp: boolean;
   cleanThumb: boolean;
   cleanOri: boolean;
@@ -144,8 +127,6 @@ export interface Config {
   cleanMarketface: boolean;
   cleanPersonalEmoji: boolean;
   cleanFile: boolean;
-  cleanLog: boolean;
-  cleanAvatar: boolean;
   minFileSizeBytes: number;
   skipDirs: string[];
 }

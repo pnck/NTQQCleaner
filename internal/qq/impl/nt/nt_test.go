@@ -47,27 +47,6 @@ func TestParseFilename(t *testing.T) {
 	}
 }
 
-// TestTypeScore：docs/03 §3 的目录优先级映射。
-func TestTypeScore(t *testing.T) {
-	k := &NT{}
-	cases := map[string]int{
-		"pic/oritemp":              0,
-		"pic/thumb":                10,
-		"emoji/emoji-recv/thumb":   10,
-		"emoji/emoji-recv/ori":     20,
-		"pic/ori":                  30,
-		"video/ori":                30,
-		"emoji/marketface":         35,
-		"emoji/personal-emoji/ori": 40,
-		"unknown/x":                40,
-	}
-	for cat, want := range cases {
-		if got := k.TypeScore(cat); got != want {
-			t.Errorf("TypeScore(%q) = %d, want %d", cat, got, want)
-		}
-	}
-}
-
 // TestClassifyEmoji：Emoji 五子类分类。
 func TestClassifyEmoji(t *testing.T) {
 	k := &NT{}

@@ -189,24 +189,53 @@ func (*NT) Whitelisted(rel string, g qq.Gates) bool {
 	if len(segs) < 2 {
 		return false
 	}
+	// 子类型 → 门控映射（docs/03 §6）。未知子类型 fail-closed。
+	gateOf := func(sub string) (bool, bool) {
+		switch sub {
+		case "OriTemp", "ThumbTemp":
+			return g.CleanTemp, true
+		case "Ori":
+			return g.CleanOri, true
+		case "Thumb":
+			return g.CleanThumb, true
+		case "file_assistant":
+			return g.CleanFile, true
+		}
+		return false, false
+	}
 	switch segs[0] {
 	case "Pic", "Video", "Ptt", "dataline":
-		return len(segs) >= 4 && monthRe.MatchString(segs[1])
+		// {biz}/{YYYY-MM}/{Ori|Thumb|OriTemp|ThumbTemp}/{file}
+		if len(segs) < 4 || !monthRe.MatchString(segs[1]) {
+			return false
+		}
+		on, ok := gateOf(segs[2])
+		return ok && on
 	case "File":
-		return len(segs) >= 3
+		// File/ 作为整体由 CleanFile 门控（docs/03 §3），不分子类型。
+		if len(segs) < 3 {
+			return false
+		}
+		_, ok := gateOf(segs[1])
+		return ok && g.CleanFile
 	case "Emoji":
 		if len(segs) < 3 {
 			return false
 		}
 		switch segs[1] {
 		case "emoji-recv":
-			return len(segs) >= 4 && monthRe.MatchString(segs[2])
+			// {Emoji}/emoji-recv/{YYYY-MM}/{Ori|Thumb|OriTemp|ThumbTemp}/{file}
+			if len(segs) < 5 || !monthRe.MatchString(segs[2]) {
+				return false
+			}
+			on, ok := gateOf(segs[3])
+			return ok && on
 		case "BaseEmojiSyastems":
 			if len(segs) < 4 {
 				return false
 			}
 			if segs[2] == "ThumbTemp" {
-				return true
+				return g.CleanTemp
 			}
 			return g.CleanBaseEmoji
 		case "marketface":
@@ -225,26 +254,4 @@ func (*NT) StateDirs() []string {
 
 func (*NT) DBSuffixes() []string {
 	return []string{".db", ".db-wal", ".db-shm", ".db-first.material", ".db-last.material"}
-}
-
-// ---- 评分知识（docs/03 §3）----
-
-func (*NT) TypeScore(category string) int {
-	cat := strings.ToLower(category)
-	switch {
-	case strings.Contains(cat, "temp"):
-		return 0
-	case cat == "pic/thumb", cat == "video/thumb", cat == "ptt/thumb",
-		cat == "file/thumb", cat == "dataline/thumb",
-		cat == "emoji/emoji-recv/thumb":
-		return 10
-	case cat == "emoji/emoji-recv/ori":
-		return 20
-	case cat == "pic/ori", cat == "video/ori", cat == "dataline/ori", cat == "ptt/ori":
-		return 30
-	case cat == "emoji/marketface":
-		return 35
-	default:
-		return 40
-	}
 }

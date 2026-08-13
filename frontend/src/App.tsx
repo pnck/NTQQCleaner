@@ -127,7 +127,7 @@ export default function App() {
     setChecked(new Set());
     setRows([]);
     void api
-      .scan({ root, account, minAgeDays: 3, minSize: 0, onlyBizs: [], aggressive: false })
+      .scan({ root, account, minAgeDays: 3, minSize: 0, onlyBizs: [] })
       .catch((e) => {
         setPhase("idle");
         setError(String(e));

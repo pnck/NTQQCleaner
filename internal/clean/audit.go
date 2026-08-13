@@ -18,7 +18,6 @@ type auditEntry struct {
 	BackupPath string `json:"backupPath,omitempty"`
 	Size       int64  `json:"size"`
 	SHA256     string `json:"sha256,omitempty"`
-	Tier       string `json:"tier"`
 	Reason     string `json:"reason"`
 }
 

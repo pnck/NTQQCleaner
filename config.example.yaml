@@ -1,22 +1,8 @@
-# qq-cleaner 默认配置（docs/03_clean_rules.md §7）。
+# qq-cleaner 默认配置（docs/03_clean_rules.md §6）。
 # 复制为 ~/.qq-cleaner/config.yaml 后按需修改；未写出的键保持内置默认值。
 
-# 对齐 QQ 官方 3 天规则（259199 秒 ≈ 3 天）
-default_threshold_seconds: 259199
-
-# 分层时间窗（天）：30/90/180/365 → L1/L2/L3/L4
-time_tier_days: [30, 90, 180, 365]
-
-# 整月归档：月目录超过该月数视为 L5 归档级
-archive_month_older_than_months: 12
-
-# 价值分级阈值（score 0~100，越低越可清）
-score_thresholds: {safe: 30, suggest: 55, caution: 75}
-
-# 是否把 🟠 谨慎层列入扫描结果（默认不列入）
-aggressive: false
-
-# 各类目开关：false = 只报告不清理
+# 各类目开关：false = 只报告不清理（CLI 政策；GUI 全部放开，
+# 选什么清理由用户的筛选器决定）
 clean_temp: true             # *Temp 下载中断残留（最安全）
 clean_thumb: true            # 缩略图（Ori 在则可重建，零损失）
 clean_ori: false             # 原图/原文件（默认只报告）

@@ -32,8 +32,8 @@ qq-cleaner/
 ├── main.go                 # 入口：wails.Run + Bind + embed.FS
 ├── internal/
 │   ├── discovery/          # 数据目录发现 + 账号识别（见 02）
-│   ├── classify/           # 遍历 nt_data，文件分类（类型/月份/时间层）
-│   ├── rules/              # 价值分级打分 + 白名单/黑名单判定（见 03）
+│   ├── classify/           # 遍历 nt_data，文件分类（类型/月份/命名解析）
+│   ├── rules/              # 白名单/黑名单判定 + reason 标签（见 03）
 │   ├── report/             # 统计与报告模型（供 UI 渲染）
 │   ├── clean/              # 执行删除（进程保护/备份/二次确认/日志）
 │   └── app/                # Backend（Bind 到前端 window.go.backend）
@@ -44,9 +44,11 @@ qq-cleaner/
 
 **数据流**：
 ```
-discover() → classify() → rules.Score() → report() ──(dry-run)──▶ UI 展示
+discover() → classify() → reason/关联索引 → report() ──(dry-run)──▶ UI 展示
                                               └─(用户确认)──▶ clean()
 ```
+
+> 无打分/分级环节：可清性 = clean 层的白名单/黑名单逐文件重验（docs/03 §4）。
 
 **关键原则**：UI 层只负责展示与触发；**所有安全红线（白名单、进程保护、备份、确认）在 Go 侧强制实现**，UI 视为不可信输入。
 
@@ -65,25 +67,17 @@ type Backend struct {
 type ScanOptions struct {
     Root      string   `json:"root"`      // 空 = 自动探测
     Account   string   `json:"account"`   // 空 = 全部
-    MinAgeDays int     `json:"minAgeDays"`// 默认 3
+    MinAgeDays int     `json:"minAgeDays"`// 默认 3（对齐 QQ 3 天基线）
     MinSize   int64    `json:"minSize"`   // 默认 0
     OnlyTypes []string `json:"onlyTypes"` // 空 = 全部
-    Aggressive bool    `json:"aggressive"`// 是否含 🟠 谨慎层
-}
-
-type TierTotals struct {
-    Safe     int64 `json:"safe"`
-    Suggest  int64 `json:"suggest"`
-    Caution  int64 `json:"caution"`
-    Keep     int64 `json:"keep"`
 }
 
 type AccountReport struct {
     Hash     string               `json:"hash"`
     QQNum    string               `json:"qqNum"`    // 识别出的 QQ 号；未知为 ""
     NtData   string               `json:"ntData"`   // 绝对路径（展示用）
-    Totals   map[string]TierTotals `json:"totals"`  // key = biz (pic/video/...)
-    Files    []report.FileEntry   `json:"files"`    // 明细（分页/截断返回）
+    TotalFiles int                `json:"totalFiles"`
+    TotalSize  int64              `json:"totalSize"`
 }
 
 // 方法（前端 window.go.backend 异步调用）
@@ -166,31 +160,27 @@ func Scan(ntData string, onlyTypes []string, skipDirs map[string]bool, minSize i
 **维度指引（现象→模型）**：文件分类的轴应包含 `biz`（所属业务）与 `sub`（Ori/Thumb/Temp）两个**平级**维度；
 索引应能按"是否 Thumb"独立聚合/筛选（现象：Thumb 可重建、占缓存大头、跨 biz 普遍存在）——具体接口设计由开发者定。
 
-### 4.3 rules — 价值分级与判定
+### 4.3 rules — 白名单/黑名单判定 + reason 标签
 
 ```go
 package rules
 
 type Config struct {
-    DefaultThresholdSeconds int64             // 默认 259199（对齐 QQ 3 天）
-    TimeTiers               map[int]int64     // tier→秒 上界
-    ArchiveMonthOlderThanMonths int            // 12
-    ScoreThresholds          struct{ Safe, Suggest, Caution int } // 30/55/75
     CleanTemp, CleanThumb    bool             // true/true
     CleanOri, CleanBaseEmoji, CleanMarketface, CleanPersonalEmoji, CleanFile bool
+    CleanLog, CleanAvatar    bool
+    MinFileSizeBytes         int64
     SkipDirs                 []string
 }
 
-func Score(f classify.FileEntry, idx MD5Index, cfg Config) int {
-    // type_score(0~40) + time_score(0~30) + redundancy(0~20) + size_score(0~10)
-    // 详见 03 §4
-}
+// Reason 返回短标签（展示说明，不影响可清性），如「缩略图」「重复出现」
+func Reason(f classify.FileEntry, idx MD5Index) string
 
-func Tier(f classify.FileEntry, score int, cfg Config) string {
-    // "safe"/"suggest"/"caution"/"keep"；*Temp 强制 safe
-}
+// Whitelisted：类别门控 + 结构事实（相对 nt_data 的路径）
+func Whitelisted(k Knowledge, rel string, cfg Config) bool
 
-type MD5Index map[string]struct{ HasOri bool; Count int } // classify 后构建一次
+// Blacklisted：硬黑名单（状态目录/db 后缀），任何模式不可触碰
+func Blacklisted(k Knowledge, abs string) bool
 ```
 - 白名单判定：路径必须落在 01 §2.1 富媒体目录；`SkipDirs` 在 classify 层与 clean 层**双重**过滤
 
@@ -200,8 +190,8 @@ type MD5Index map[string]struct{ HasOri bool; Count int } // classify 后构建�
 package clean
 
 type Request struct {
-    Files     []classify.FileEntry // 已分级为 safe（+suggest 若用户勾选）
-    BackupDir string               // 非空 = 移动备份；空 = 记录清单+SHA256
+    Files     []classify.FileEntry // 用户勾选的文件；逐条重验后才可能删
+    BackupDir string               // 非空 = 移动备份；空 = 记录清单
     Force     bool                 // 必须 true（由 UI 二次确认后传入）
 }
 
@@ -211,7 +201,7 @@ func Run(req Request) (Result, error) {
     for _, f := range req.Files {
         if !whitelisted(f.Path) { logAndSkip(f); continue } // 白名单二次校验
         if req.BackupDir != "" { os.Rename(f.Path, backup) } else { os.Remove(f.Path) }
-        auditLog(f)   // 时间/路径/大小/SHA256/分级
+        auditLog(f)   // 时间/路径/大小/reason 标签
     }
 }
 ```
@@ -259,7 +249,7 @@ func Run(req Request) (Result, error) {
 
 1. **单元测试**（纯 Go，`go test`）：
    - discovery（临时目录模拟 `nt_qq_<hash>` + 假 mmkv 内容）
-   - rules.Score/Tier（各优先级 × 时间层 × 冗余组合）
+   - rules.Reason（各类别 × 关联组合的标签）/ Whitelisted / Blacklisted
    - classify 文件名/月目录解析
 2. **集成测试**：`tests/fixtures/` 构造小型假 QQ 目录树（见 05 §6），跑 Scan 校验报告
 3. **UI 测试**：Wails 窗口手测（扫描/勾选/确认/清理流程）；可用 `--headless-scan` 子命令

@@ -18,7 +18,13 @@ type Instance struct {
 }
 
 // Gates 是白名单结构校验需要的分类门控（由 rules.Config 映射而来）。
+// 门控是删除政策的一部分：CLI 按 config 保守默认，GUI 全部放开
+// （选择权在用户筛选器）。
 type Gates struct {
+	CleanTemp          bool
+	CleanThumb         bool
+	CleanOri           bool
+	CleanFile          bool
 	CleanBaseEmoji     bool
 	CleanMarketface    bool
 	CleanPersonalEmoji bool
@@ -47,9 +53,6 @@ type Knowledge interface {
 	Whitelisted(rel string, g Gates) bool
 	StateDirs() []string
 	DBSuffixes() []string
-
-	// 评分知识（docs/03 §3 目录优先级）
-	TypeScore(category string) int
 }
 
 // ---- 注册表：probe 链（版本 dispatcher）----

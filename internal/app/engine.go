@@ -18,26 +18,24 @@ import (
 )
 
 // Engine is the stateless scan pipeline shared by CLI and GUI.
-// discover → classify → score/tier → report (docs/04 §2).
+// discover → classify → reason/关联索引 → report (docs/04 §2).
 type Engine struct {
 	Cfg     rules.Config
 	Emitter Emitter
 	Now     func() time.Time // injectable clock; nil = time.Now
 }
 
-// Outcome is a finished scan held in memory for querying. Entries, Tiers
-// and Reasons are index-aligned; ByAccount maps instance hashes to entry
-// IDs; OriID/ThumbID map filename md5s to the ID of their Ori/Thumb entry
-// for preview pairing (docs/07 §4.2). Now is the clock used for scoring
-// and for age conditions (kept consistent per scan).
+// Outcome is a finished scan held in memory for querying. Entries and
+// Reasons are index-aligned; ByAccount maps instance hashes to entry IDs;
+// OriID/ThumbID map filename md5s to the ID of their Ori/Thumb entry for
+// preview pairing (docs/07 §4.2). Now is the clock used for age conditions
+// (kept consistent per scan).
 type Outcome struct {
 	Root      string
 	Accounts  []report.AccountReport
 	Entries   []classify.FileEntry
-	Tiers     []string
 	Reasons   []string
 	ByAccount map[string][]int
-	MD5Index  rules.MD5Index
 	OriID     map[string]int
 	ThumbID   map[string]int
 	Now       time.Time
@@ -45,8 +43,8 @@ type Outcome struct {
 	K qq.Knowledge
 }
 
-// ScanAll scans every account under root (or just `accounts`), classifies,
-// scores and aggregates. Progress events are emitted throttled (~100ms).
+// ScanAll scans every account under root (or just `accounts`), classifies
+// and aggregates. Progress events are emitted throttled (~100ms).
 func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []string, minAgeDays int, minSize int64) (*Outcome, error) {
 	// 版本 dispatcher：从磁盘布局识别 QQ 平台×版本族，分派知识实现。
 	// 不支持的布局（generic）fail-closed。
@@ -82,7 +80,6 @@ func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []
 	out := &Outcome{
 		Root:      root,
 		ByAccount: make(map[string][]int, len(accs)),
-		MD5Index:  make(rules.MD5Index),
 		OriID:     make(map[string]int),
 		ThumbID:   make(map[string]int),
 		Now:       now(),
@@ -133,7 +130,6 @@ func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []
 			QQNum:       acc.QQNum,
 			NtData:      acc.NtData,
 			LatestMonth: acc.LatestMonth,
-			ByBiz:       make(map[string]report.TierTotals),
 		}
 		for _, f := range entries {
 			if minAge > 0 && f.MTime > cutoff {
@@ -141,14 +137,9 @@ func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []
 			}
 			id := len(out.Entries)
 			out.Entries = append(out.Entries, f)
-			t := now()
-			score := rules.Score(k, f, acctIdx, e.Cfg, t)
-			tier := rules.Tier(f, score, e.Cfg, t)
-			out.Tiers = append(out.Tiers, tier)
-			out.Reasons = append(out.Reasons, rules.Reason(f, tier, acctIdx))
+			out.Reasons = append(out.Reasons, rules.Reason(f, acctIdx))
 			out.ByAccount[acc.Hash] = append(out.ByAccount[acc.Hash], id)
 			if f.MD5 != "" {
-				out.MD5Index[f.MD5] = acctIdx[f.MD5]
 				if f.Sub == "Ori" {
 					if _, ok := out.OriID[f.MD5]; !ok {
 						out.OriID[f.MD5] = id
@@ -162,10 +153,6 @@ func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []
 			}
 			rep.TotalFiles++
 			rep.TotalSize += f.Size
-			rep.Totals.Add(tier, f.Size)
-			b := rep.ByBiz[f.Biz]
-			b.Add(tier, f.Size)
-			rep.ByBiz[f.Biz] = b
 		}
 		out.Accounts = append(out.Accounts, rep)
 	}
@@ -263,8 +250,6 @@ func (o *Outcome) matchOne(id int, c Condition) bool {
 			return e.Month
 		case "md5":
 			return e.MD5
-		case "tier":
-			return o.Tiers[id]
 		case "reason":
 			return o.Reasons[id]
 		}
@@ -317,7 +302,7 @@ func (o *Outcome) matchOne(id int, c Condition) bool {
 			return boolVal() != want
 		}
 		return boolVal() == want
-	default: // string fields: biz/sub/category/month/md5/tier/reason
+	default: // string fields: biz/sub/category/month/md5/reason
 		v := strVal()
 		switch c.Op {
 		case "eq":

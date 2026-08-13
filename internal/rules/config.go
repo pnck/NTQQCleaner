@@ -1,5 +1,5 @@
-// Package rules implements the value-scoring model and the whitelist/
-// blacklist path rules. It is pure logic: no I/O beyond config load/save.
+// Package rules implements the whitelist/blacklist path policy and the
+// reason-label model. It is pure logic: no I/O beyond config load/save.
 //
 // Reference: docs/03_clean_rules.md, docs/06_safety_redlines.md
 package rules
@@ -12,29 +12,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// QQOfficialThresholdSeconds = 259199 ≈ 3 days. Files newer than this are
-// never cleanable (QQ's own baseline, docs/03 §1)。这是默认值；知识实现
-// 可在扫描初始化时按版本族调整 DefaultThresholdSeconds。
+// QQOfficialThresholdSeconds = 259199 ≈ 3 days：QQ 官方清理基线（docs/03
+// §1）。扫描的 MinAgeDays 默认值（DefaultMinAgeDays）对齐该基线。
 const QQOfficialThresholdSeconds int64 = 259199
 
-// ScoreThresholds maps the 0-100 value score to tier labels (docs/03 §4).
-type ScoreThresholds struct {
-	Safe    int `yaml:"safe" json:"safe"`
-	Suggest int `yaml:"suggest" json:"suggest"`
-	Caution int `yaml:"caution" json:"caution"`
-}
+// DefaultMinAgeDays is the scan default for MinAgeDays: files newer than
+// this are never even listed (ceil(259199s / 86400s) = 3, docs/03 §1).
+const DefaultMinAgeDays = 3
 
-// Config holds every tunable of the scoring model (docs/03 §7). Zero values
-// mean "use Default()"; Load fills missing fields from defaults.
+// Config holds every tunable of the cleanability policy (docs/03 §6). Zero
+// values mean "use Default()"; Load fills missing fields from defaults.
 type Config struct {
-	DefaultThresholdSeconds     int64           `yaml:"default_threshold_seconds" json:"defaultThresholdSeconds"`
-	TimeTierDays                []int64         `yaml:"time_tier_days" json:"timeTierDays"` // [30,90,180,365]
-	ArchiveMonthOlderThanMonths int             `yaml:"archive_month_older_than_months" json:"archiveMonthOlderThanMonths"`
-	ScoreThresholds             ScoreThresholds `yaml:"score_thresholds" json:"scoreThresholds"`
-	Aggressive                  bool            `yaml:"aggressive" json:"aggressive"` // include 🟠 caution tier
-
 	// Category gates: which kinds of files participate in cleanability at all
-	// (docs/03 §7). "false" = report only, never listed as cleanable.
+	// (docs/03 §6). "false" = report only, never cleanable.
 	CleanTemp          bool `yaml:"clean_temp" json:"cleanTemp"`
 	CleanThumb         bool `yaml:"clean_thumb" json:"cleanThumb"`
 	CleanOri           bool `yaml:"clean_ori" json:"cleanOri"`
@@ -42,31 +32,23 @@ type Config struct {
 	CleanMarketface    bool `yaml:"clean_marketface" json:"cleanMarketface"`
 	CleanPersonalEmoji bool `yaml:"clean_personal_emoji" json:"cleanPersonalEmoji"`
 	CleanFile          bool `yaml:"clean_file" json:"cleanFile"`
-	CleanLog           bool `yaml:"clean_log" json:"cleanLog"`
-	CleanAvatar        bool `yaml:"clean_avatar" json:"cleanAvatar"`
 
 	MinFileSizeBytes int64    `yaml:"min_file_size_bytes" json:"minFileSizeBytes"`
 	SkipDirs         []string `yaml:"skip_dirs" json:"skipDirs"`
 }
 
-// Default returns the documented defaults (docs/03 §7).
+// Default returns the documented defaults (docs/03 §6).
 func Default() Config {
 	return Config{
-		DefaultThresholdSeconds:     QQOfficialThresholdSeconds,
-		TimeTierDays:                []int64{30, 90, 180, 365},
-		ArchiveMonthOlderThanMonths: 12,
-		ScoreThresholds:             ScoreThresholds{Safe: 30, Suggest: 55, Caution: 75},
-		CleanTemp:                   true,
-		CleanThumb:                  true,
-		CleanOri:                    false,
-		CleanBaseEmoji:              false,
-		CleanMarketface:             false,
-		CleanPersonalEmoji:          false,
-		CleanFile:                   false,
-		CleanLog:                    false,
-		CleanAvatar:                 false,
-		MinFileSizeBytes:            0,
-		SkipDirs:                    []string{"mmkv", "msf", "OnlineStatus", "UnitedConfig", "config", "log", "log-cache", "avatar"},
+		CleanTemp:          true,
+		CleanThumb:         true,
+		CleanOri:           false,
+		CleanBaseEmoji:     false,
+		CleanMarketface:    false,
+		CleanPersonalEmoji: false,
+		CleanFile:          false,
+		MinFileSizeBytes:   0,
+		SkipDirs:           []string{"mmkv", "msf", "OnlineStatus", "UnitedConfig", "config", "log", "log-cache", "avatar"},
 	}
 }
 
@@ -107,17 +89,10 @@ func Save(path string, cfg Config) error {
 	return os.Rename(tmp, path)
 }
 
-// Validate rejects configs whose thresholds would violate the safety model
-// (negative ages, safe > suggest > caution, ...).
+// Validate rejects configs that would violate the safety model.
 func (c *Config) Validate() error {
-	if c.DefaultThresholdSeconds < 0 {
-		return fmt.Errorf("default_threshold_seconds must be >= 0")
-	}
-	if c.ScoreThresholds.Safe < 0 || c.ScoreThresholds.Suggest <= c.ScoreThresholds.Safe || c.ScoreThresholds.Caution <= c.ScoreThresholds.Suggest {
-		return fmt.Errorf("score_thresholds must satisfy 0 <= safe < suggest < caution <= 100")
-	}
-	if c.ScoreThresholds.Caution > 100 {
-		return fmt.Errorf("score_thresholds.caution must be <= 100")
+	if c.MinFileSizeBytes < 0 {
+		return fmt.Errorf("min_file_size_bytes must be >= 0")
 	}
 	return nil
 }

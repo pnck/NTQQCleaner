@@ -108,9 +108,9 @@ Emoji/
 
 **清理建议**：
 - `BaseEmojiSyastems/ThumbTemp/*.zip` = 下载中间产物，**可安全清理**
-- `BaseEmojiSyastems/EmojiSystermResource` = 基础表情资源，**谨慎**（QQ 有接口可整体重下）
+- `BaseEmojiSyastems/EmojiSystermResource` = 基础表情资源，**风险较高**（QQ 有接口可整体重下）
 - `emoji-recv` = 收到的表情，按年月超龄清理（同 Pic 规则）
-- `marketface` = 表情包，QQ 按"最近使用"保留 → 工具按 mtime 分级
+- `marketface` = 表情包，QQ 按"最近使用"保留 → 工具默认只报告（clean_marketface=false）
 - `personal_emoji` = 个人表情，**用户主动制作，默认不清除**
 
 ---
@@ -129,9 +129,9 @@ Emoji/
 QQ 官方用 DB 引用判断"这个文件是否还被消息引用"。本工具**不解析加密 DB**（解析需运行时 dump enc_key），改用以下启发式近似：
 - **\*Temp 目录** → 下载中断/未完成 → 最高可清理优先级
 - **Thumb 目录** → 缩略图，QQ 可从 Ori 重建 → 高可清理优先级
-- **Ori 目录** → 原图，价值最高 → 低清理优先级
-- **老月份目录**（如 > 12 个月）→ 大概率不再被查看 → 按价值分级
-- **重复 md5**（Ori 与 Thumb 同 md5）→ 缩略图可清
+- **Ori 目录** → 原图，价值最高 → 低清理优先级（默认只报告）
+- **老月份目录**（如 > 12 个月）→ 大概率不再被查看 → 用户按月份筛选
+- **重复 md5**（Ori 与 Thumb 同 md5）→ 缩略图可清（原图仍在）
 
 ---
 

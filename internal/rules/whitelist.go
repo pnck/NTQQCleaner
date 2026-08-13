@@ -11,9 +11,14 @@ import (
 // 注入的知识实现 k；本层把它与 Config 政策结合。
 
 // Whitelisted 判断相对 nt_data 的路径是否可能被删除（docs/06 §2）。
-// clean 层在删除前会再次调用本函数做最终校验。
+// clean 层在删除前会再次调用本函数做最终校验。类别门控（clean_*）
+// 是删除政策的一部分：开关关闭的类别只报告不清理。
 func Whitelisted(k Knowledge, rel string, cfg Config) bool {
 	return k.Whitelisted(rel, qq.Gates{
+		CleanTemp:          cfg.CleanTemp,
+		CleanThumb:         cfg.CleanThumb,
+		CleanOri:           cfg.CleanOri,
+		CleanFile:          cfg.CleanFile,
 		CleanBaseEmoji:     cfg.CleanBaseEmoji,
 		CleanMarketface:    cfg.CleanMarketface,
 		CleanPersonalEmoji: cfg.CleanPersonalEmoji,

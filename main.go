@@ -78,15 +78,12 @@ scan flags:
   --only-biz NAME      only this biz dir (repeatable: Pic Video Ptt File dataline Emoji)
   --min-age-days N     skip files newer than N days (default 3)
   --min-size BYTES     skip files smaller than this (default 0)
-  --aggressive         include the 🟠 caution tier in the report
   --config PATH        config file (default ~/.qq-cleaner/config.yaml)
   --json               emit a JSON manifest (feed it to the clean command)
 
 clean flags:
   --file PATH          manifest from scan --json (required)
   --force              required for any deletion (redline)
-  --include-suggest    also clean 🟡 suggest-tier files
-  --include-caution    also clean 🟠 caution-tier files
   --backup-dir PATH    move files there instead of deleting (recommended)
   --audit-log PATH     JSONL audit log (default ~/.qq-cleaner/audit.log)
   --config PATH        config file
@@ -117,9 +114,8 @@ func scanCmd(args []string) error {
 		root       = fs.String("root", "", "")
 		account    = fs.String("account", "", "")
 		configPath = fs.String("config", "", "")
-		minAgeDays = fs.Int("min-age-days", 3, "")
+		minAgeDays = fs.Int("min-age-days", rules.DefaultMinAgeDays, "")
 		minSize    = fs.Int64("min-size", 0, "")
-		aggressive = fs.Bool("aggressive", false, "")
 		asJSON     = fs.Bool("json", false, "")
 		onlyBizs   = multiFlag{}
 	)
@@ -129,9 +125,6 @@ func scanCmd(args []string) error {
 	cfg, err := loadConfig(*configPath)
 	if err != nil {
 		return err
-	}
-	if *aggressive {
-		cfg.Aggressive = true
 	}
 	if *root == "" {
 		if *root, err = autoDetectRoot(); err != nil {
@@ -148,7 +141,7 @@ func scanCmd(args []string) error {
 		return err
 	}
 	if *asJSON {
-		return printManifest(out, cfg)
+		return printManifest(out)
 	}
 	printScanReport(out)
 	return nil
@@ -170,25 +163,15 @@ func printScanReport(out *app.Outcome) {
 	for _, a := range out.Accounts {
 		fmt.Fprintf(w, "\n账号 %s\t→ QQ %s\t(最新月份 %s)\n", shortHash(a.Hash), orUnknown(a.QQNum), a.LatestMonth)
 		fmt.Fprintf(w, "  文件数\t%d\n", a.TotalFiles)
-		fmt.Fprintf(w, "  🟢 可安全\t%s\n", humanSize(a.Totals.Safe))
-		fmt.Fprintf(w, "  🟡 建议\t%s\n", humanSize(a.Totals.Suggest))
-		fmt.Fprintf(w, "  🟠 谨慎\t%s\n", humanSize(a.Totals.Caution))
-		fmt.Fprintf(w, "  🔴 保留\t%s\n", humanSize(a.Totals.Keep))
+		fmt.Fprintf(w, "  总大小\t%s\n", humanSize(a.TotalSize))
 	}
 	w.Flush()
 }
 
-func printManifest(out *app.Outcome, cfg rules.Config) error {
+func printManifest(out *app.Outcome) error {
 	m := report.Manifest{
 		Version: 1,
 		Root:    out.Root,
-		Config: report.ManifestConfig{
-			ThresholdSeconds: cfg.DefaultThresholdSeconds,
-			Aggressive:       cfg.Aggressive,
-			Safe:             cfg.ScoreThresholds.Safe,
-			Suggest:          cfg.ScoreThresholds.Suggest,
-			Caution:          cfg.ScoreThresholds.Caution,
-		},
 	}
 	for _, a := range out.Accounts {
 		ma := report.ManifestAccount{Hash: a.Hash, QQNum: a.QQNum, NtData: a.NtData}
@@ -202,7 +185,6 @@ func printManifest(out *app.Outcome, cfg rules.Config) error {
 				Biz:    e.Biz,
 				Sub:    e.Sub,
 				Month:  e.Month,
-				Tier:   out.Tiers[id],
 				Reason: out.Reasons[id],
 			})
 		}
@@ -216,14 +198,12 @@ func printManifest(out *app.Outcome, cfg rules.Config) error {
 func cleanCmd(args []string) error {
 	fs := flag.NewFlagSet("clean", flag.ExitOnError)
 	var (
-		file        = fs.String("file", "", "")
-		force       = fs.Bool("force", false, "")
-		backupDir   = fs.String("backup-dir", "", "")
-		auditLog    = fs.String("audit-log", "", "")
-		configPath  = fs.String("config", "", "")
-		inclSuggest = fs.Bool("include-suggest", false, "")
-		inclCaution = fs.Bool("include-caution", false, "")
-		ignoreQQ    = fs.Bool("ignore-running", false, "")
+		file       = fs.String("file", "", "")
+		force      = fs.Bool("force", false, "")
+		backupDir  = fs.String("backup-dir", "", "")
+		auditLog   = fs.String("audit-log", "", "")
+		configPath = fs.String("config", "", "")
+		ignoreQQ   = fs.Bool("ignore-running", false, "")
 	)
 	fs.Parse(args)
 
@@ -249,38 +229,26 @@ func cleanCmd(args []string) error {
 		*auditLog = filepath.Join(app.ConfigDir(), "audit.log")
 	}
 
-	// Select files by manifest tier (scan-time decision), then re-verify
-	// every path and re-score conservatively inside clean.Run.
+	// 清单中的全部条目都进入清理流程；每个文件在 clean.Run 内逐条
+	// 重新校验白名单/黑名单（config 的类别门控 + 结构红线），未通过
+	// 的跳过并计入 skipped。
 	var files []classifyEntry
 	var bytes int64
 	for _, a := range m.Accounts {
 		for _, e := range a.Entries {
-			switch e.Tier {
-			case "safe":
-			case "suggest":
-				if !*inclSuggest {
-					continue
-				}
-			case "caution":
-				if !*inclCaution {
-					continue
-				}
-			default:
-				continue
-			}
 			files = append(files, classifyEntry{path: e.Path, size: e.Size, mtime: e.MTime, md5: e.MD5, biz: e.Biz, sub: e.Sub, month: e.Month})
 			bytes += e.Size
 		}
 	}
 	if len(files) == 0 {
-		fmt.Println("manifest contains no cleanable files (tier safe/suggest/caution)")
+		fmt.Println("manifest contains no files")
 		return nil
 	}
-	fmt.Printf("将清理 %d 个文件 (%s)\n", len(files), humanSize(bytes))
+	fmt.Printf("将处理 %d 个文件 (%s)；逐文件重新校验白名单/黑名单\n", len(files), humanSize(bytes))
 	if *backupDir != "" {
 		fmt.Printf("备份目录: %s\n", *backupDir)
 	} else {
-		fmt.Println("无备份目录：每个文件将先计算 SHA-256 并写入审计日志")
+		fmt.Println("无备份目录：审计日志记录路径/大小/时间")
 	}
 	fmt.Print("输入 yes 确认: ")
 	var confirm string

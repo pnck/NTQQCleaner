@@ -227,7 +227,10 @@ func TestRunSkipsBlockedPaths(t *testing.T) {
 }
 
 func TestVerifyPath(t *testing.T) {
+	// 门控全开：纯结构红线校验（黑名单/根/穿越）。
 	cfg := rules.Default()
+	cfg.CleanTemp, cfg.CleanThumb, cfg.CleanOri = true, true, true
+	cfg.CleanFile, cfg.CleanBaseEmoji, cfg.CleanMarketface, cfg.CleanPersonalEmoji = true, true, true, true
 	root := "/data/nt_qq_xx/nt_data"
 	cases := []struct {
 		path    string
@@ -247,6 +250,15 @@ func TestVerifyPath(t *testing.T) {
 		if (err != nil) != c.wantErr {
 			t.Errorf("VerifyPath(%q) err=%v wantErr=%v", c.path, err, c.wantErr)
 		}
+	}
+
+	// 类别门控：CLI 保守默认下 Ori 不可清（只报告）。
+	def := rules.Default()
+	if err := VerifyPath(ntKN(), "/data/nt_qq_xx/nt_data/Pic/2024-09/Ori/a.jpg", []string{root}, def); err == nil {
+		t.Error("VerifyPath accepted Ori with clean_ori=false (CLI default)")
+	}
+	if err := VerifyPath(ntKN(), "/data/nt_qq_xx/nt_data/Pic/2024-09/Thumb/a_720.png", []string{root}, def); err != nil {
+		t.Errorf("VerifyPath rejected Thumb with clean_thumb=true: %v", err)
 	}
 }
 

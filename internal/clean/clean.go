@@ -112,16 +112,12 @@ func Run(ctx context.Context, req Request) (Result, error) {
 			continue
 		}
 
-		// Re-score at clean time with a single-entry index: redundancy
-		// bonuses need the full scan neighborhood, so this is conservative
-		// (lower scores → stricter tiers). The clean layer never trusts the
-		// scan-time tier.
+		// 审计记录附带 reason 标签：用单条目索引保守计算（冗余/配对
+		// 关联需要全量扫描邻域，clean 层不信任扫描期结果）。
 		idx := rules.BuildMD5Index([]classify.FileEntry{f})
-		score := rules.Score(req.K, f, idx, req.Config, now)
-		tier := rules.Tier(f, score, req.Config, now)
-		reason := rules.Reason(f, tier, idx)
+		reason := rules.Reason(f, idx)
 
-		if err := deleteOne(audit, f, req.BackupDir, tier, reason); err != nil {
+		if err := deleteOne(audit, f, req.BackupDir, reason); err != nil {
 			res.Failed++
 			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", f.Path, err))
 			continue
@@ -185,11 +181,10 @@ func VerifyPath(k rules.Knowledge, abs string, allowedRoots []string, cfg rules.
 // deleteOne moves the file to the backup dir (recoverable) or removes it.
 // 删除/移动的 OS 语义由 platform 适配层提供（POSIX unlink 与 Windows
 // DeleteFile 不同）。Every outcome is audited (docs/06 §3).
-func deleteOne(audit *auditLogger, f classify.FileEntry, backupDir, tier, reason string) error {
+func deleteOne(audit *auditLogger, f classify.FileEntry, backupDir, reason string) error {
 	entry := auditEntry{
 		Path:   f.Path,
 		Size:   f.Size,
-		Tier:   tier,
 		Reason: reason,
 	}
 	if backupDir != "" {

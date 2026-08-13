@@ -24,4 +24,3 @@ func (genericKnowledge) StateDirs() []string                  { return []string{
 func (genericKnowledge) DBSuffixes() []string {
 	return []string{".db", ".db-wal", ".db-shm", ".db-first.material", ".db-last.material"}
 }
-func (genericKnowledge) TypeScore(category string) int { return 40 }
