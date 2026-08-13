@@ -12,7 +12,7 @@ interface Props {
 }
 
 // 大文件门限只针对「原文件」中的图片：图片无法流式，>50MB 需显式确认；
-// 视频/音频用 preload="none"，播放器立即渲染、点击播放才拉流。
+// 视频/音频可流式，点击播放即切换播放器。
 const BIG_IMAGE = 50 << 20;
 
 const IMG_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "avif", "ico"];
@@ -32,11 +32,22 @@ function kindOf(row: FileRow, useOri: boolean): Kind {
   return "card";
 }
 
+// 可「播放」的媒体（视频/语音/动图）叠 ▶；静态图片叠 ⤢（查看原文件）。
+function playable(row: FileRow): boolean {
+  const ext = row.ext.toLowerCase();
+  return (
+    row.biz === "video" ||
+    row.biz === "ptt" ||
+    VIDEO_EXTS.includes(ext) ||
+    ["gif", "webp"].includes(ext)
+  );
+}
+
 export function PreviewPanel({ row, rows, onNavigate }: Props) {
-  // 三态：null = 自动（视频/语音/动图默认原文件，其余默认缩略图），
-  // true/false = 用户显式切换（此前布尔值无法覆盖自动默认 → 缩略图按钮失效）
-  const [oriMode, setOriMode] = useState<boolean | null>(null);
-  const [forceBig, setForceBig] = useState(false);
+  // 初始态 = 缩略图 + 叠层图标；点击后切换为播放器/原文件（视频/音频即自动播放）。
+  // 状态按 row.id 记录，切行时自动回到初始态。
+  const [played, setPlayed] = useState<number | null>(null);
+  const [forceBig, setForceBig] = useState<number | null>(null);
 
   if (!row) {
     return (
@@ -51,15 +62,11 @@ export function PreviewPanel({ row, rows, onNavigate }: Props) {
 
   const hasThumb = row.thumbUrl !== "";
   const hasOri = row.oriUrl !== "";
-  const defaultOri =
-    row.biz === "video" ||
-    row.biz === "ptt" ||
-    ["gif", "webp"].includes(row.ext.toLowerCase());
-  const effectiveOri = hasOri && (oriMode === true || (oriMode === null && (defaultOri || !hasThumb)));
-  const kind = kindOf(row, effectiveOri);
-  const src = effectiveOri ? row.oriUrl : row.thumbUrl;
-  const bigImageGate = kind === "img" && effectiveOri && row.size > BIG_IMAGE && !forceBig;
-  const canToggle = hasThumb && hasOri;
+  const full = !hasThumb || played === row.id; // 无缩略图时直接原文件
+  const kind = kindOf(row, full);
+  const src = full ? row.oriUrl : row.thumbUrl;
+  const bigImageGate = kind === "img" && full && row.size > BIG_IMAGE && forceBig !== row.id;
+  const showOverlay = hasThumb && hasOri && !full;
 
   return (
     <aside className="preview">
@@ -76,25 +83,25 @@ export function PreviewPanel({ row, rows, onNavigate }: Props) {
       </div>
 
       <div className="media">
-        {canToggle && (
+        {showOverlay && (
           <button
-            className="preview-chip"
-            onClick={() => setOriMode(!effectiveOri)}
-            title={effectiveOri ? "当前显示原文件，点击切换为缩略图" : "当前显示缩略图，点击切换为原文件"}
+            className="media-overlay"
+            onClick={() => setPlayed(row.id)}
+            title={playable(row) ? "点击播放" : "点击查看原文件"}
           >
-            {effectiveOri ? "原文件 ⇄" : "缩略图 ⇄"}
+            <span className="play-badge">{playable(row) ? "▶" : "⤢"}</span>
           </button>
         )}
         {bigImageGate ? (
           <div className="big-warn">
             原文件 {fmtSize(row.size)}，不自动加载。
             <br />
-            <button onClick={() => setForceBig(true)}>仍然加载</button>
+            <button onClick={() => setForceBig(row.id)}>仍然加载</button>
           </div>
         ) : kind === "video" ? (
-          <video key={src} src={src} controls preload="none" />
+          <video key={src} src={src} controls autoPlay />
         ) : kind === "audio" ? (
-          <audio key={src} src={src} controls preload="none" />
+          <audio key={src} src={src} controls autoPlay />
         ) : kind === "card" ? (
           <div className="big-warn">
             此类型不支持内嵌预览

@@ -437,17 +437,35 @@ button.chip {
   padding: 0 12px;
 }
 
-.preview-chip {
+/* 缩略图上的播放/查看叠层：点击即切换原文件（视频/音频即播放） */
+.media-overlay {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  inset: 0;
   z-index: 5;
-  font-size: 11px;
-  padding: 3px 10px;
-  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.15);
+  border: none;
+  padding: 0;
+}
+
+.media-overlay:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.play-badge {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
   background: rgba(0, 0, 0, 0.55);
-  color: #e6e8ee;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: #fff;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 3px; /* ▶ 视觉居中 */
 }
 
 .preview .detail {
