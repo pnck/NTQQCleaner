@@ -23,6 +23,8 @@ export interface FileRow {
   thumbUrl: string;
   oriUrl: string;
   oriExt: string; // 配对原文件的扩展名（据此分派播放器），无原文件为空
+  contentHash: string; // 文件字节的 SHA-256（仅同大小冲突组会计算；唯一大小为空）
+  contentDupCount: number; // 字节级相同内容的副本总数（含自身；≥2 即重复出现）
 }
 
 // 条件叶子：{字段, 操作符, 值}。
@@ -155,9 +157,10 @@ export function fmtTime(unix: number): string {
 
 export const emptyFilter = (): Filter => ({ account: "", expr: null });
 
-// DupGroup：一个 md5 在全索引中有 ≥2 份时的去重建言。
+// DupGroup：一份字节级相同的内容（SHA-256 分组）在全索引中有 ≥2 份时
+// 的去重建言。
 export interface DupGroup {
-  md5: string;
+  hash: string;
   count: number;
   keepId: number;
   keepLabel: string;

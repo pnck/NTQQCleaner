@@ -18,7 +18,8 @@ import (
 )
 
 // Engine is the stateless scan pipeline shared by CLI and GUI.
-// discover → classify → reason/关联索引 → report (docs/04 §2).
+// discover → classify → 内容哈希二次扫描 → reason/关联索引 → report
+// (docs/04 §2).
 type Engine struct {
 	Cfg     rules.Config
 	Emitter Emitter
@@ -28,17 +29,19 @@ type Engine struct {
 // Outcome is a finished scan held in memory for querying. Entries and
 // Reasons are index-aligned; ByAccount maps instance hashes to entry IDs;
 // OriID/ThumbID map filename md5s to the ID of their Ori/Thumb entry for
-// preview pairing (docs/07 §4.2). Now is the clock used for age conditions
-// (kept consistent per scan).
+// preview pairing (docs/07 §4.2); ContentIndex maps SHA-256 content hashes
+// to entry IDs (byte-identical copies, 二次扫描填充). Now is the clock
+// used for age conditions (kept consistent per scan).
 type Outcome struct {
-	Root      string
-	Accounts  []report.AccountReport
-	Entries   []classify.FileEntry
-	Reasons   []string
-	ByAccount map[string][]int
-	OriID     map[string]int
-	ThumbID   map[string]int
-	Now       time.Time
+	Root         string
+	Accounts     []report.AccountReport
+	Entries      []classify.FileEntry
+	Reasons      []string
+	ByAccount    map[string][]int
+	OriID        map[string]int
+	ThumbID      map[string]int
+	ContentIndex map[string][]int
+	Now          time.Time
 	// K 是本次扫描分派到的 QQ 知识实现（清理/预览校验时复用）。
 	K qq.Knowledge
 }
@@ -78,12 +81,13 @@ func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []
 		now = e.Now
 	}
 	out := &Outcome{
-		Root:      root,
-		ByAccount: make(map[string][]int, len(accs)),
-		OriID:     make(map[string]int),
-		ThumbID:   make(map[string]int),
-		Now:       now(),
-		K:         k,
+		Root:         root,
+		ByAccount:    make(map[string][]int, len(accs)),
+		OriID:        make(map[string]int),
+		ThumbID:      make(map[string]int),
+		ContentIndex: make(map[string][]int),
+		Now:          now(),
+		K:            k,
 	}
 
 	var (
@@ -104,6 +108,12 @@ func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []
 	minAge := int64(minAgeDays) * 86400
 	cutoff := now().Unix() - minAge
 
+	// 第一遍：逐账号 classify（太新的文件连列表都不进，docs/04 §3）。
+	type acctScan struct {
+		acc  discovery.Account
+		kept []classify.FileEntry
+	}
+	var scans []acctScan
 	for _, acc := range accs {
 		if ctx.Err() != nil {
 			break
@@ -123,22 +133,42 @@ func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []
 		if err != nil && ctx.Err() == nil {
 			return nil, fmt.Errorf("scan %s: %w", acc.NtData, err)
 		}
-
-		acctIdx := rules.BuildMD5Index(entries)
-		rep := report.AccountReport{
-			Hash:        acc.Hash,
-			QQNum:       acc.QQNum,
-			NtData:      acc.NtData,
-			LatestMonth: acc.LatestMonth,
-		}
+		var kept []classify.FileEntry
 		for _, f := range entries {
 			if minAge > 0 && f.MTime > cutoff {
-				continue // too fresh to even list (docs/04 §3 MinAgeDays)
+				continue
 			}
+			kept = append(kept, f)
+		}
+		scans = append(scans, acctScan{acc: acc, kept: kept})
+	}
+	// 第二遍（全局）：为「与其它文件字节数完全相同」的文件计算 SHA-256
+	// 内容哈希——去重/「重复出现」的字节级依据。跨账号进行（同一内容
+	// 可能存在不同账号/不同目录下）。只读不写；可取消。
+	var all []*classify.FileEntry
+	for _, s := range scans {
+		for i := range s.kept {
+			all = append(all, &s.kept[i])
+		}
+	}
+	if err := classify.HashDuplicates(ctx, all, func(done, total uint64) {
+		throttled("hash", done, total)
+	}); err != nil && ctx.Err() == nil {
+		return nil, fmt.Errorf("content hash pass: %w", err)
+	}
+
+	// 组装：entries/reasons 之外的索引（ByAccount/OriID/ThumbID/ContentIndex）。
+	for _, s := range scans {
+		rep := report.AccountReport{
+			Hash:        s.acc.Hash,
+			QQNum:       s.acc.QQNum,
+			NtData:      s.acc.NtData,
+			LatestMonth: s.acc.LatestMonth,
+		}
+		for _, f := range s.kept {
 			id := len(out.Entries)
 			out.Entries = append(out.Entries, f)
-			out.Reasons = append(out.Reasons, rules.Reason(f, acctIdx))
-			out.ByAccount[acc.Hash] = append(out.ByAccount[acc.Hash], id)
+			out.ByAccount[s.acc.Hash] = append(out.ByAccount[s.acc.Hash], id)
 			if f.MD5 != "" {
 				if f.Sub == "Ori" {
 					if _, ok := out.OriID[f.MD5]; !ok {
@@ -151,10 +181,25 @@ func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []
 					}
 				}
 			}
+			if f.ContentHash != "" {
+				out.ContentIndex[f.ContentHash] = append(out.ContentIndex[f.ContentHash], id)
+			}
 			rep.TotalFiles++
 			rep.TotalSize += f.Size
 		}
 		out.Accounts = append(out.Accounts, rep)
+	}
+	// 关联标签统一计算：内容重复计数来自跨账号的 ContentIndex；
+	// 配对（原图仍在/有缩略图）来自文件名 md5 的 OriID/ThumbID。
+	out.Reasons = make([]string, len(out.Entries))
+	for i, ent := range out.Entries {
+		_, hasOri := out.OriID[ent.MD5]
+		_, hasThumb := out.ThumbID[ent.MD5]
+		cnt := 0
+		if ent.ContentHash != "" {
+			cnt = len(out.ContentIndex[ent.ContentHash])
+		}
+		out.Reasons[i] = rules.Reason(ent, hasOri, hasThumb, cnt)
 	}
 	if e.Emitter != nil {
 		e.Emitter.Emit(EvProgress, Progress{Stage: "done", Done: doneFiles, Total: doneFiles})
@@ -250,6 +295,8 @@ func (o *Outcome) matchOne(id int, c Condition) bool {
 			return e.Month
 		case "md5":
 			return e.MD5
+		case "contentHash":
+			return e.ContentHash
 		case "reason":
 			return o.Reasons[id]
 		}
@@ -302,7 +349,7 @@ func (o *Outcome) matchOne(id int, c Condition) bool {
 			return boolVal() != want
 		}
 		return boolVal() == want
-	default: // string fields: biz/sub/category/month/md5/reason
+	default: // string fields: biz/sub/category/month/md5/contentHash/reason
 		v := strVal()
 		switch c.Op {
 		case "eq":

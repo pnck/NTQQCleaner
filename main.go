@@ -178,14 +178,15 @@ func printManifest(out *app.Outcome) error {
 		for _, id := range out.ByAccount[a.Hash] {
 			e := out.Entries[id]
 			ma.Entries = append(ma.Entries, report.ManifestEntry{
-				Path:   e.Path,
-				Size:   e.Size,
-				MTime:  e.MTime,
-				MD5:    e.MD5,
-				Biz:    e.Biz,
-				Sub:    e.Sub,
-				Month:  e.Month,
-				Reason: out.Reasons[id],
+				Path:        e.Path,
+				Size:        e.Size,
+				MTime:       e.MTime,
+				MD5:         e.MD5,
+				Biz:         e.Biz,
+				Sub:         e.Sub,
+				Month:       e.Month,
+				Reason:      out.Reasons[id],
+				ContentHash: e.ContentHash,
 			})
 		}
 		m.Accounts = append(m.Accounts, ma)

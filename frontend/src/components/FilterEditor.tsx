@@ -382,7 +382,7 @@ export function FilterEditor({
                 setApplied(false);
               }}
               placeholder={
-                "例：thumb = true AND age >= 90 | order(size, desc) | take(100)\n例：size > 104857600 | drop(10)  （除去最大的10个）\n例：biz in pic,video OR category ~ marketface\n字段：biz/sub/category/month/age/size/md5/reason/thumb/temp\n操作符：= != ~ in > >= < <=\n管道函数：order(field, asc|desc) · take(n) 取前 n · drop(n) 跳过前 n"
+                "例：thumb = true AND age >= 90 | order(size, desc) | take(100)\n例：size > 104857600 | drop(10)  （除去最大的10个）\n例：biz in pic,video OR category ~ marketface\n字段：biz/sub/category/month/age/size/md5/contentHash/reason/thumb/temp\n操作符：= != ~ in > >= < <=\n管道函数：order(field, asc|desc) · take(n) 取前 n · drop(n) 跳过前 n"
               }
               rows={6}
             />

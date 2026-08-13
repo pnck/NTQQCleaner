@@ -27,6 +27,10 @@ type FileEntry struct {
 	Ext      string `json:"ext"`     // extension without dot, lowercased
 	IsThumb  bool   `json:"isThumb"`
 	IsTemp   bool   `json:"isTemp"`
+	// ContentHash 是文件字节的 SHA-256（二次扫描填充）。仅当该文件与
+	// 其它文件字节数相同才会计算（同内容 ⇒ 同大小）；大小唯一的文件
+	// 不可能有内容孪生，保持空串跳过 I/O。
+	ContentHash string `json:"contentHash,omitempty"`
 }
 
 // Classifier 是 classify 层对 qq 知识实现的窄接口（消费方定义）。

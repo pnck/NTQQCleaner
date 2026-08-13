@@ -15,6 +15,7 @@ import {
   setSimpleExpr,
   toggleInExpr,
 } from "./expression";
+import { leaf } from "./exprbase";
 import { DEFAULT_SORT, loadFilters, saveFilters, type NamedFilter } from "./filters";
 import { applyTheme, getTheme, nextTheme, type Theme } from "./theme";
 import type {
@@ -307,6 +308,28 @@ export default function App() {
     }
   }, [filter]);
 
+  // 预览面板「同内容 N 份」关联：按内容哈希圈定该组全部副本并直接勾选
+  // （跨账号、跨目录），每组仍保留一份。
+  const selectContentDups = useCallback(async (row: FileRow) => {
+    try {
+      const expr = leaf("contentHash", "eq", row.contentHash);
+      const groups = await api.getDupes({ account: "", expr });
+      const g = groups.find((x) => x.hash === row.contentHash);
+      if (!g || g.dupIds.length === 0) {
+        setToast("没有可勾选的副本");
+        return;
+      }
+      setChecked((prev) => {
+        const next = new Set(prev);
+        g.dupIds.forEach((id) => next.add(id));
+        return next;
+      });
+      setToast(`已勾选 ${g.dupIds.length} 个相同内容副本（保留 ${g.keepLabel}）`);
+    } catch (e) {
+      setToast(`去重分析失败：${e}`);
+    }
+  }, []);
+
   const pickRoot = useCallback(async () => {
     const d = await api.pickDirectory("选择 QQ 数据根目录");
     if (!d) return;
@@ -497,6 +520,7 @@ export default function App() {
           rows={rows}
           onNavigate={(r) => setSelected(r.id)}
           onToast={setToast}
+          onSelectDups={(r) => void selectContentDups(r)}
         />
       </div>
       <BottomBar

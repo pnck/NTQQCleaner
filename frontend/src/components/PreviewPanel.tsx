@@ -10,6 +10,7 @@ interface Props {
   rows: FileRow[];
   onNavigate: (row: FileRow) => void;
   onToast: (msg: string) => void;
+  onSelectDups: (row: FileRow) => void;
 }
 
 // 大文件门限只针对「原文件」中的图片：图片无法流式，>50MB 需显式确认；
@@ -46,7 +47,7 @@ function playable(row: FileRow): boolean {
   );
 }
 
-export function PreviewPanel({ row, rows, onNavigate, onToast }: Props) {
+export function PreviewPanel({ row, rows, onNavigate, onToast, onSelectDups }: Props) {
   // 初始态 = 缩略图 + 叠层图标；点击后切换为播放器/原文件（视频/音频即自动播放）。
   // 状态按 row.id 记录，切行时自动回到初始态。
   const [played, setPlayed] = useState<number | null>(null);
@@ -149,8 +150,22 @@ export function PreviewPanel({ row, rows, onNavigate, onToast }: Props) {
           <span className="k">md5</span>
           <span className="selectable">{row.md5 || "—"}</span>
         </div>
-        <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+        <div className="kv">
+          <span className="k">内容哈希</span>
+          <span className="selectable">
+            {row.contentHash ? row.contentHash.slice(0, 16) + "…" : "未计算（大小唯一）"}
+          </span>
+        </div>
+        <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
           <button onClick={reveal}>在文件夹中显示</button>
+          {row.contentDupCount >= 2 && (
+            <button
+              onClick={() => onSelectDups(row)}
+              title="内容完全相同的其它副本（按真实内容哈希识别）；勾选后只保留其中一份"
+            >
+              同内容 {row.contentDupCount} 份 · 勾选副本
+            </button>
+          )}
         </div>
       </div>
     </aside>

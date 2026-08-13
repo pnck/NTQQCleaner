@@ -1,6 +1,6 @@
 // Package testutil builds deterministic fake QQ data roots for tests,
-// modeled on docs/05_sample_data.md §6. Mtimes are fixed so scoring and
-// tier assertions are reproducible.
+// modeled on docs/05_sample_data.md §6. Mtimes are fixed so reason/关联
+// assertions are reproducible.
 package testutil
 
 import (
@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Fixed test clock: everything is scored relative to this instant.
+// Fixed test clock: everything is aged relative to this instant.
 var Now = time.Date(2026, 8, 10, 12, 0, 0, 0, time.Local)
 
 // Synthetic test values; structure mirrors the docs/05 samples.
@@ -25,6 +25,8 @@ const (
 	MD5D    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa04"
 	MD5E    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa05"
 	MD5Temp = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa06"
+	MD5F    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa07"
+	MD5G    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa08"
 )
 
 // Fixture is a fake QQ data root plus the paths tests commonly need.
@@ -43,12 +45,14 @@ type Fixture struct {
 //	  Pic/2026-07/Thumb/<md5A>_720.jpg         recent thumb of same md5
 //	  Pic/2026-08/Ori/<md5E>.jpg               fresh (1 day old)
 //	  Pic/2026-07/OriTemp/<md5Temp>.tmp        temp residue (4 days old)
+//	  Pic/2023-01/Thumb/<md5G>_720.jpg         60KB, 与 md5D/md5F 字节相同
+//	  Pic/2026-07/Thumb/<md5F>_720.jpg         60KB, 同内容不同名（内容重复）
 //	  Emoji/emoji-recv/2024-05/Thumb/<md5B>_720.png
-//	  Emoji/marketface/123/x.png               gated category
+//	  Emoji/marketface/123/x.png               10KB（与 my.png 同大小不同内容）
 //	  File/Thumb/<md5C>.png                    File is a cautious unit
 //	  UnitedConfig/<QQA>/                      (source 2)
 //	  mmkv/, nt_db/                            never scanned
-//	nt_qq_<B>/nt_data/Pic/2022-01/Thumb/<md5D>_720.jpg
+//	nt_qq_<B>/nt_data/Pic/2022-01/Thumb/<md5D>_720.jpg  60KB, 与 md5F/md5G 字节相同
 func BuildQQTree(t *testing.T) *Fixture {
 	t.Helper()
 	root := t.TempDir()
@@ -75,10 +79,18 @@ func BuildQQTree(t *testing.T) *Fixture {
 	mkFile(t, filepath.Join(f.NtDataA, "Pic", "2026-07", "Thumb", MD5A+"_720.jpg"), bytesN(80<<10), nowDate(2026, 7, 10))
 	mkFile(t, filepath.Join(f.NtDataA, "Pic", "2026-08", "Ori", MD5E+".jpg"), bytesN(100<<10), Now.AddDate(0, 0, -1))
 	mkFile(t, filepath.Join(f.NtDataA, "Pic", "2026-07", "OriTemp", MD5Temp+".tmp"), bytesN(1<<10), Now.AddDate(0, 0, -4))
+	// 内容重复（同字节、不同名）：60KB 内容 ×2（与 B 账号的 md5D 同为
+	// 一组 3 份的字节级副本）。
+	mkFile(t, filepath.Join(f.NtDataA, "Pic", "2023-01", "Thumb", MD5G+"_720.jpg"), bytesN(60<<10), nowDate(2023, 1, 15))
+	mkFile(t, filepath.Join(f.NtDataA, "Pic", "2026-07", "Thumb", MD5F+"_720.jpg"), bytesN(60<<10), nowDate(2026, 7, 10))
 
 	mkFile(t, filepath.Join(f.NtDataA, "Emoji", "emoji-recv", "2024-05", "Thumb", MD5B+"_720.png"), bytesN(50<<10), nowDate(2024, 5, 1))
 	mkFile(t, filepath.Join(f.NtDataA, "Emoji", "marketface", "123", "x.png"), bytesN(10<<10), nowDate(2025, 1, 1))
-	mkFile(t, filepath.Join(f.NtDataA, "Emoji", "personal_emoji", "Ori", "my.png"), bytesN(10<<10), nowDate(2024, 1, 1))
+	// 与 marketface/x.png 同大小（10KB）但内容不同：验证「先按大小分组、
+	// 再按哈希细分」不会误判为重复。
+	personal := bytesN(10 << 10)
+	personal[0] = 0x01
+	mkFile(t, filepath.Join(f.NtDataA, "Emoji", "personal_emoji", "Ori", "my.png"), personal, nowDate(2024, 1, 1))
 	mkFile(t, filepath.Join(f.NtDataA, "File", "Thumb", MD5C+".png"), bytesN(30<<10), nowDate(2022, 6, 1))
 	mkFile(t, filepath.Join(f.NtDataA, "File", "file_assistant", "doc.txt"), []byte("x"), nowDate(2022, 6, 1))
 

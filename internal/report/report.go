@@ -28,6 +28,11 @@ type FileRow struct {
 	ThumbURL string `json:"thumbUrl"`
 	OriURL   string `json:"oriUrl"`
 	OriExt   string `json:"oriExt"` // 配对原文件的扩展名（预览端据此分派播放器）；无原文件为空
+	// ContentHash 是文件字节的 SHA-256（二次扫描）；仅当存在同大小
+	// 其它文件时才会计算，大小唯一时为空。
+	ContentHash string `json:"contentHash"`
+	// ContentDupCount 是字节级相同内容的副本总数（含自身；≥2 即重复出现）。
+	ContentDupCount int `json:"contentDupCount"`
 }
 
 // GroupStat is an aggregation bucket for the left tree (biz × month).
@@ -55,12 +60,13 @@ type ManifestAccount struct {
 
 // ManifestEntry is a classified file plus its reason at scan time.
 type ManifestEntry struct {
-	Path   string `json:"path"`
-	Size   int64  `json:"size"`
-	MTime  int64  `json:"mtime"`
-	MD5    string `json:"md5"`
-	Biz    string `json:"biz"`
-	Sub    string `json:"sub"`
-	Month  string `json:"month"`
-	Reason string `json:"reason"`
+	Path        string `json:"path"`
+	Size        int64  `json:"size"`
+	MTime       int64  `json:"mtime"`
+	MD5         string `json:"md5"`
+	Biz         string `json:"biz"`
+	Sub         string `json:"sub"`
+	Month       string `json:"month"`
+	Reason      string `json:"reason"`
+	ContentHash string `json:"contentHash,omitempty"`
 }

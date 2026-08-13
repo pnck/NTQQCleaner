@@ -100,10 +100,11 @@ type Stats struct {
 	Size  int64 `json:"size"`
 }
 
-// DupGroup is one md5 with ≥2 copies across the whole index: which copy
-// to keep and which copies in the current filter are removable.
+// DupGroup is one byte-identical content hash with ≥2 copies across the
+// whole index: which copy to keep and which copies in the current filter
+// are removable.
 type DupGroup struct {
-	MD5        string `json:"md5"`
+	Hash       string `json:"hash"`
 	Count      int    `json:"count"`     // 全索引中的总份数
 	KeepID     int    `json:"keepId"`    // 建议保留的那份
 	KeepLabel  string `json:"keepLabel"` // 保留份的展示信息（月份/子类型/文件名）

@@ -112,10 +112,10 @@ func Run(ctx context.Context, req Request) (Result, error) {
 			continue
 		}
 
-		// 审计记录附带 reason 标签：用单条目索引保守计算（冗余/配对
-		// 关联需要全量扫描邻域，clean 层不信任扫描期结果）。
-		idx := rules.BuildMD5Index([]classify.FileEntry{f})
-		reason := rules.Reason(f, idx)
+		// 审计记录附带 reason 标签：关联标签（重复出现/原图仍在/有缩略图）
+		// 需要全量扫描邻域，clean 层单文件语境下保守置空——审计只承载
+		// 类别标签，不信任扫描期关联结果。
+		reason := rules.Reason(f, false, false, 0)
 
 		if err := deleteOne(audit, f, req.BackupDir, reason); err != nil {
 			res.Failed++

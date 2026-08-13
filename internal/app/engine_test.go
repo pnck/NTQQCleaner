@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -62,14 +63,113 @@ func TestEngineScanAll(t *testing.T) {
 		t.Fatalf("got %d accounts want 2", len(out.Accounts))
 	}
 	a, b := out.Accounts[0], out.Accounts[1]
-	if a.Hash != testutil.HashA || a.QQNum != testutil.QQA || a.TotalFiles != 10 {
+	if a.Hash != testutil.HashA || a.QQNum != testutil.QQA || a.TotalFiles != 12 {
 		t.Fatalf("account A: %+v", a)
 	}
 	if b.Hash != testutil.HashB || b.QQNum != testutil.QQB || b.TotalFiles != 1 {
 		t.Fatalf("account B: %+v", b)
 	}
-	if len(out.Entries) != 11 || len(out.Reasons) != 11 {
-		t.Fatalf("entries/reasons: %d/%d want 11/11", len(out.Entries), len(out.Reasons))
+	if len(out.Entries) != 13 || len(out.Reasons) != 13 {
+		t.Fatalf("entries/reasons: %d/%d want 13/13", len(out.Entries), len(out.Reasons))
+	}
+}
+
+// TestContentHashAndReasons：二次扫描的内容哈希与三类关联标签。
+// fixture 中 md5F/md5G/md5D（60KB）字节相同、名字不同——跨目录跨账号的
+// 真冗余；marketface/x.png 与 personal_emoji/my.png 同大小（10KB）但内容
+// 不同，不得误判。
+func TestContentHashAndReasons(t *testing.T) {
+	f := testutil.BuildQQTree(t)
+	out, err := testEngine().ScanAll(context.Background(), f.Root, nil, nil, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byMD5 := map[string]int{}
+	for id, e := range out.Entries {
+		if e.MD5 != "" {
+			byMD5[e.MD5] = id
+		}
+	}
+	// 60KB 三份：md5F/md5G/md5D 必须同哈希且计入内容组。
+	hF := out.Entries[byMD5[testutil.MD5F]].ContentHash
+	if hF == "" {
+		t.Fatal("md5F must be hashed (size collision)")
+	}
+	for _, m := range []string{testutil.MD5G, testutil.MD5D} {
+		if out.Entries[byMD5[m]].ContentHash != hF {
+			t.Errorf("%s: hash %q want %q", m, out.Entries[byMD5[m]].ContentHash, hF)
+		}
+	}
+	if got := len(out.ContentIndex[hF]); got != 3 {
+		t.Fatalf("60KB group size: got %d want 3", got)
+	}
+	// 两个 MD5A 缩略图（80KB）字节相同 → 同组；MD5A 的 Ori 是 2MB（大小
+	// 唯一）→ 不得计算哈希。
+	oriID := -1
+	thumbs := 0
+	for id, e := range out.Entries {
+		if e.MD5 != testutil.MD5A {
+			continue
+		}
+		if e.Sub == "Ori" {
+			oriID = id
+			if e.ContentHash != "" {
+				t.Error("unique-size Ori (2MB) must not be hashed")
+			}
+		} else {
+			thumbs++
+			if e.ContentHash == "" {
+				t.Errorf("MD5A thumb %d not hashed", id)
+			}
+		}
+	}
+	if oriID < 0 || thumbs != 2 {
+		t.Fatalf("MD5A entries: ori=%d thumbs=%d want ori+2", oriID, thumbs)
+	}
+	// 同大小不同内容（10KB 对）必须哈希不同。
+	xh, myh := "", ""
+	for _, e := range out.Entries {
+		if filepath.Base(e.Path) == "x.png" {
+			xh = e.ContentHash
+		}
+		if filepath.Base(e.Path) == "my.png" {
+			myh = e.ContentHash
+		}
+	}
+	if xh == "" || myh == "" {
+		t.Fatal("10KB pair must both be hashed (size collision)")
+	}
+	if xh == myh {
+		t.Error("same-size different-content files must hash differently")
+	}
+
+	// 关联标签（用户要求的三种情况区分）：
+	// ① Ori 有同名缩略图 → 「有缩略图」，绝不能再标「重复出现」。
+	oriReason := out.Reasons[oriID]
+	if !strings.Contains(oriReason, "有缩略图") || strings.Contains(oriReason, "重复出现") {
+		t.Fatalf("Ori reason: got %q want 原图/原文件；有缩略图（不得含 重复出现）", oriReason)
+	}
+	// ② 缩略图有原文件 → 「原图仍在」；80KB 组两份内容相同 → 「重复出现」。
+	for id, e := range out.Entries {
+		if e.MD5 == testutil.MD5A && e.IsThumb {
+			r := out.Reasons[id]
+			if !strings.Contains(r, "原图仍在") || !strings.Contains(r, "重复出现") {
+				t.Errorf("MD5A thumb %d reason: got %q want 缩略图；原图仍在；重复出现", id, r)
+			}
+		}
+	}
+	// ③ 60KB 组：真冗余副本 → 「重复出现」，且无配对标签。
+	for _, m := range []string{testutil.MD5F, testutil.MD5G, testutil.MD5D} {
+		r := out.Reasons[byMD5[m]]
+		if !strings.Contains(r, "重复出现") || strings.Contains(r, "原图仍在") || strings.Contains(r, "有缩略图") {
+			t.Errorf("%s reason: got %q want 缩略图；重复出现", m, r)
+		}
+	}
+	// 唯一大小文件不得有「重复出现」。
+	for id, e := range out.Entries {
+		if e.ContentHash == "" && strings.Contains(out.Reasons[id], "重复出现") {
+			t.Errorf("entry %d has no content hash but reason says 重复出现", id)
+		}
 	}
 }
 
@@ -81,8 +181,8 @@ func TestEngineMinAge(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The 1-day-old Ori is dropped; everything else (≥4 days) stays.
-	if out.Accounts[0].TotalFiles != 9 {
-		t.Fatalf("got %d files want 9", out.Accounts[0].TotalFiles)
+	if out.Accounts[0].TotalFiles != 11 {
+		t.Fatalf("got %d files want 11", out.Accounts[0].TotalFiles)
 	}
 }
 
@@ -140,14 +240,14 @@ func TestBackendScanQueryPreviewClean(t *testing.T) {
 	}
 	cap.waitFor(t, EvDone)
 
-	// Paged rows: 5 thumbs total, page size 3 (filter via expression).
+	// Paged rows: 7 thumbs total, page size 3 (filter via expression).
 	thumbFilter := Filter{Expr: leaf("thumb", "eq", "true")}
 	page, err := backend.QueryRows(PageQuery{Filter: thumbFilter, Page: 1, PageSize: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if page.Total != 5 || len(page.Rows) != 3 {
-		t.Fatalf("page: total=%d rows=%d want 5/3", page.Total, len(page.Rows))
+	if page.Total != 7 || len(page.Rows) != 3 {
+		t.Fatalf("page: total=%d rows=%d want 7/3", page.Total, len(page.Rows))
 	}
 	for _, r := range page.Rows {
 		if r.ThumbURL == "" {
@@ -160,7 +260,7 @@ func TestBackendScanQueryPreviewClean(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.Count != 5 {
+	if stats.Count != 7 {
 		t.Fatalf("thumb stats: got %+v", stats)
 	}
 	ids, err := backend.GetIDs(Filter{Expr: leaf("temp", "eq", "true")})
@@ -382,8 +482,8 @@ func TestFilterStages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if all.Count != 11 {
-		t.Fatalf("all: got %d want 11", all.Count)
+	if all.Count != 13 {
+		t.Fatalf("all: got %d want 13", all.Count)
 	}
 	// take(3)：大小降序后前 3 条（sort 由 QueryRows 的 Sort 参数控制；
 	// GetStats 无法排序，故 take 语义与调用方排序配合——这里只验证截断）
@@ -394,13 +494,13 @@ func TestFilterStages(t *testing.T) {
 	if top3.Count != 3 {
 		t.Fatalf("take(3): got %d want 3", top3.Count)
 	}
-	// drop(10)：跳过 10 条 → 剩 1
+	// drop(10)：跳过 10 条 → 剩 3
 	rest, err := backend.GetStats(Filter{Offset: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rest.Count != 1 {
-		t.Fatalf("drop(10): got %d want 1", rest.Count)
+	if rest.Count != 3 {
+		t.Fatalf("drop(10): got %d want 3", rest.Count)
 	}
 	// drop(2)+take(1) → 恰好 1 条
 	mid, err := backend.GetStats(Filter{Offset: 2, Limit: 1})
@@ -441,8 +541,13 @@ func TestFilterStages(t *testing.T) {
 	}
 }
 
-// TestGetDupes: fixture 中 md5A 出现 3 次（Ori + 两个 Thumb），当前筛选
-// 全量时多余副本 = 2 份。
+// TestGetDupes：去重组按字节级内容哈希分组（不再按文件名 md5）。
+// fixture 期望两组：
+//   - 60KB 组：md5F/md5G/md5D 三份字节相同（跨账号、不同名），
+//     keeper = md5F（mtime 最新），可删副本 2 份；
+//   - 80KB 组：md5A 的两个缩略图字节相同，keeper = 2026-07 那份，可删 1 份；
+//   - 同名配对不构成重复：md5A 的 Ori（2MB）与缩略图字节不同，不入组；
+//   - 同大小不同内容（10KB 对）不入组。
 func TestGetDupes(t *testing.T) {
 	f := testutil.BuildQQTree(t)
 	backend := NewBackend("", nil)
@@ -457,35 +562,66 @@ func TestGetDupes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var md5a *DupGroup
+	if len(groups) != 2 {
+		t.Fatalf("groups: got %d want 2: %+v", len(groups), groups)
+	}
+	var g60, g80 *DupGroup
 	for i := range groups {
-		if groups[i].MD5 == testutil.MD5A {
-			md5a = &groups[i]
+		if groups[i].Count == 3 {
+			g60 = &groups[i]
+		}
+		if groups[i].Count == 2 {
+			g80 = &groups[i]
 		}
 	}
-	if md5a == nil {
-		t.Fatalf("md5A group missing: %+v", groups)
+	if g60 == nil || g80 == nil {
+		t.Fatalf("want one 3-copy and one 2-copy group, got %+v", groups)
 	}
-	if md5a.Count != 3 || len(md5a.DupIDs) != 2 {
-		t.Fatalf("md5A: count=%d dupIds=%d want 3/2", md5a.Count, len(md5a.DupIDs))
+	if len(g60.DupIDs) != 2 || len(g80.DupIDs) != 1 {
+		t.Fatalf("dupIds: g60=%d g80=%d want 2/1", len(g60.DupIDs), len(g80.DupIDs))
 	}
-	// 保留份必须是 Ori（原图）
-	keep := outcome(backend).Entries[md5a.KeepID]
-	if keep.Sub != "Ori" {
-		t.Fatalf("keeper should be Ori, got %s", keep.Sub)
+	// keeper：60KB 组 = md5F（2026-07 最新）；80KB 组 = 2026-07 的 md5A 缩略图。
+	if k := outcome(backend).Entries[g60.KeepID]; k.MD5 != testutil.MD5F {
+		t.Fatalf("60KB keeper: got %s want md5F", k.MD5)
 	}
-	// 缩略图筛选下：md5A 组 keeper=Ori（不在筛选内），筛选内的 2 个 Thumb
-	// 都是可删副本。
+	k80 := outcome(backend).Entries[g80.KeepID]
+	if k80.MD5 != testutil.MD5A || k80.Month != "2026-07" {
+		t.Fatalf("80KB keeper: got %s/%s want md5A/2026-07", k80.MD5, k80.Month)
+	}
+	// 组的 Hash 必须是 SHA-256（64 hex），且与条目内容哈希一致。
+	if len(g60.Hash) != 64 {
+		t.Fatalf("group hash not sha256: %q", g60.Hash)
+	}
+	if g60.Hash != outcome(backend).Entries[g60.KeepID].ContentHash {
+		t.Fatal("group hash must equal keeper content hash")
+	}
+
+	// 缩略图筛选下：两组的所有副本都在筛选内，可删份数不变。
 	thumbOnly, err := backend.GetDupes(Filter{Expr: leaf("thumb", "eq", "true")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for i := range thumbOnly {
-		if thumbOnly[i].MD5 == testutil.MD5A {
+		switch thumbOnly[i].Count {
+		case 3:
 			if len(thumbOnly[i].DupIDs) != 2 {
-				t.Fatalf("thumb filter dupIds: got %d want 2", len(thumbOnly[i].DupIDs))
+				t.Fatalf("thumb filter g60 dupIds: got %d want 2", len(thumbOnly[i].DupIDs))
+			}
+		case 2:
+			if len(thumbOnly[i].DupIDs) != 1 {
+				t.Fatalf("thumb filter g80 dupIds: got %d want 1", len(thumbOnly[i].DupIDs))
 			}
 		}
+	}
+
+	// contentHash 筛选字段：按组哈希圈定该组全部副本。
+	byHash := Filter{Expr: leaf("contentHash", "eq", g60.Hash)}
+	stats, err := backend.GetStats(byHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Count != 3 {
+		t.Fatalf("contentHash filter: got %d want 3", stats.Count)
 	}
 }
 

@@ -86,6 +86,12 @@ export const FILTER_FIELDS: FilterFieldDef[] = [
     ops: ["contains", "eq"],
   },
   {
+    field: "contentHash",
+    label: "内容哈希",
+    kind: "text",
+    ops: ["contains", "eq"],
+  },
+  {
     field: "reason",
     label: "说明",
     kind: "text",

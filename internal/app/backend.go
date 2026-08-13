@@ -286,15 +286,17 @@ func (b *Backend) QueryRows(q PageQuery) (PageResult, error) {
 func (b *Backend) fileRowLocked(out *Outcome, id int) report.FileRow {
 	e := out.Entries[id]
 	row := report.FileRow{
-		ID:     id,
-		MD5:    e.MD5,
-		Biz:    e.Biz,
-		Sub:    e.Sub,
-		Month:  e.Month,
-		Size:   e.Size,
-		MTime:  e.MTime,
-		Ext:    e.Ext,
-		Reason: out.Reasons[id],
+		ID:              id,
+		MD5:             e.MD5,
+		Biz:             e.Biz,
+		Sub:             e.Sub,
+		Month:           e.Month,
+		Size:            e.Size,
+		MTime:           e.MTime,
+		Ext:             e.Ext,
+		Reason:          out.Reasons[id],
+		ContentHash:     e.ContentHash,
+		ContentDupCount: len(out.ContentIndex[e.ContentHash]),
 	}
 	row.ThumbURL = b.previewURL(id)
 	if e.IsThumb {
@@ -364,11 +366,15 @@ func (b *Backend) GetIDs(f Filter) ([]int, error) {
 	return b.outcome.applyStages(b.outcome.matchedIDs(f), f), nil
 }
 
-// GetDupes finds md5 groups with ≥2 copies in the whole index and, for
-// each, which copies inside the current filter can be removed while
-// keeping exactly one global copy (prefer the Ori original, then the
-// newest mtime). Groups are ordered by removable bytes desc, capped at
-// 500 for the UI.
+// GetDupes finds byte-identical groups (SHA-256 content hash) with ≥2
+// copies in the whole index and, for each, which copies inside the current
+// filter can be removed while keeping exactly one global copy (prefer the
+// Ori original, then the newest mtime). Groups are ordered by removable
+// bytes desc, capped at 500 for the UI.
+//
+// 分组依据是二次扫描的内容哈希而非文件名 md5：QQ 只按目录去重，同一
+// 内容在不同目录/月份可能以不同名字各存一份；文件名 md5 配对（Ori/
+// Thumb 同名）不是字节级重复，不再进入去重组。
 func (b *Backend) GetDupes(f Filter) ([]DupGroup, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -376,19 +382,12 @@ func (b *Backend) GetDupes(f Filter) ([]DupGroup, error) {
 	if out == nil {
 		return nil, fmt.Errorf("no scan results yet")
 	}
-	// md5 → all ids（全索引，非筛选）
-	byMD5 := make(map[string][]int)
-	for id, e := range out.Entries {
-		if e.MD5 != "" {
-			byMD5[e.MD5] = append(byMD5[e.MD5], id)
-		}
-	}
 	inFilter := make(map[int]bool)
 	for _, id := range out.applyStages(out.matchedIDs(f), f) {
 		inFilter[id] = true
 	}
 	var groups []DupGroup
-	for md5, ids := range byMD5 {
+	for hash, ids := range out.ContentIndex {
 		if len(ids) < 2 {
 			continue
 		}
@@ -407,7 +406,7 @@ func (b *Backend) GetDupes(f Filter) ([]DupGroup, error) {
 			}
 		}
 		g := DupGroup{
-			MD5:       md5,
+			Hash:      hash,
 			Count:     len(ids),
 			KeepID:    keep,
 			KeepLabel: dupLabel(out.Entries[keep]),

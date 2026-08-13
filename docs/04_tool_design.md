@@ -44,11 +44,12 @@ qq-cleaner/
 
 **数据流**：
 ```
-discover() → classify() → reason/关联索引 → report() ──(dry-run)──▶ UI 展示
-                                              └─(用户确认)──▶ clean()
+discover() → classify() → 内容哈希二次扫描 → reason/关联索引 → report() ──(dry-run)──▶ UI 展示
+                                                              └─(用户确认)──▶ clean()
 ```
 
 > 无打分/分级环节：可清性 = clean 层的白名单/黑名单逐文件重验（docs/03 §4）。
+> 内容哈希二次扫描只读不写：仅对大小冲突组的文件计算 SHA-256（docs/03 §4）。
 
 **关键原则**：UI 层只负责展示与触发；**所有安全红线（白名单、进程保护、备份、确认）在 Go 侧强制实现**，UI 视为不可信输入。
 
@@ -145,17 +146,24 @@ type FileEntry struct {
     Size     int64  `json:"size"`
     MTime    int64  `json:"mtime"`
     MD5      string `json:"md5"`      // 从文件名提取（32 hex）
+    ContentHash string `json:"contentHash"` // SHA-256（二次扫描，大小唯一时为空）
     IsThumb  bool   `json:"isThumb"`
     IsTemp   bool   `json:"isTemp"`
 }
 
 // Scan 遍历白名单目录（BizDirs 映射见 01 §2.3），并发可调（worker pool）
 func Scan(ntData string, onlyTypes []string, skipDirs map[string]bool, minSize int64) ([]FileEntry, error)
+
+// 二次扫描：size 冲突组 → SHA-256（docs/03 §4）
+func HashDuplicates(ctx context.Context, entries []*FileEntry, progress func(done, total uint64)) error
 ```
 - **并发**：目录并行遍历（`errgroup`），单目录内 `filepath.WalkDir`（用 `DirEntry` 避免额外 stat）
 - 文件名解析：`^([0-9a-f]{32})(?:_(\d+))?\.(\w+)$`
 - 月目录：路径第一段匹配 `^\d{4}-\d{2}$`
 - **性能参考**：单账号 14 万文件（Pic），Go 全量扫描应在数秒~十几秒内完成
+- **内容哈希二次扫描**：`HashDuplicates` 按字节数分组，只读大小冲突组的文件；
+  8 路并发（磁盘 I/O 主导），进度事件 stage="hash"，ctx 可取消。
+  实际读取量远小于总量（大小唯一即跳过）；SHA-256 约 1~2GB/s
 
 **维度指引（现象→模型）**：文件分类的轴应包含 `biz`（所属业务）与 `sub`（Ori/Thumb/Temp）两个**平级**维度；
 索引应能按"是否 Thumb"独立聚合/筛选（现象：Thumb 可重建、占缓存大头、跨 biz 普遍存在）——具体接口设计由开发者定。
