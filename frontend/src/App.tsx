@@ -465,6 +465,7 @@ export default function App() {
         checkedBytes={checkedBytes}
         busy={phase === "scanning" || phase === "cleaning"}
         onSelectAll={() => void selectAll()}
+        onClearSelection={() => setChecked(new Set())}
         onClean={() => void clean()}
       />
       <FilterEditor

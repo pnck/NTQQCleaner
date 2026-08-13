@@ -18,6 +18,10 @@ import (
 //go:embed all:frontend/dist
 var frontendAssets embed.FS
 
+// openInspectorOnStartup 由构建注入（ldflags -X main.openInspectorOnStartup=1）：
+// 开发构建自动打开 WebKit inspector，封版构建为空即不打开。
+var openInspectorOnStartup = ""
+
 // wailsEmitter forwards Engine/Backend events to the frontend via the
 // Wails event bus (docs/04 §3).
 type wailsEmitter struct{ ctx context.Context }
@@ -75,6 +79,8 @@ func runGUI() error {
 			dlgs.ctx = ctx
 			backend.SetEmitter(emitter)
 		},
-		Bind: []interface{}{backend, dlgs},
+		// 开发构建自动打开 inspector（需 -tags debug + ldflags -X 注入）
+		Debug: options.Debug{OpenInspectorOnStartup: openInspectorOnStartup == "1"},
+		Bind:  []interface{}{backend, dlgs},
 	})
 }

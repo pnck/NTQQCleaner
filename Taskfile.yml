@@ -99,14 +99,14 @@ tasks:
       CGO_LDFLAGS: "{{.DARWIN_EXTRA_LDFLAGS}}"
 
   bundle:
-    desc: macOS .app 打包（开发期常开 WebKit inspector；封版改用 bundle:release）
+    desc: macOS .app 打包（开发期：debug 标签 + 启动自动打开 WebKit inspector；封版用 bundle:release）
     cmds:
-      - wails build -platform darwin/arm64 -clean -s -tags wails -devtools -trimpath -ldflags "{{.LDFLAGS}}"
+      - wails build -platform darwin/arm64 -clean -s -tags "wails,debug" -devtools -trimpath -ldflags "{{.LDFLAGS}} -X main.openInspectorOnStartup=1"
     env:
       CGO_LDFLAGS: "{{.DARWIN_EXTRA_LDFLAGS}}"
 
   bundle:release:
-    desc: macOS .app 封版打包（关闭 devtools）
+    desc: macOS .app 封版打包（无 debug 标签、不自动开 inspector）
     cmds:
       - wails build -platform darwin/arm64 -clean -s -tags wails -trimpath -ldflags "{{.LDFLAGS}}"
     env:

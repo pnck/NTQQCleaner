@@ -7,10 +7,19 @@ interface Props {
   checkedBytes: number;
   busy: boolean;
   onSelectAll: () => void;
+  onClearSelection: () => void;
   onClean: () => void;
 }
 
-export function BottomBar({ stats, checkedCount, checkedBytes, busy, onSelectAll, onClean }: Props) {
+export function BottomBar({
+  stats,
+  checkedCount,
+  checkedBytes,
+  busy,
+  onSelectAll,
+  onClearSelection,
+  onClean,
+}: Props) {
   return (
     <div className="bottombar">
       <span className="tier-stat">
@@ -19,6 +28,13 @@ export function BottomBar({ stats, checkedCount, checkedBytes, busy, onSelectAll
       <div className="grow" />
       <button onClick={onSelectAll} title="勾选当前筛选结果中的全部文件">
         全选当前筛选
+      </button>
+      <button
+        onClick={onClearSelection}
+        disabled={checkedCount === 0}
+        title="取消全部勾选"
+      >
+        清空勾选
       </button>
       <span className="release">
         已勾选 {checkedCount} 项 · 可释放 {fmtSize(checkedBytes)}
