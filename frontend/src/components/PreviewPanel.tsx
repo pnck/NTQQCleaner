@@ -49,13 +49,8 @@ export function PreviewPanel({ row, rows, onNavigate }: Props) {
 
   const hasThumb = row.thumbUrl !== "";
   const hasOri = row.oriUrl !== "";
-  // 视频/语音/动图（gif/webp）默认直接给原文件（preload=none 不产生流量）；
-  // 普通图片默认缩略图（秒开），可切换原图
-  const defaultOri =
-    row.biz === "video" ||
-    row.biz === "ptt" ||
-    ["gif", "webp"].includes(row.ext.toLowerCase());
-  const effectiveOri = hasOri && (useOri || !hasThumb || defaultOri);
+  // 视频/语音默认直接给原文件（preload=none 不产生流量）；图片默认缩略图
+  const effectiveOri = hasOri && (useOri || (!hasThumb && hasOri) || row.biz === "video" || row.biz === "ptt");
   const kind = kindOf(row, effectiveOri);
   const src = effectiveOri ? row.oriUrl : row.thumbUrl;
   const bigImageGate = kind === "img" && effectiveOri && row.size > BIG_IMAGE && !forceBig;
