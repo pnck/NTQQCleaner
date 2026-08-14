@@ -688,6 +688,27 @@ func TestGetDupes(t *testing.T) {
 		}
 	}
 
+	// 可去重项 = 组内副本 ∩ 当前筛选（交集语义）：账号 A 窗口下，60KB 组
+	// 只显示窗口内的可删副本（md5D 在账号 B，只影响「保留谁」）。
+	acctA, err := backend.GetDupes(Filter{Account: testutil.HashA})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a60 *DupGroup
+	for i := range acctA {
+		if acctA[i].Hash == g60.Hash {
+			a60 = &acctA[i]
+		}
+	}
+	if a60 == nil {
+		t.Fatal("account A window must surface the 60KB group")
+	}
+	for _, id := range a60.DupIDs {
+		if strings.Contains(outcome(backend).Entries[id].Path, "nt_qq_"+testutil.HashB) {
+			t.Fatalf("removable item must be inside the filter: %s", outcome(backend).Entries[id].Path)
+		}
+	}
+
 	// contentHash 筛选字段：按组哈希圈定该组全部副本。
 	byHash := Filter{Expr: leaf("contentHash", "eq", g60.Hash)}
 	stats, err := backend.GetStats(byHash)

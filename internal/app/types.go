@@ -107,14 +107,15 @@ type Stats struct {
 // whole index: which copy to keep and which copies in the current filter
 // are removable.
 type DupGroup struct {
-	Hash       string `json:"hash"`
-	Count      int    `json:"count"`     // 全索引中的总份数
-	KeepID     int    `json:"keepId"`    // 建议保留的那份
-	KeepLabel  string `json:"keepLabel"` // 保留份的展示信息（月份/子类型/文件名）
-	KeepMTime  int64  `json:"keepMtime"`
-	DupIDs     []int  `json:"dupIds"`     // 当前筛选内可删的副本（不含保留份）
-	DupBytes   int64  `json:"dupBytes"`   // 可删副本合计大小
-	TotalBytes int64  `json:"totalBytes"` // 组内全部大小
+	Hash         string `json:"hash"`
+	Count        int    `json:"count"`     // 全索引中的总份数
+	KeepID       int    `json:"keepId"`    // 建议保留的那份
+	KeepLabel    string `json:"keepLabel"` // 保留份的展示信息（月份/子类型/文件名）
+	KeepMTime    int64  `json:"keepMtime"`
+	KeepInFilter bool   `json:"keepInFilter"` // 保留份是否在当前筛选内（行内「筛选外」标记用）
+	DupIDs       []int  `json:"dupIds"`       // 当前筛选内可删的副本（不含保留份）
+	DupBytes     int64  `json:"dupBytes"`     // 可删副本合计大小
+	TotalBytes   int64  `json:"totalBytes"`   // 组内全部大小
 }
 
 // CleanRequest comes from the UI; every field is re-validated in Go.

@@ -187,6 +187,7 @@ export interface DupGroup {
   keepId: number;
   keepLabel: string;
   keepMtime: number;
+  keepInFilter: boolean; // 保留份是否在当前筛选内（行内「筛选外」标记）
   dupIds: number[];
   dupBytes: number;
   totalBytes: number;

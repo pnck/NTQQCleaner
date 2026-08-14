@@ -367,12 +367,14 @@ func (b *Backend) GetIDs(f Filter) ([]int, error) {
 	return b.outcome.applyStages(b.outcome.matchedIDs(f), f), nil
 }
 
-// GetDupes finds byte-identical groups (SHA-256 content hash) with ≥2
-// copies in the whole index and, for each, which copies inside the current
-// filter can be removed while keeping exactly one global copy (prefer the
-// Ori original, then the newest mtime). Groups are ordered by removable
-// bytes desc, capped at 500 for the UI.
+// GetDupes finds byte-identical groups (SHA-256 content hash) across the
+// whole index and, for each, which copies inside the current filter can be
+// removed while keeping exactly one global copy (prefer the Ori original,
+// then the newest mtime — the keeper may live outside the filter).
 //
+// 面板的可去重项 = 组内副本 ∩ 当前筛选（去重建议只是另一种筛选器，
+// docs/07 §3b）：筛选之外的副本只影响「保留谁」，不出现在可去重项里。
+// Groups are ordered by removable bytes desc, capped at 500 for the UI.
 // 分组依据是二次扫描的内容哈希而非文件名 md5：QQ 只按目录去重，同一
 // 内容在不同目录/月份可能以不同名字各存一份；文件名 md5 配对（Ori/
 // Thumb 同名）不是字节级重复，不再进入去重组。
@@ -392,33 +394,20 @@ func (b *Backend) GetDupes(f Filter) ([]DupGroup, error) {
 		if len(ids) < 2 {
 			continue
 		}
-		// 保留份：Ori 优先，其次 mtime 最新
-		keep := ids[0]
-		for _, id := range ids[1:] {
-			e, k := out.Entries[id], out.Entries[keep]
-			if (e.Sub == "Ori") != (k.Sub == "Ori") {
-				if e.Sub == "Ori" {
-					keep = id
-				}
-				continue
-			}
-			if e.MTime > k.MTime {
-				keep = id
-			}
-		}
+		keep := out.pickKeeper(ids)
 		g := DupGroup{
-			Hash:      hash,
-			Count:     len(ids),
-			KeepID:    keep,
-			KeepLabel: dupLabel(out.Entries[keep]),
-			KeepMTime: out.Entries[keep].MTime,
+			Hash:         hash,
+			Count:        len(ids),
+			KeepID:       keep,
+			KeepLabel:    dupLabel(out.Entries[keep]),
+			KeepMTime:    out.Entries[keep].MTime,
+			KeepInFilter: inFilter[keep],
 		}
 		for _, id := range ids {
+			g.TotalBytes += out.Entries[id].Size
 			if id == keep {
-				g.TotalBytes += out.Entries[id].Size
 				continue
 			}
-			g.TotalBytes += out.Entries[id].Size
 			if inFilter[id] {
 				g.DupIDs = append(g.DupIDs, id)
 				g.DupBytes += out.Entries[id].Size
@@ -428,11 +417,34 @@ func (b *Backend) GetDupes(f Filter) ([]DupGroup, error) {
 			groups = append(groups, g)
 		}
 	}
+	return sortDupGroups(groups), nil
+}
+
+// pickKeeper 在内容组内选保留份：Ori 优先，其次 mtime 最新。
+func (o *Outcome) pickKeeper(ids []int) int {
+	keep := ids[0]
+	for _, id := range ids[1:] {
+		e, k := o.Entries[id], o.Entries[keep]
+		if (e.Sub == "Ori") != (k.Sub == "Ori") {
+			if e.Sub == "Ori" {
+				keep = id
+			}
+			continue
+		}
+		if e.MTime > k.MTime {
+			keep = id
+		}
+	}
+	return keep
+}
+
+// sortDupGroups 按可释放字节降序，上限 500 组（UI 性能预算）。
+func sortDupGroups(groups []DupGroup) []DupGroup {
 	sort.Slice(groups, func(i, j int) bool { return groups[i].DupBytes > groups[j].DupBytes })
 	if len(groups) > 500 {
 		groups = groups[:500]
 	}
-	return groups, nil
+	return groups
 }
 
 func dupLabel(e classify.FileEntry) string {

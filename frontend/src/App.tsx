@@ -12,11 +12,12 @@ import { TopBar } from "./components/TopBar";
 import {
   getInExpr,
   getSimpleExpr,
+  group,
+  leaf,
   setInExpr,
   setSimpleExpr,
   toggleInExpr,
 } from "./expression";
-import { leaf } from "./exprbase";
 import { DEFAULT_SORT, loadFilters, saveFilters, type NamedFilter } from "./filters";
 import { applyTheme, getTheme, nextTheme, type Theme } from "./theme";
 import type {
@@ -225,8 +226,34 @@ export default function App() {
   const onlyThumb = getSimpleExpr(expr, "thumb") === "true";
   const setOnlyThumb = (v: boolean) =>
     editExprFn((e) => setSimpleExpr(e, "thumb", "eq", v ? "true" : ""));
-  const searchQ = getSimpleExpr(expr, "fileId");
-  const setSearchQ = (q: string) => editExprFn((e) => setSimpleExpr(e, "fileId", "contains", q));
+  // 搜索框：文件ID 或 内容哈希 任一匹配（OR 组挂在顶层 AND，与其它
+  // 筛选条件并存）。搜索词按前缀/片段匹配（~ = LIKE %值%）。
+  const searchQ = useMemo(() => {
+    const orGroup = (expr?.and ?? []).find(
+      (s) =>
+        Array.isArray(s.or) &&
+        s.or.some((c) => c.c?.field === "fileId" && c.c?.op === "contains"),
+    );
+    return orGroup?.or?.find((c) => c.c?.field === "fileId")?.c?.value ?? "";
+  }, [expr]);
+  const setSearchQ = (q: string) =>
+    editExprFn((e) => {
+      const rest = (e?.and ?? []).filter(
+        (s) =>
+          !(
+            s.c &&
+            (s.c.field === "fileId" || s.c.field === "contentHash") &&
+            s.c.op === "contains"
+          ),
+      );
+      const next = [...rest];
+      if (q !== "") {
+        next.push(
+          group("or", [leaf("fileId", "contains", q), leaf("contentHash", "contains", q)]),
+        );
+      }
+      return next.length > 0 ? group("and", next) : null;
+    });
 
   // ---- selection ----
   const toggleChecked = useCallback((id: number) => {
@@ -325,6 +352,7 @@ export default function App() {
     setCleanReport(res);
   }, [checked, checkedBytes, checkedCount, startScan, cfg]);
 
+  // 去重建议：可去重项 = 组内副本 ∩ 当前筛选（单一交集语义）。
   const openDupes = useCallback(async () => {
     try {
       const groups = await api.getDupes(filter);
@@ -336,16 +364,18 @@ export default function App() {
   }, [filter]);
 
   // 预览面板「同内容 N 份」按钮：在「勾选副本」（保留一份不勾）与「勾选
-  // 全部」（含保留的那份）之间切换。反复点击来回切换，便于两种批量选择
-  // 方式快速换用。模式按行 id 记录（PreviewPanel 每行重挂载）。
+  // 全部」（含保留份）之间切换，反复点击来回切换，便于两种批量选择方式
+  // 快速换用。模式按行 id 记录（PreviewPanel 每行重挂载）。勾选范围以
+  // **当前筛选与去重作用域**为界（与去重对话框同一语义）：绝不勾选筛选
+  // 之外的文件——此前按 contentHash 扩展全索引副本，筛选只有 1 张图也
+  // 会勾出别处看不见的文件（评审指出的最大问题）。
   const selectContentDups = useCallback(
     async (row: FileRow) => {
       try {
-        const expr = leaf("contentHash", "eq", row.contentHash);
-        const groups = await api.getDupes({ account: "", expr });
+        const groups = await api.getDupes(filter);
         const g = groups.find((x) => x.hash === row.contentHash);
         if (!g || g.dupIds.length === 0) {
-          setToast("没有可勾选的副本");
+          setToast("当前筛选内没有该内容的可去重副本");
           return;
         }
         const mode = dupModes.get(row.id) ?? "dups";
@@ -554,10 +584,10 @@ export default function App() {
               仅缩略图
             </label>
             <input
-              placeholder="搜索 文件ID…"
+              placeholder="搜索 文件ID / 内容哈希…"
               value={searchQ}
               onChange={(e) => setSearchQ(e.target.value)}
-              style={{ width: 140 }}
+              style={{ width: 170 }}
             />
           </div>
           {phase === "ready" ? (
@@ -620,14 +650,32 @@ export default function App() {
       <DupesDialog
         open={dupesOpen}
         groups={dupes}
-        onSelectGroup={(ids) =>
+        checked={checked}
+        checkedCount={checked.size}
+        onSelectGroup={(g) => {
+          // 域内重置：去重建议是另一种筛选器，其作用域内（该内容组）
+          // 的勾选状态以建议为准——副本勾上、保留份取消勾选；域外文件
+          // 不受影响。
           setChecked((prev) => {
             const next = new Set(prev);
-            ids.forEach((id) => next.add(id));
+            next.delete(g.keepId);
+            g.dupIds.forEach((id) => next.add(id));
             return next;
-          })
-        }
-        onSelectAll={(ids) => setChecked(new Set(ids))}
+          });
+          setToast(`已勾选 ${g.dupIds.length} 个副本（保留 ${g.keepLabel} 未勾选）`);
+        }}
+        onSelectAll={(groups) => {
+          setChecked((prev) => {
+            const next = new Set(prev);
+            groups.forEach((g) => {
+              next.delete(g.keepId);
+              g.dupIds.forEach((id) => next.add(id));
+            });
+            return next;
+          });
+          const n = groups.reduce((a, g) => a + g.dupIds.length, 0);
+          setToast(`已勾选筛选内全部多余副本：${n} 个（保留份均已取消勾选）`);
+        }}
         onClose={() => setDupesOpen(false)}
       />
       {cleanReport && (
