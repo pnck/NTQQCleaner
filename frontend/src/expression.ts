@@ -567,6 +567,70 @@ export function setSimpleExpr(
   return group("and", children);
 }
 
+// ---- 工具栏搜索（文件ID 或 内容哈希 任一匹配）----
+// 搜索词是搜索框的专有构造：顶层 AND 中形如
+// (fileId ~ q OR contentHash ~ q) 的 OR 组，在表达式里**至多一个**。
+// 编辑时原位替换，绝不追加——旧实现按叶子谓词过滤移除旧条件，OR 组
+// 不命中谓词导致每次击键堆叠一组 hash 条件，且回读取第一个旧组的值，
+// 受控输入被锁死。
+const SEARCH_FIELDS = ["fileId", "contentHash"] as const;
+
+export function isSearchGroup(s: Expr | null | undefined): boolean {
+  if (!s) return false;
+  const kids = s.or;
+  if (!kids || kids.length !== SEARCH_FIELDS.length) return false;
+  return SEARCH_FIELDS.every((f, i) => {
+    const c = kids[i]?.c;
+    return c !== null && c !== undefined && c.field === f && c.op === "contains";
+  });
+}
+
+function searchShape(q: string): Expr {
+  return group("or", [
+    leaf(SEARCH_FIELDS[0], "contains", q),
+    leaf(SEARCH_FIELDS[1], "contains", q),
+  ]);
+}
+
+export function getSearchExpr(root: Expr | null | undefined): string {
+  // 根本身就是搜索组（表达式视图解析单组表达式后的形态）也算。
+  if (root && isSearchGroup(root)) return root.or?.[0]?.c?.value ?? "";
+  const kids = root?.and ?? root?.or ?? [];
+  const g = kids.find(isSearchGroup);
+  return g?.or?.[0]?.c?.value ?? "";
+}
+
+export function setSearchExpr(root: Expr | null | undefined, q: string): Expr | null {
+  // 根本身就是搜索组：整体替换/移除（整体替换同样保证至多一个）。
+  if (root && isSearchGroup(root)) {
+    return q === "" ? null : searchShape(q);
+  }
+  // 搜索组是顶层组的一个子项（AND 或 OR 皆可——表达式视图解析会把
+  // 单子 AND 组规范化为 OR 组），原位替换保证至多一个。顶层是叶子时
+  // 把叶子作为整体保留、搜索组并列——不覆盖丢失用户的既有条件。
+  let kind: "and" | "or" = "and";
+  let children: Expr[];
+  if (!root) children = [];
+  else if (Array.isArray(root.and)) {
+    kind = "and";
+    children = [...root.and];
+  } else if (Array.isArray(root.or)) {
+    kind = "or";
+    children = [...root.or];
+  } else {
+    children = [root];
+  }
+  const idx = children.findIndex(isSearchGroup);
+  if (q === "") {
+    if (idx >= 0) children.splice(idx, 1);
+  } else if (idx >= 0) {
+    children[idx] = searchShape(q);
+  } else {
+    children.push(searchShape(q));
+  }
+  return children.length > 0 ? group(kind, children) : null;
+}
+
 // ---- 通用树路径操作（编辑对话框用）----
 // path: 子级索引数组；root = 顶层组。
 

@@ -11,10 +11,10 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { TopBar } from "./components/TopBar";
 import {
   getInExpr,
+  getSearchExpr,
   getSimpleExpr,
-  group,
-  leaf,
   setInExpr,
+  setSearchExpr,
   setSimpleExpr,
   toggleInExpr,
 } from "./expression";
@@ -226,34 +226,11 @@ export default function App() {
   const onlyThumb = getSimpleExpr(expr, "thumb") === "true";
   const setOnlyThumb = (v: boolean) =>
     editExprFn((e) => setSimpleExpr(e, "thumb", "eq", v ? "true" : ""));
-  // 搜索框：文件ID 或 内容哈希 任一匹配（OR 组挂在顶层 AND，与其它
-  // 筛选条件并存）。搜索词按前缀/片段匹配（~ = LIKE %值%）。
-  const searchQ = useMemo(() => {
-    const orGroup = (expr?.and ?? []).find(
-      (s) =>
-        Array.isArray(s.or) &&
-        s.or.some((c) => c.c?.field === "fileId" && c.c?.op === "contains"),
-    );
-    return orGroup?.or?.find((c) => c.c?.field === "fileId")?.c?.value ?? "";
-  }, [expr]);
-  const setSearchQ = (q: string) =>
-    editExprFn((e) => {
-      const rest = (e?.and ?? []).filter(
-        (s) =>
-          !(
-            s.c &&
-            (s.c.field === "fileId" || s.c.field === "contentHash") &&
-            s.c.op === "contains"
-          ),
-      );
-      const next = [...rest];
-      if (q !== "") {
-        next.push(
-          group("or", [leaf("fileId", "contains", q), leaf("contentHash", "contains", q)]),
-        );
-      }
-      return next.length > 0 ? group("and", next) : null;
-    });
+  // 搜索框：文件ID 或 内容哈希 任一匹配。搜索词在表达式里至多一个
+  // 构造（getSearchExpr/setSearchExpr 原位替换），按前缀/片段匹配
+  // （~ = LIKE %值%）。
+  const searchQ = useMemo(() => getSearchExpr(expr), [expr]);
+  const setSearchQ = (q: string) => editExprFn((e) => setSearchExpr(e, q));
 
   // ---- selection ----
   const toggleChecked = useCallback((id: number) => {

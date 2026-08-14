@@ -74,9 +74,9 @@ export function TopBar({
   return (
     <div className="topbar">
       <div className="topbar-row">
-        <span style={{ fontWeight: 600 }}>QQ Cleaner</span>
+        <span style={{ fontWeight: 600 }}>数据根目录</span>
         <select value={root} onChange={(e) => onRootChange(e.target.value)}>
-          <option value="">选择数据根…</option>
+          <option value="">选择数据根目录…</option>
           {roots.map((r) => (
             <option key={r} value={r}>
               {r}
