@@ -105,30 +105,38 @@ type Stats struct {
 
 // DupGroup is one byte-identical content hash with ≥2 copies across the
 // whole index: which copy to keep and which copies in the current filter
-// are removable.
+// are removable. KeepSize/DupSizes 供前端精确累计勾选字节（勾选统计
+// 不得依赖虚拟列表已加载行）。
 type DupGroup struct {
-	Hash         string `json:"hash"`
-	Count        int    `json:"count"`     // 全索引中的总份数
-	KeepID       int    `json:"keepId"`    // 建议保留的那份
-	KeepLabel    string `json:"keepLabel"` // 保留份的展示信息（月份/子类型/文件名）
-	KeepMTime    int64  `json:"keepMtime"`
-	KeepInFilter bool   `json:"keepInFilter"` // 保留份是否在当前筛选内（行内「筛选外」标记用）
-	DupIDs       []int  `json:"dupIds"`       // 当前筛选内可删的副本（不含保留份）
-	DupBytes     int64  `json:"dupBytes"`     // 可删副本合计大小
-	TotalBytes   int64  `json:"totalBytes"`   // 组内全部大小
+	Hash         string  `json:"hash"`
+	Count        int     `json:"count"`     // 全索引中的总份数
+	KeepID       int     `json:"keepId"`    // 建议保留的那份
+	KeepLabel    string  `json:"keepLabel"` // 保留份的展示信息（月份/子类型/文件名）
+	KeepMTime    int64   `json:"keepMtime"`
+	KeepInFilter bool    `json:"keepInFilter"` // 保留份是否在当前筛选内（行内「筛选外」标记用）
+	KeepSize     int64   `json:"keepSize"`     // 保留份大小（勾选统计增量用）
+	DupIDs       []int   `json:"dupIds"`       // 当前筛选内可删的副本（不含保留份）
+	DupSizes     []int64 `json:"dupSizes"`     // 与 DupIDs 对齐的逐份大小
+	DupBytes     int64   `json:"dupBytes"`     // 可删副本合计大小
+	TotalBytes   int64   `json:"totalBytes"`   // 组内全部大小
 }
 
 // CleanRequest comes from the UI; every field is re-validated in Go.
+// Audit 与 Move 是确认对话框里的显式 opt-in（默认 false：不生成审计、
+// 直接删除）；Move=true 且无 BackupDir 时后端拒绝（docs/06 §3）。
 type CleanRequest struct {
 	IDs           []int  `json:"ids"`
-	BackupDir     string `json:"backupDir"`
+	BackupDir     string `json:"backupDir"` // Move=true 时使用的备份目录
+	Audit         bool   `json:"audit"`     // 生成审计报告（默认关）
+	Move          bool   `json:"move"`      // 以移动代替删除（默认关）
 	Force         bool   `json:"force"`
 	Confirmed     bool   `json:"confirmed"`
 	IgnoreRunning bool   `json:"ignoreRunning"` // QQ 运行中仍清理（需二次确认）
 }
 
-// CleanItem is one file's outcome in a cleanup run (清理结果对话框逐行
-// 展示；审计日志仍是权威记录）。
+// CleanItem is one file's outcome in a cleanup run。上层只回传 skip/fail
+// 明细（大清理下逐文件列表过长，docs/07 §5）；审计文件（启用时）是
+// 完整的权威清单。
 type CleanItem struct {
 	Path       string `json:"path"`
 	Action     string `json:"action"` // move | remove | skip | fail
@@ -145,7 +153,7 @@ type CleanResult struct {
 	Skipped    int         `json:"skipped"`
 	Failed     int         `json:"failed"`
 	BytesFreed int64       `json:"bytesFreed"`
-	Items      []CleanItem `json:"items"`
-	AuditPath  string      `json:"auditPath"` // 本次审计报告（系统 tmp，已打开）
+	Items      []CleanItem `json:"items"`     // 仅 skip/fail 明细
+	AuditPath  string      `json:"auditPath"` // 本次审计报告（按需生成；未启用时为空）
 	Errors     []string    `json:"errors"`
 }

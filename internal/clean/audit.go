@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-// auditEntry is one JSONL record written for every deleted file
-// (docs/06 §3: deleting without a record is a bug)。SHA256 字段保留
-// 为可选（默认不计算——见 clean.go deleteOne 的产品决策注释）。
+// auditEntry is one JSONL record written for a deleted/moved file when
+// auditing was requested（docs/06 §3：审计按需，默认不生成）。SHA256
+// 字段保留为可选（默认不计算——见 clean.go deleteOne 的产品决策注释）。
 type auditEntry struct {
 	Time       string `json:"time"`
 	Action     string `json:"action"` // move | remove

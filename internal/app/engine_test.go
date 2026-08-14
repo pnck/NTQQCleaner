@@ -416,12 +416,19 @@ func TestBackendScanQueryPreviewClean(t *testing.T) {
 		t.Fatalf("temp ids: got %v want 1", tempIDs)
 	}
 	backup := filepath.Join(t.TempDir(), "backup")
-	res, err := backend.Clean(CleanRequest{IDs: tempIDs, BackupDir: backup, Force: true, Confirmed: true})
+	// 显式移动但未设备份目录 → 后端拒绝（确认对话框同款双保险）。
+	if _, err := backend.Clean(CleanRequest{IDs: tempIDs, Move: true, Force: true, Confirmed: true}); err == nil {
+		t.Fatal("Clean accepted Move without BackupDir")
+	}
+	res, err := backend.Clean(CleanRequest{IDs: tempIDs, BackupDir: backup, Move: true, Audit: true, Force: true, Confirmed: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if res.Moved != 1 || res.BytesFreed != 1<<10 {
 		t.Fatalf("clean result: %+v", res)
+	}
+	if res.AuditPath != backend.auditPath {
+		t.Fatalf("audit path: got %q want %q", res.AuditPath, backend.auditPath)
 	}
 	// The audit log must exist and contain the move.
 	audit, err := os.ReadFile(backend.auditPath)

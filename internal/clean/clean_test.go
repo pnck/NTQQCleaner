@@ -109,6 +109,7 @@ func TestRunMovesToBackup(t *testing.T) {
 		Files:        []classify.FileEntry{entry},
 		AllowedRoots: []string{base},
 		BackupDir:    backup,
+		Move:         true,
 		AuditLog:     audit,
 		Force:        true,
 		Confirmed:    true,
@@ -177,6 +178,50 @@ func TestRunRemoveLogsPath(t *testing.T) {
 	line := readAuditLine(t, audit)
 	if line.Action != "remove" || line.Path != src || line.SHA256 != "" {
 		t.Fatalf("audit: %+v", line)
+	}
+}
+
+// TestRunMoveRequiresBackupDir：显式 Move 但未配置备份目录 → 整次运行
+// 拒绝（docs/06 §3；GUI 确认对话框同款双保险）。
+func TestRunMoveRequiresBackupDir(t *testing.T) {
+	setQQRunning(t, false)
+	r := gateRequest(true, true)
+	r.Move = true
+	if _, err := Run(context.Background(), r); err == nil {
+		t.Fatal("Run accepted Move without BackupDir")
+	}
+}
+
+// TestRunWithoutAuditDeletes：审计按需（默认关）——AuditLog 为空时照常
+// 删除，但不生成审计文件（docs/06 §3）。
+func TestRunWithoutAuditDeletes(t *testing.T) {
+	setQQRunning(t, false)
+	base := t.TempDir()
+	src := filepath.Join(base, "Pic", "2023-01", "Thumb", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01_720.png")
+	content := []byte("content")
+	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := gateRequest(true, true)
+	r.Files = []classify.FileEntry{{
+		Path: src, Biz: "pic", Sub: "Thumb", Category: "pic/thumb",
+		Month: "2023-01", Size: int64(len(content)), IsThumb: true,
+		MTime: testutil.Now.AddDate(-2, 0, 0).Unix(), MD5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01",
+	}}
+	r.AllowedRoots = []string{base}
+	r.AuditLog = ""
+	res, err := Run(context.Background(), r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Deleted != 1 {
+		t.Fatalf("got %+v", res)
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Fatal("file still exists")
 	}
 }
 

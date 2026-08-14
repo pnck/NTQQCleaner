@@ -69,9 +69,10 @@ func cleanRun(m report.Manifest, files []classifyEntry, backupDir, auditLog stri
 		Files:         entries,
 		AllowedRoots:  allowed,
 		BackupDir:     backupDir,
-		AuditLog:      auditLog,
-		Force:         true, // gated by the --force flag in cleanCmd
-		Confirmed:     true, // gated by the interactive `yes` in cleanCmd
+		Move:          backupDir != "", // CLI 的显式 opt-in = --backup-dir
+		AuditLog:      auditLog,        // 空 = 不生成审计（--audit-log opt-in）
+		Force:         true,            // gated by the --force flag in cleanCmd
+		Confirmed:     true,            // gated by the interactive `yes` in cleanCmd
 		IgnoreRunning: ignoreRunning,
 		K:             k,
 		Config:        cfg,

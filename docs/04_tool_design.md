@@ -277,7 +277,10 @@ func Run(req Request) (Result, error) {
 4. **Wails 安全**：仅加载 `embed.FS` 本地资源，禁止远程内容；`Bind` 只暴露白名单方法；
    前端事件与命令不经网络（Wails 原生 IPC，天然无 CSRF）
 5. **路径安全**：所有 `filepath` 操作用 `filepath.Clean` + 前缀校验，防 `..` 穿越
-6. **审计日志**：每次 Clean 写系统 tmp 下带时间戳的 JSONL 审计报告（`--audit-log` 可指定；清理后自动打开，含逐文件动作与 reason 标签）
+6. **审计与移动均为显式 opt-in**（docs/06 §3）：默认直接删除、不生成审计
+   （十万级文件的逐文件清单过长）。GUI 确认对话框勾选「生成审计记录」/
+   「以移动代替删除」；CLI 对应 `--audit-log`/`--backup-dir`。审计生成后是
+   系统 tmp 下带时间戳的 JSONL（清理后自动打开，含逐文件动作与 reason 标签）
 
 ---
 
@@ -316,7 +319,7 @@ func Run(req Request) (Result, error) {
 `ntqq-cleaner` 同时提供无 UI 入口（便于脚本/CI/无图形环境）：
 ```
 ntqq-cleaner scan [--root R] [--account HASH] [--json]     # dry-run 扫描输出 JSON
-ntqq-cleaner clean --file manifest.json [--backup-dir D]    # 按清单执行（需 --force 确认）
+ntqq-cleaner clean --file manifest.json [--backup-dir D] [--audit-log L]  # 按清单执行（需 --force 确认；移动/审计均为显式 opt-in）
 ntqq-cleaner gui                                            # 默认：启动内嵌 Web 窗口
 ```
 - `gui` 为默认命令；`scan/clean` 供无头环境与自动化

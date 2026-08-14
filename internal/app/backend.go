@@ -402,6 +402,7 @@ func (b *Backend) GetDupes(f Filter) ([]DupGroup, error) {
 			KeepLabel:    dupLabel(out.Entries[keep]),
 			KeepMTime:    out.Entries[keep].MTime,
 			KeepInFilter: inFilter[keep],
+			KeepSize:     out.Entries[keep].Size,
 		}
 		for _, id := range ids {
 			g.TotalBytes += out.Entries[id].Size
@@ -410,6 +411,7 @@ func (b *Backend) GetDupes(f Filter) ([]DupGroup, error) {
 			}
 			if inFilter[id] {
 				g.DupIDs = append(g.DupIDs, id)
+				g.DupSizes = append(g.DupSizes, out.Entries[id].Size)
 				g.DupBytes += out.Entries[id].Size
 			}
 		}
@@ -612,16 +614,25 @@ func (b *Backend) Clean(req CleanRequest) (CleanResult, error) {
 		files = append(files, out.Entries[id])
 	}
 	roots := b.outcomeRootsLocked()
-	auditLog := b.auditPath
-	if auditLog == "" {
-		// 每次清理生成一份带时间戳的临时审计报告（系统 tmp），清理后
-		// 打开供用户查看/另存——不轮转、不积累。
-		auditLog = filepath.Join(configDir(), "audit-"+time.Now().Format("20060102-150405")+".jsonl")
+	// 审计按需（默认关，docs/06 §3）：只有确认对话框勾选「生成审计
+	// 记录」才写文件并打开。
+	auditLog := ""
+	if req.Audit {
+		auditLog = b.auditPath
+		if auditLog == "" {
+			// 每次清理生成一份带时间戳的临时审计报告（系统 tmp），清理后
+			// 打开供用户查看/另存——不轮转、不积累。
+			auditLog = filepath.Join(configDir(), "audit-"+time.Now().Format("20060102-150405")+".jsonl")
+		}
 	}
 	b.mu.Unlock()
 
 	if len(files) == 0 {
 		return CleanResult{}, fmt.Errorf("nothing selected to clean")
+	}
+	if req.Move && req.BackupDir == "" {
+		// 确认对话框已拦（未设备份目录时禁用确认），Go 侧双保险。
+		return CleanResult{}, fmt.Errorf("以移动代替删除需要先设置备份目录（设置对话框）")
 	}
 	// 预检：QQ 运行中 → 返回哨兵错误，前端据以下发二次确认后带
 	// ignoreRunning=true 重试（clean 层另有自身检查，双保险）。
@@ -632,6 +643,7 @@ func (b *Backend) Clean(req CleanRequest) (CleanResult, error) {
 		Files:         files,
 		AllowedRoots:  roots,
 		BackupDir:     req.BackupDir,
+		Move:          req.Move,
 		AuditLog:      auditLog,
 		Force:         req.Force,
 		Confirmed:     req.Confirmed,
@@ -647,8 +659,13 @@ func (b *Backend) Clean(req CleanRequest) (CleanResult, error) {
 	b.mu.Lock()
 	b.outcome = nil
 	b.mu.Unlock()
+	// 只回传 skip/fail 明细：大清理（十万级文件）的逐文件列表过长，
+	// 完整清单仅在启用审计时落盘（docs/07 §5）。
 	items := make([]CleanItem, 0, len(res.Items))
 	for _, it := range res.Items {
+		if it.Action != "skip" && it.Action != "fail" {
+			continue
+		}
 		items = append(items, CleanItem{
 			Path:       it.Path,
 			Action:     it.Action,
@@ -657,9 +674,11 @@ func (b *Backend) Clean(req CleanRequest) (CleanResult, error) {
 			Size:       it.Size,
 		})
 	}
-	// 审计报告已生成：打开供用户查看/另存（失败不影响清理结果）。
-	if err := platform.Current().OpenFile(auditLog); err != nil {
-		res.Errors = append(res.Errors, fmt.Sprintf("audit report %s: %v", auditLog, err))
+	// 审计报告（按需生成）：打开供用户查看/另存（失败不影响清理结果）。
+	if auditLog != "" {
+		if err := platform.Current().OpenFile(auditLog); err != nil {
+			res.Errors = append(res.Errors, fmt.Sprintf("audit report %s: %v", auditLog, err))
+		}
 	}
 	return CleanResult{
 		Processed:  res.Processed,

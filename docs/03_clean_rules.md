@@ -125,20 +125,20 @@ for each file in nt_data 扫描范围:
 ## 6. 配置设计（默认值汇总）
 
 ```yaml
-# config.yaml（工具默认，可被 --config 覆盖）
-classify:
-  clean_temp: true                        # *Temp 直接可清
-  clean_thumb: true                       # 缩略图可清
-  clean_ori: false                        # 原图/原文件默认只报告不清
-  clean_base_emoji: false
-  clean_marketface: false
-  clean_personal_emoji: false
-  clean_file: false
-  clean_log: false                        # 高级 opt-in：运行日志
-  clean_dataline_tmp: false               # 高级 opt-in：传输缓存（NFC 残留）
-  clean_avatar: false                     # 高级 opt-in：头像缓存
-min_file_size_bytes: 0                    # 只统计大于此值的文件
+# config.yaml（工具默认，可被 --config 覆盖；完整注释版见 config.example.yaml）
+clean_temp: true                        # *Temp 直接可清
+clean_thumb: true                       # 缩略图可清
+clean_ori: false                        # 原图/原文件默认只报告不清
+clean_base_emoji: false
+clean_marketface: false
+clean_personal_emoji: false
+clean_file: false
+clean_log: false                        # 高级 opt-in：运行日志
+clean_dataline_tmp: false               # 高级 opt-in：传输缓存（NFC 残留）
+clean_avatar: false                     # 高级 opt-in：头像缓存
+min_file_size_bytes: 0                  # 只统计大于此值的文件
 skip_dirs: [mmkv, msf, OnlineStatus, UnitedConfig, config]
+backup_dir: ""                          # 移动备份目录（仅当显式选择移动时使用，空 = 直接删除）
 ```
 
 - **GUI 模式**：普通类别门控全部放开（选什么清理由用户的筛选器决定）；

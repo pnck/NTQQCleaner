@@ -24,5 +24,6 @@ min_file_size_bytes: 0
 # 永不扫描/清理的目录（黑名单硬编码兜底见 internal/rules/whitelist.go）
 skip_dirs: [mmkv, msf, OnlineStatus, UnitedConfig, config]
 
-# 清理时把文件移动到的备份目录（空 = 直接删除，仅写审计报告）
+# 清理时把文件移动到的备份目录：仅当确认对话框勾选「以移动代替删除」时
+# 使用（未设置则无法勾选）；空 = 直接删除（审计报告按需另勾）
 backup_dir: ""

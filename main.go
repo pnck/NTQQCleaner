@@ -19,7 +19,6 @@ import (
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
-	"time"
 
 	"qqcleaner/internal/app"
 	"qqcleaner/internal/discovery"
@@ -85,13 +84,14 @@ scan flags:
 clean flags:
   --file PATH          manifest from scan --json (required)
   --force              required for any deletion (redline)
-  --backup-dir PATH    move files there instead of deleting (recommended)
-  --audit-log PATH     JSONL audit report (default: a timestamped file under the OS temp dir)
+  --backup-dir PATH    move files there instead of deleting (opt-in; default = direct delete)
+  --audit-log PATH     JSONL audit report (opt-in; default = no audit report)
   --config PATH        config file
 
 Redlines (always enforced, see docs/06): dry-run by default, path
 whitelist/blacklist re-verified per file, QQ-running guard (--ignore-running
-覆盖需显式确认), audit log for every deletion, explicit --force + confirmation.
+覆盖需显式确认), explicit --force + confirmation; 审计与移动均为显式
+opt-in（docs/06 §3）.
 `
 
 // configPath returns the default config path (<tmp>/ntqq-cleaner/config.yaml).
@@ -224,12 +224,10 @@ func cleanCmd(args []string) error {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return fmt.Errorf("parse manifest: %w", err)
 	}
+	// 审计按需：--audit-log 显式指定才生成（默认不生成，docs/06 §3）。
 	cfg, err := loadConfig(*configPath)
 	if err != nil {
 		return err
-	}
-	if *auditLog == "" {
-		*auditLog = filepath.Join(app.ConfigDir(), "audit-"+time.Now().Format("20060102-150405")+".jsonl")
 	}
 
 	// 清单中的全部条目都进入清理流程；每个文件在 clean.Run 内逐条
@@ -249,9 +247,14 @@ func cleanCmd(args []string) error {
 	}
 	fmt.Printf("将处理 %d 个文件 (%s)；逐文件重新校验白名单/黑名单\n", len(files), humanSize(bytes))
 	if *backupDir != "" {
-		fmt.Printf("备份目录: %s\n", *backupDir)
+		fmt.Printf("备份目录: %s（以移动代替删除）\n", *backupDir)
 	} else {
-		fmt.Println("无备份目录：审计日志记录路径/大小/时间")
+		fmt.Println("直接删除（无备份目录；--backup-dir 可改为移动）")
+	}
+	if *auditLog != "" {
+		fmt.Printf("审计报告: %s\n", *auditLog)
+	} else {
+		fmt.Println("不生成审计报告（--audit-log 可按需指定）")
 	}
 	fmt.Print("输入 yes 确认: ")
 	var confirm string
@@ -266,7 +269,9 @@ func cleanCmd(args []string) error {
 	}
 	fmt.Printf("完成: 处理 %d, 移动 %d, 删除 %d, 跳过 %d, 失败 %d, 释放 %s\n",
 		res.Processed, res.Moved, res.Deleted, res.Skipped, res.Failed, humanSize(res.BytesFreed))
-	fmt.Printf("审计报告: %s\n", *auditLog)
+	if *auditLog != "" {
+		fmt.Printf("审计报告: %s\n", *auditLog)
+	}
 	for _, e := range res.Errors {
 		fmt.Fprintln(os.Stderr, "  !", e)
 	}

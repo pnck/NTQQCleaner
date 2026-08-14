@@ -51,7 +51,7 @@ task dev          # 热重载开发（需 wails CLI + pnpm）
 | 默认 dry-run，零写入 | `app.Engine` 只读；`clean.Run` 需 Force+Confirmed |
 | 白名单/黑名单逐文件二次校验 | `rules.Whitelisted/Blacklisted` + `clean.VerifyPath` |
 | QQ 运行中拒绝清理 | `clean.QQRunning`（开始前 + 每 30s 复查） |
-| 删除必留痕：备份移动 或 审计报告 | `clean.deleteOne` + 系统 tmp 下带时间戳的审计文件（清理后自动打开） |
+| 删除必留痕：清理结果回显 + 审计按需（默认关） | `clean.deleteOne` + 统计/跳过失败明细；审计经确认对话框勾选（`--audit-log`）生成 |
 | 前端不可信，红线全在 Go 侧 | `internal/app` 不暴露任意路径/文件能力 |
 
 ## 架构
