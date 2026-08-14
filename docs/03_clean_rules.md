@@ -48,8 +48,9 @@ for each file in nt_data 扫描范围:
 | 风险 | 目录/子目录 | 默认门控 | reason 标签 |
 |---|---|---|---|
 | 最低 | `*OriTemp/` `*ThumbTemp/`（含 `BaseEmojiSyastems/ThumbTemp/*.zip`） | clean_temp=true | 下载中断残留 |
-| 最低 | `dataline/.tmp/`（NFC 未完成拷贝传输残留，实测布局） | clean_temp=true | 传输残留 |
-| 最低 | `log/` `log-cache/`（运行日志，QQ 自动重建） | clean_log=true | 运行日志 |
+| 最低 | `dataline/.tmp/`（NFC 未完成拷贝传输残留，实测布局） | clean_dataline_tmp=false（高级） | 传输残留 |
+| 最低 | `log/` `log-cache/`（运行日志，QQ 自动重建） | clean_log=false（高级） | 运行日志 |
+| 最低 | `avatar/`（头像缓存，重新拉取） | clean_avatar=false（高级） | 头像缓存 |
 | 低 | `Emoji/emoji-recv/Thumb/`、`Pic|Video|.../Thumb/` | clean_thumb=true | 缩略图 |
 | 中 | `Emoji/emoji-recv/Ori/` | clean_ori=false | 原图/原文件 |
 | 中 | `Pic|Video|dataline/Ori/` | clean_ori=false | 原图/原文件 |
@@ -126,18 +127,23 @@ for each file in nt_data 扫描范围:
 ```yaml
 # config.yaml（工具默认，可被 --config 覆盖）
 classify:
-  clean_temp: true                        # *Temp 与 dataline/.tmp 传输残留直接可清
+  clean_temp: true                        # *Temp 直接可清
   clean_thumb: true                       # 缩略图可清
   clean_ori: false                        # 原图/原文件默认只报告不清
   clean_base_emoji: false
   clean_marketface: false
   clean_personal_emoji: false
   clean_file: false
-  clean_log: true                         # 运行日志可清（QQ 自动重建）
+  clean_log: false                        # 高级 opt-in：运行日志
+  clean_dataline_tmp: false               # 高级 opt-in：传输缓存（NFC 残留）
+  clean_avatar: false                     # 高级 opt-in：头像缓存
 min_file_size_bytes: 0                    # 只统计大于此值的文件
-skip_dirs: [mmkv, msf, OnlineStatus, UnitedConfig, config, avatar]
+skip_dirs: [mmkv, msf, OnlineStatus, UnitedConfig, config]
 ```
 
-- **GUI 模式**：所有 `clean_*` 门控全部放开（选什么清理由用户的筛选器决定）；
-  结构性红线（nt_db/db 文件/mmkv 等黑名单、路径穿越）照常强制。
-- **CLI 模式**：按 config 保守默认（如上表）；`clean` 执行时每个文件逐条重验。
+- **GUI 模式**：普通类别门控全部放开（选什么清理由用户的筛选器决定）；
+  **高级 opt-in 三类**（传输缓存/日志/头像）默认**关闭**——关闭时扫描
+  不入索引、清理拒绝，在设置→高级勾选后才覆盖（变更自动重扫）。结构性
+  红线（nt_db/db 文件/mmkv 等黑名单、路径穿越）照常强制。
+- **CLI 模式**：按 config 保守默认（如上表）；扫描报告全部结构合法文件，
+  `clean` 执行时每个文件逐条重验（门控关闭的只报告不清）。

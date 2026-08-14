@@ -49,7 +49,10 @@ type Outcome struct {
 
 // ScanAll scans every account under root (or just `accounts`), classifies
 // and aggregates. Progress events are emitted throttled (~100ms).
-func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []string, minAgeDays int, minSize int64) (*Outcome, error) {
+// gates 是扫描入库的类别门控（与清理重验同一结构）：CLI 传 qq.AllGates()
+// 报告全部结构合法文件（门控在清理时判定）；GUI 传用户 config 的门控
+// ——高级 opt-in 类别（传输残留/日志/头像）默认关闭时**不进索引**。
+func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []string, minAgeDays int, minSize int64, gates qq.Gates) (*Outcome, error) {
 	// 版本 dispatcher：从磁盘布局识别 QQ 平台×版本族，分派知识实现。
 	// 不支持的布局（generic）fail-closed。
 	k := qq.Detect(root)
@@ -140,11 +143,11 @@ func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []
 			if minAge > 0 && f.MTime > cutoff {
 				continue
 			}
-			// 结构性白名单过滤（全门控打开，与清理重验同一条结构）：
-			// 白名单结构之外的文件（如 dataline/.tmp 的 NFC 传输残留）
-			// 不进入索引——墙里看到的必然可清，扫描与清理不再不一致。
+			// 白名单过滤（与清理重验同一条结构）：白名单结构之外的文件
+			// 不进索引，且关闭的类别门控同样不进索引——墙里看到的必然
+			// 可清，扫描与清理不会不一致。
 			rel, err := filepath.Rel(acc.NtData, f.Path)
-			if err != nil || !k.Whitelisted(filepath.ToSlash(rel), qq.AllGates()) {
+			if err != nil || !k.Whitelisted(filepath.ToSlash(rel), gates) {
 				continue
 			}
 			kept = append(kept, f)

@@ -200,7 +200,10 @@ func previewHandler(rw http.ResponseWriter, req *http.Request) {
 
 ### ⑥ 设置对话框（菜单/齿轮进入）
 - 主题（跟随系统/浅色/深色）、备份目录（`--backup-dir`，默认仅审计日志）
-- （类别开关与阈值已随分级模型一起移除：GUI 下选择权完全在筛选器）
+- **高级**：三个 opt-in 门控（与 CLI config 的 clean_* 共用一份）——
+  传输缓存（dataline/.tmp NFC 残留）、运行日志、头像缓存，默认**不勾选**
+  （扫描与清理都不覆盖）；勾选保存后自动重新扫描生效。普通类别门控
+  已随分级模型一起移除：GUI 下选择权完全在筛选器
 
 ---
 

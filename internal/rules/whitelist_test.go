@@ -6,9 +6,7 @@ import (
 
 func TestWhitelisted(t *testing.T) {
 	// 结构用例：门控全部打开时，纯结构校验（黑名单类别另测）。
-	open := Default()
-	open.CleanTemp, open.CleanThumb, open.CleanOri = true, true, true
-	open.CleanFile, open.CleanBaseEmoji, open.CleanMarketface, open.CleanPersonalEmoji = true, true, true, true
+	open := AllGatesConfig()
 
 	structural := []struct {
 		rel  string
@@ -33,6 +31,7 @@ func TestWhitelisted(t *testing.T) {
 		{"Emoji/personal_emoji/Ori/x.png", true},
 		{"dataline/.tmp/output.mp4.x.NFC", true}, // 传输残留（clean_temp）
 		{"dataline/.tmp", false},
+		{"avatar/x.jpg", true}, // 头像缓存（高级 opt-in）
 		{"log/2026-08/x.log", true},  // 运行日志（clean_log）
 		{"log-cache/x", true},
 		{"mmkv/mmkv.default", false},
@@ -61,8 +60,9 @@ func TestWhitelisted(t *testing.T) {
 		{"Emoji/BaseEmojiSyastems/EmojiSystermResource/😀/png/x.png", false},
 		{"Emoji/marketface/123/x.png", false},
 		{"Emoji/personal_emoji/Ori/x.png", false},
-		{"dataline/.tmp/x.NFC", true},  // clean_temp=true
-		{"log/2026-08/x.log", true},   // clean_log=true
+		{"dataline/.tmp/x.NFC", false}, // clean_dataline_tmp=false（高级默认关）
+		{"log/2026-08/x.log", false},   // clean_log=false（高级默认关）
+		{"avatar/x.jpg", false},
 	}
 	for _, c := range gated {
 		if got := Whitelisted(ntK(), c.rel, def); got != c.want {
@@ -86,7 +86,7 @@ func TestBlacklisted(t *testing.T) {
 		{"/data/nt_qq_xx/nt_data/OnlineStatus/x", true},
 		{"/data/nt_qq_xx/nt_data/UnitedConfig/000/x", true},
 		{"/data/nt_qq_xx/nt_data/log/2026-08/x.log", false}, // 已移入白名单政策（clean_log）
-		{"/data/nt_qq_xx/nt_data/avatar/x.jpg", true},
+		{"/data/nt_qq_xx/nt_data/avatar/x.jpg", false}, // 已移入白名单政策（clean_avatar）
 		{"/data/nt_qq_xx/nt_data/Pic/2024-09/Thumb/a.png", false},
 		{"/data/nt_qq_xx/nt_data/Pic/2024-09/Ori/b.jpg", false},
 	}
@@ -94,5 +94,15 @@ func TestBlacklisted(t *testing.T) {
 		if got := Blacklisted(ntK(), c.abs); got != c.want {
 			t.Errorf("Blacklisted(%q) = %v, want %v", c.abs, got, c.want)
 		}
+	}
+}
+
+// AllGatesConfig 全部门控打开的 Config（结构校验用；含高级 opt-in）。
+func AllGatesConfig() Config {
+	return Config{
+		CleanTemp: true, CleanThumb: true, CleanOri: true,
+		CleanFile: true, CleanBaseEmoji: true, CleanMarketface: true,
+		CleanPersonalEmoji: true, CleanLog: true,
+		CleanDatalineTmp: true, CleanAvatar: true,
 	}
 }

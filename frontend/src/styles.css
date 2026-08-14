@@ -710,6 +710,49 @@ button.chip {
   border-radius: 4px;
 }
 
+/* 设置对话框：扫描与清理范围（高级 opt-in 门控）独立分栏区块，
+   标题句写明语义（默认不扫描，勾选后才覆盖），条目说明单独一行 */
+.settings-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  padding: 10px 12px;
+}
+
+.settings-advanced .adv-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.settings-advanced .adv-head span {
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.settings-advanced .adv-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.settings-advanced .adv-item:first-of-type {
+  border-top: none;
+}
+
+.settings-advanced .adv-note {
+  color: var(--text-dim);
+  font-size: 11px;
+  padding-left: 22px; /* 与复选框+标签列对齐（分栏） */
+}
+
 .parse-ok {
   color: #16a34a;
   font-size: 12px;

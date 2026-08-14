@@ -97,9 +97,11 @@ func BuildQQTree(t *testing.T) *Fixture {
 	// 必须进入索引（用户实测布局：dataline/.tmp/output(1).mp4.<hash>.NFC）。
 	// 3KB 大小唯一，不触发内容哈希。
 	mkFile(t, filepath.Join(f.NtDataA, "dataline", ".tmp", "output(1).mp4."+MD5G+".NFC"), bytesN(3<<10), Now.AddDate(0, 0, -5))
-	// 运行日志：clean_log 门控（默认开），QQ 自动重建。
+	// 高级 opt-in 类别（默认关，设置里勾选后扫描+清理才覆盖）：
+	// 运行日志（QQ 自动重建）、头像缓存（重新拉取）。
 	mkFile(t, filepath.Join(f.NtDataA, "log", "2026-08.log"), bytesN(2), Now.AddDate(0, 0, -10))
 	mkFile(t, filepath.Join(f.NtDataA, "log-cache", "x"), bytesN(4), Now.AddDate(0, 0, -10))
+	mkFile(t, filepath.Join(f.NtDataA, "avatar", "a.png"), bytesN(5), Now.AddDate(0, 0, -10))
 
 	// must never be scanned or cleaned
 	mkFile(t, filepath.Join(f.NtDataA, "mmkv", "mmkv.default"), []byte("x"), Now)

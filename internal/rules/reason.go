@@ -39,6 +39,8 @@ func Reason(e classify.FileEntry, hasOri, hasThumb bool, contentCount int) strin
 		parts = append(parts, "个人表情")
 	case e.Biz == "log" || e.Biz == "log-cache":
 		parts = append(parts, "运行日志")
+	case e.Biz == "avatar":
+		parts = append(parts, "头像缓存")
 	case strings.HasSuffix(strings.ToLower(e.Category), "/ori"):
 		parts = append(parts, "原图/原文件")
 	}

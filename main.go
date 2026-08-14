@@ -136,7 +136,7 @@ func scanCmd(args []string) error {
 	if *account != "" {
 		accounts = []string{*account}
 	}
-	out, err := (&app.Engine{Cfg: cfg}).ScanAll(context.Background(), *root, accounts, onlyBizs.list, *minAgeDays, *minSize)
+	out, err := (&app.Engine{Cfg: cfg}).ScanAll(context.Background(), *root, accounts, onlyBizs.list, *minAgeDays, *minSize, qq.AllGates())
 	if err != nil {
 		return err
 	}

@@ -133,7 +133,9 @@ export interface Config {
   cleanMarketface: boolean;
   cleanPersonalEmoji: boolean;
   cleanFile: boolean;
-  cleanLog: boolean;
+  cleanLog: boolean; // 高级 opt-in：运行日志
+  cleanDatalineTmp: boolean; // 高级 opt-in：传输缓存（NFC 残留）
+  cleanAvatar: boolean; // 高级 opt-in：头像缓存
   minFileSizeBytes: number;
   skipDirs: string[];
 }
@@ -147,6 +149,7 @@ export const BIZ_LABEL: Record<string, string> = {
   dataline: "设备互传",
   log: "运行日志",
   "log-cache": "日志缓存",
+  avatar: "头像缓存",
 };
 
 export function fmtSize(n: number): string {

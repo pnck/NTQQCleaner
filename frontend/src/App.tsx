@@ -21,6 +21,7 @@ import { applyTheme, getTheme, nextTheme, type Theme } from "./theme";
 import type {
   AccountReport,
   CleanResult,
+  Config,
   DupGroup,
   Expr,
   FileRow,
@@ -73,6 +74,8 @@ export default function App() {
   const [dupesOpen, setDupesOpen] = useState(false);
   const [dupes, setDupes] = useState<DupGroup[]>([]);
   const [theme, setTheme] = useState<Theme>(getTheme());
+  // 后端 config（设置对话框的高级门控/备份策略；普通门控 GUI 恒全开）
+  const [cfg, setCfg] = useState<Config | null>(null);
 
   const filter = useMemo(() => ({ account, expr, stages }), [account, expr, stages]);
   const queryKey = useMemo(
@@ -105,6 +108,7 @@ export default function App() {
       setRoots(rs);
       if (rs.length > 0) setRoot(rs[0]);
     });
+    void api.getConfig().then(setCfg).catch(console.error);
     const offs = [
       events.onProgress(setProgress),
       events.onDone((d) => {
@@ -370,6 +374,25 @@ export default function App() {
     [dupModes],
   );
 
+  // 保存设置：高级门控变化影响扫描入库范围，变化时自动重扫生效。
+  const saveConfig = useCallback(
+    (c: Config) => {
+      const advancedChanged =
+        !cfg ||
+        c.cleanLog !== cfg.cleanLog ||
+        c.cleanDatalineTmp !== cfg.cleanDatalineTmp ||
+        c.cleanAvatar !== cfg.cleanAvatar;
+      void api
+        .setConfig(c)
+        .then(() => {
+          setCfg(c);
+          if (advancedChanged && root) startScan();
+        })
+        .catch((e) => setToast(`保存设置失败：${e}`));
+    },
+    [cfg, root, startScan],
+  );
+
   const pickRoot = useCallback(async () => {
     const d = await api.pickDirectory("选择 QQ 数据根目录");
     if (!d) return;
@@ -607,6 +630,8 @@ export default function App() {
         onClose={() => setSettingsOpen(false)}
         theme={theme}
         onThemeChange={changeTheme}
+        config={cfg}
+        onConfigSave={saveConfig}
       />
       {toast && (
         <div className="toast" onClick={() => setToast("")}>

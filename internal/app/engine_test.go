@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"qqcleaner/internal/qq"
 	"qqcleaner/internal/rules"
 	"qqcleaner/internal/testutil"
 )
@@ -56,7 +57,7 @@ func testEngine() *Engine {
 // → reason/关联索引 → aggregate.
 func TestEngineScanAll(t *testing.T) {
 	f := testutil.BuildQQTree(t)
-	out, err := testEngine().ScanAll(context.Background(), f.Root, nil, nil, 0, 0)
+	out, err := testEngine().ScanAll(context.Background(), f.Root, nil, nil, 0, 0, qq.AllGates())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,18 +65,18 @@ func TestEngineScanAll(t *testing.T) {
 		t.Fatalf("got %d accounts want 2", len(out.Accounts))
 	}
 	a, b := out.Accounts[0], out.Accounts[1]
-	if a.Hash != testutil.HashA || a.QQNum != testutil.QQA || a.TotalFiles != 15 {
+	if a.Hash != testutil.HashA || a.QQNum != testutil.QQA || a.TotalFiles != 16 {
 		t.Fatalf("account A: %+v", a)
 	}
 	if b.Hash != testutil.HashB || b.QQNum != testutil.QQB || b.TotalFiles != 1 {
 		t.Fatalf("account B: %+v", b)
 	}
-	if len(out.Entries) != 16 || len(out.Reasons) != 16 {
-		t.Fatalf("entries/reasons: %d/%d want 16/16", len(out.Entries), len(out.Reasons))
+	if len(out.Entries) != 17 || len(out.Reasons) != 17 {
+		t.Fatalf("entries/reasons: %d/%d want 17/17", len(out.Entries), len(out.Reasons))
 	}
-	// 已知可清结构必须进入索引：dataline/.tmp 的 NFC 传输残留（clean_temp）
-	// 与 log/log-cache 运行日志（clean_log）。
-	var nfc, logs int
+	// 已知可清结构必须进入索引：dataline/.tmp 的 NFC 传输残留、
+	// log/log-cache 运行日志与 avatar 头像缓存（全门控扫描）。
+	var nfc, logs, avatars int
 	for _, e := range out.Entries {
 		if strings.HasSuffix(e.Path, ".NFC") {
 			nfc++
@@ -86,9 +87,36 @@ func TestEngineScanAll(t *testing.T) {
 		if e.Biz == "log" || e.Biz == "log-cache" {
 			logs++
 		}
+		if e.Biz == "avatar" {
+			avatars++
+		}
 	}
-	if nfc != 1 || logs != 2 {
-		t.Fatalf("NFC/log entries: nfc=%d logs=%d want 1/2", nfc, logs)
+	if nfc != 1 || logs != 2 || avatars != 1 {
+		t.Fatalf("NFC/log/avatar entries: nfc=%d logs=%d avatars=%d want 1/2/1", nfc, logs, avatars)
+	}
+	// 高级 opt-in 门控：GUI 形态（普通类别全开 + 高级默认关）扫描时，
+	// 传输残留/日志/头像不进索引；勾选后进入。
+	off := rules.GatesOf(cfgOpenGates(rules.Default()))
+	offOut, err := testEngine().ScanAll(context.Background(), f.Root, nil, nil, 0, 0, off)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if offOut.Accounts[0].TotalFiles != 12 {
+		t.Fatalf("advanced gates off: got %d want 12", offOut.Accounts[0].TotalFiles)
+	}
+	for _, e := range offOut.Entries {
+		if e.Biz == "log" || e.Biz == "log-cache" || e.Biz == "avatar" || e.Category == "dataline/tmp" {
+			t.Fatalf("advanced category must not enter the index when its gate is off: %s", e.Path)
+		}
+	}
+	on := off
+	on.CleanLog, on.CleanDatalineTmp, on.CleanAvatar = true, true, true
+	onOut, err := testEngine().ScanAll(context.Background(), f.Root, nil, nil, 0, 0, on)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if onOut.Accounts[0].TotalFiles != 16 {
+		t.Fatalf("advanced gates on: got %d want 16", onOut.Accounts[0].TotalFiles)
 	}
 	// 二次扫描生效的直接证据：A 账号 6 个大小冲突候选（2×MD5A 80KB、
 	// MD5F/MD5G 60KB、x.png/my.png 10KB）；B 账号 1 个（MD5D 60KB）。
@@ -103,7 +131,7 @@ func TestEngineScanAll(t *testing.T) {
 // 不同，不得误判。
 func TestContentHashAndReasons(t *testing.T) {
 	f := testutil.BuildQQTree(t)
-	out, err := testEngine().ScanAll(context.Background(), f.Root, nil, nil, 0, 0)
+	out, err := testEngine().ScanAll(context.Background(), f.Root, nil, nil, 0, 0, qq.AllGates())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,13 +227,13 @@ func TestContentHashAndReasons(t *testing.T) {
 // TestEngineMinAge excludes fresh files from the outcome entirely.
 func TestEngineMinAge(t *testing.T) {
 	f := testutil.BuildQQTree(t)
-	out, err := testEngine().ScanAll(context.Background(), f.Root, nil, nil, 3, 0)
+	out, err := testEngine().ScanAll(context.Background(), f.Root, nil, nil, 3, 0, qq.AllGates())
 	if err != nil {
 		t.Fatal(err)
 	}
 	// The 1-day-old Ori is dropped; everything else (≥4 days) stays.
-	if out.Accounts[0].TotalFiles != 14 {
-		t.Fatalf("got %d files want 14", out.Accounts[0].TotalFiles)
+	if out.Accounts[0].TotalFiles != 15 {
+		t.Fatalf("got %d files want 15", out.Accounts[0].TotalFiles)
 	}
 }
 
@@ -214,7 +242,7 @@ func TestEngineMinAge(t *testing.T) {
 func TestDryRunZeroWrites(t *testing.T) {
 	f := testutil.BuildQQTree(t)
 	before := snapshotTree(t, f.Root)
-	_, err := testEngine().ScanAll(context.Background(), f.Root, nil, nil, 0, 0)
+	_, err := testEngine().ScanAll(context.Background(), f.Root, nil, nil, 0, 0, qq.AllGates())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,8 +327,8 @@ func TestBackendScanQueryPreviewClean(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(groups) != 6 { // pic, emoji, file, dataline, log, log-cache
-		t.Fatalf("biz groups: got %d want 6", len(groups))
+	if len(groups) != 3 { // pic, emoji, file（高级类别默认门控关闭）
+		t.Fatalf("biz groups: got %d want 3", len(groups))
 	}
 	for i := 1; i < len(groups); i++ {
 		if groups[i].Size > groups[i-1].Size {
@@ -412,7 +440,7 @@ func TestBackendScanQueryPreviewClean(t *testing.T) {
 // TestMatchOne exercises the condition evaluator (filter editor backend).
 func TestMatchOne(t *testing.T) {
 	f := testutil.BuildQQTree(t)
-	out, err := testEngine().ScanAll(context.Background(), f.Root, nil, nil, 0, 0)
+	out, err := testEngine().ScanAll(context.Background(), f.Root, nil, nil, 0, 0, qq.AllGates())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -529,8 +557,8 @@ func TestFilterStages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if all.Count != 16 {
-		t.Fatalf("all: got %d want 16", all.Count)
+	if all.Count != 13 {
+		t.Fatalf("all: got %d want 13 (GUI 默认门控：高级类别不进索引)", all.Count)
 	}
 	// take(3)：截断语义（GetStats 无 UI 排序，take 按自然顺序截断）
 	top3, err := backend.GetStats(Filter{Stages: []Stage{{Kind: "take", N: 3}}})
@@ -545,8 +573,8 @@ func TestFilterStages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rest.Count != 6 {
-		t.Fatalf("drop(10): got %d want 6", rest.Count)
+	if rest.Count != 3 {
+		t.Fatalf("drop(10): got %d want 3", rest.Count)
 	}
 	// drop(2)+take(1) → 恰好 1 条
 	mid, err := backend.GetStats(Filter{Stages: []Stage{{Kind: "drop", N: 2}, {Kind: "take", N: 1}}})
@@ -677,7 +705,7 @@ func TestGetDupes(t *testing.T) {
 //   - dup  ：展开为内容哈希组（字节级相同，含自身）
 func TestSelectAssociated(t *testing.T) {
 	f := testutil.BuildQQTree(t)
-	out, err := testEngine().ScanAll(context.Background(), f.Root, nil, nil, 0, 0)
+	out, err := testEngine().ScanAll(context.Background(), f.Root, nil, nil, 0, 0, qq.AllGates())
 	if err != nil {
 		t.Fatal(err)
 	}

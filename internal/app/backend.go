@@ -147,9 +147,9 @@ func (b *Backend) Scan(opts ScanOptions) error {
 		opts.MinAgeDays = rules.DefaultMinAgeDays // 对齐 QQ 官方 3 天基线
 	}
 	cfg := b.cfg
-	// GUI 模式：分类门控（clean_*）全部放开。选择权在用户的筛选器
-	// （显式勾选什么就清理什么）；结构性红线（nt_db/db 文件/mmkv 等
-	// 黑名单、路径穿越）在 clean 层照常强制。CLI 保持保守默认。
+	// GUI 模式：普通类别门控全部放开（选择权在用户的筛选器），
+	// 高级 opt-in 类别（传输残留/日志/头像）保持用户在设置里的选择
+	// ——默认关闭的类别不进索引。结构性红线在 clean 层照常强制。
 	cfg = cfgOpenGates(cfg)
 	root := opts.Root
 	if root == "" {
@@ -180,7 +180,7 @@ func (b *Backend) Scan(opts ScanOptions) error {
 			b.emit(EvState, map[string]bool{"scanning": false})
 		}()
 		eng := &Engine{Cfg: cfg, Emitter: b}
-		out, err := eng.ScanAll(ctx, root, nil, opts.OnlyBizs, opts.MinAgeDays, opts.MinSize)
+		out, err := eng.ScanAll(ctx, root, nil, opts.OnlyBizs, opts.MinAgeDays, opts.MinSize, rules.GatesOf(cfg))
 		b.mu.Lock()
 		b.lastErr = ""
 		if err != nil {
@@ -557,9 +557,12 @@ func (b *Backend) PreviewHandler(w http.ResponseWriter, r *http.Request) {
 // 前端识别后弹二次确认，确认后带 ignoreRunning 重试。
 var errQQRunningSentinel = fmt.Errorf("qq-running")
 
-// cfgOpenGates enables every category gate so the GUI whitelist check only
-// enforces structure + blacklist (see Scan; the user's filter is the
-// selection mechanism).
+// cfgOpenGates enables the ordinary category gates so the GUI whitelist
+// check only enforces structure + blacklist for them (the user's filter is
+// the selection mechanism). The advanced opt-in gates (CleanLog /
+// CleanDatalineTmp / CleanAvatar) keep the user's settings choice — off by
+// default, so those categories are neither scanned nor cleanable until
+// enabled in 设置 → 高级.
 func cfgOpenGates(cfg rules.Config) rules.Config {
 	cfg.CleanTemp = true
 	cfg.CleanThumb = true
@@ -568,7 +571,6 @@ func cfgOpenGates(cfg rules.Config) rules.Config {
 	cfg.CleanMarketface = true
 	cfg.CleanPersonalEmoji = true
 	cfg.CleanFile = true
-	cfg.CleanLog = true
 	return cfg
 }
 

@@ -29,17 +29,19 @@ type Gates struct {
 	CleanMarketface    bool
 	CleanPersonalEmoji bool
 	CleanLog           bool
+	CleanDatalineTmp   bool
+	CleanAvatar        bool
 }
 
 // AllGates 全部门控打开：只问「结构是否在白名单内」，不问删除政策。
-// 扫描入库用它过滤（保证索引里的文件必然可通过清理重验的结构校验），
-// 分类门控留到清理时按 config 判定。
+// CLI 扫描入库用它过滤（报告全部结构合法文件；分类门控留在清理时
+// 按 config 判定）。
 func AllGates() Gates {
 	return Gates{
 		CleanTemp: true, CleanThumb: true, CleanOri: true,
 		CleanFile: true, CleanBaseEmoji: true,
 		CleanMarketface: true, CleanPersonalEmoji: true,
-		CleanLog: true,
+		CleanLog: true, CleanDatalineTmp: true, CleanAvatar: true,
 	}
 }
 

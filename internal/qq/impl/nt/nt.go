@@ -90,10 +90,10 @@ func identifyFromUnitedConfig(ntData string) (string, error) {
 // ---- 布局与命名（docs/01）----
 
 var (
-	bizDirs  = []string{"Pic", "Video", "Ptt", "File", "dataline", "Emoji", "log", "log-cache"}
+	bizDirs  = []string{"Pic", "Video", "Ptt", "File", "dataline", "Emoji", "log", "log-cache", "avatar"}
 	skipDirs = map[string]bool{
 		"mmkv": true, "msf": true, "OnlineStatus": true, "UnitedConfig": true,
-		"config": true, "avatar": true,
+		"config": true,
 		"nt_db": true,
 	}
 	monthRe = regexp.MustCompile(`^\d{4}-\d{2}$`)
@@ -138,8 +138,9 @@ func (*NT) Classify(segments []string) (biz, category, sub, month string) {
 		}
 		sub = lastOf(segments, "Ori", "Thumb", "OriTemp", "ThumbTemp")
 		category = biz + "/" + strings.ToLower(sub)
-	case "log", "log-cache":
-		// 运行日志：文件直接位于 biz 目录下，QQ 自动重建（docs/01 §2.4）。
+	case "log", "log-cache", "avatar":
+		// 运行日志/头像缓存：文件直接位于 biz 目录下，QQ 自动重建/重拉
+		// （docs/01 §2.4）。高级 opt-in 门控（默认关）。
 		sub = ""
 		category = biz
 	case "file":
@@ -217,9 +218,9 @@ func (*NT) Whitelisted(rel string, g qq.Gates) bool {
 	}
 	switch segs[0] {
 	case "Pic", "Video", "Ptt", "dataline":
-		// dataline/.tmp/* = 传输残留（NFC 未完成拷贝），CleanTemp 门控
+		// dataline/.tmp/* = 传输残留（NFC 未完成拷贝），高级 opt-in 门控
 		if segs[0] == "dataline" && len(segs) >= 3 && strings.EqualFold(segs[1], ".tmp") {
-			return g.CleanTemp
+			return g.CleanDatalineTmp
 		}
 		// {biz}/{YYYY-MM}/{Ori|Thumb|OriTemp|ThumbTemp}/{file}
 		if len(segs) < 4 || !monthRe.MatchString(segs[1]) {
@@ -230,6 +231,9 @@ func (*NT) Whitelisted(rel string, g qq.Gates) bool {
 	case "log", "log-cache":
 		// {biz}/{file}：运行日志，CleanLog 门控
 		return len(segs) >= 2 && g.CleanLog
+	case "avatar":
+		// {biz}/{file}：头像缓存，CleanAvatar 门控
+		return len(segs) >= 2 && g.CleanAvatar
 	case "File":
 		// File/ 作为整体由 CleanFile 门控（docs/03 §3），不分子类型。
 		if len(segs) < 3 {
@@ -268,9 +272,9 @@ func (*NT) Whitelisted(rel string, g qq.Gates) bool {
 }
 
 func (*NT) StateDirs() []string {
-	// log/log-cache 已从硬黑名单移入白名单政策（clean_log 门控，默认开）：
-	// QQ 会自动重建日志，docs/01 §2.4 本就标注「可按龄清理」。
-	return []string{"mmkv", "msf", "OnlineStatus", "UnitedConfig", "config", "avatar", "nt_db"}
+	// log/log-cache 与 avatar 已从硬黑名单移入白名单政策（高级 opt-in
+	// 门控，默认关）：QQ 会自动重建日志、重新拉取头像，docs/01 §2.4。
+	return []string{"mmkv", "msf", "OnlineStatus", "UnitedConfig", "config", "nt_db"}
 }
 
 func (*NT) DBSuffixes() []string {

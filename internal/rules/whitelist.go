@@ -14,7 +14,12 @@ import (
 // clean 层在删除前会再次调用本函数做最终校验。类别门控（clean_*）
 // 是删除政策的一部分：开关关闭的类别只报告不清理。
 func Whitelisted(k Knowledge, rel string, cfg Config) bool {
-	return k.Whitelisted(rel, qq.Gates{
+	return k.Whitelisted(rel, GatesOf(cfg))
+}
+
+// GatesOf 把删除政策 config 映射为白名单结构校验需要的门控。
+func GatesOf(cfg Config) qq.Gates {
+	return qq.Gates{
 		CleanTemp:          cfg.CleanTemp,
 		CleanThumb:         cfg.CleanThumb,
 		CleanOri:           cfg.CleanOri,
@@ -23,7 +28,9 @@ func Whitelisted(k Knowledge, rel string, cfg Config) bool {
 		CleanMarketface:    cfg.CleanMarketface,
 		CleanPersonalEmoji: cfg.CleanPersonalEmoji,
 		CleanLog:           cfg.CleanLog,
-	})
+		CleanDatalineTmp:   cfg.CleanDatalineTmp,
+		CleanAvatar:        cfg.CleanAvatar,
+	}
 }
 
 // Blacklisted 判断绝对路径是否命中硬黑名单：SQLite 及附属文件、
