@@ -31,7 +31,7 @@ const HELP_FIELDS: { field: string; note: string }[] = [
   { field: "biz", note: "业务类型：pic / video / ptt / emoji / file / dataline" },
   { field: "sub", note: "子目录：Ori / Thumb / OriTemp / ThumbTemp / file_assistant" },
   { field: "category", note: "分类路径片段，如 marketface / personal-emoji" },
-  { field: "month", note: "月份，形如 2024-09（字符串比较即时间序）" },
+  { field: "month", note: "月份，形如 2024-09" },
   { field: "age", note: "修改于 N 天前（数值）" },
   { field: "size", note: "字节，可带单位 k/m/g/t（如 1g = 1024³）；编辑器中按 MB 输入" },
   { field: "fileId", note: "文件ID：QQ 取自原文件名的 md5（标识文件，与内容无关）；~ 可按前缀匹配" },
@@ -482,7 +482,7 @@ export function FilterEditor({
                   <div>= 等于 · != 不等于</div>
                   <div>~ 包含：子串匹配（LIKE %值%）；contentHash ~ 9f2e 可按哈希前缀/片段筛选</div>
                   <div>in 属于列表：列表写在括号内，如 biz in (pic, video)</div>
-                  <div>&gt; &gt;= &lt; &lt;= 比较：size/age 按数值，month 按字符串序</div>
+                  <div>&gt; &gt;= &lt; &lt;= 比较：size/age 按数值，month 按时间（YYYY-MM）；after/before 是 &gt;/&lt; 的别名</div>
                 </div>
                 <div className="help-sec">
                   <b>字段与取值</b>
@@ -498,7 +498,7 @@ export function FilterEditor({
                     select(origin|thumb|dup, 可多个)：把结果替换为其中文件关联的原文件/缩略图/同内容副本（并集展开）
                   </div>
                   <div>
-                    order(size|mtime|month|md5, asc|desc)：排序，可链多个
+                    order(size|mtime|month|fileId, asc|desc)：排序，可链多个
                   </div>
                   <div>take(n)：取前 n 条 · drop(n)：跳过前 n 条</div>
                   <div>
@@ -521,27 +521,35 @@ export function FilterEditor({
             ) : applied ? (
               <div className="parse-ok">✓ 已应用</div>
             ) : null}
-            <div className="row">
+            <div className="text-actions">
               <button className="primary" onClick={applyText}>
                 验证并应用
               </button>
-              <span style={{ color: "var(--text-dim)", fontSize: 12 }}>
-                管道函数接在表达式末尾，按书写顺序从左到右执行
-              </span>
+              <div className="save-cluster">
+                <label>保存为筛选器</label>
+                <input
+                  value={filterName}
+                  onChange={(e) => setFilterName(e.target.value)}
+                  placeholder="名称（条件与排序一并保存）"
+                />
+                <button onClick={saveFilter}>保存</button>
+              </div>
             </div>
           </div>
         )}
 
-        <div className="row">
-          <label>保存当前为筛选器</label>
-          <input
-            value={filterName}
-            onChange={(e) => setFilterName(e.target.value)}
-            placeholder="名称（条件与排序一并保存）"
-            style={{ flex: 1 }}
-          />
-          <button onClick={saveFilter}>保存</button>
-        </div>
+        {view === "list" && (
+          <div className="row">
+            <label>保存当前为筛选器</label>
+            <input
+              value={filterName}
+              onChange={(e) => setFilterName(e.target.value)}
+              placeholder="名称（条件与排序一并保存）"
+              style={{ flex: 1 }}
+            />
+            <button onClick={saveFilter}>保存</button>
+          </div>
+        )}
 
         <div className="filter-list" ref={listRef}>
           <h3>筛选器列表（拖拽排序；置顶的按此顺序出现在工具栏）</h3>

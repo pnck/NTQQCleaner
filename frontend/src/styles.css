@@ -543,13 +543,12 @@ button.chip {
   font-weight: 600;
 }
 
-/* 筛选器编辑器 */
+/* 筛选器编辑器：对话框内单一滚动上下文（不给区块各自设 max-height，
+   否则展开语法帮助后内层滚动吞掉滚轮，下方筛选器列表不可达） */
 .cond-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 260px;
-  overflow-y: auto;
   padding: 4px 0;
 }
 
@@ -663,6 +662,32 @@ button.chip {
   gap: 8px;
 }
 
+/* 表达式视图底部操作行：验证并应用在左、保存为筛选器簇在右，一行对齐 */
+.text-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.text-actions .save-cluster {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.text-actions .save-cluster label {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.text-actions .save-cluster input {
+  width: 150px;
+  flex: 1;
+  min-width: 0;
+}
+
 .expr-text-view textarea {
   width: 100%;
   font: 12px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
@@ -688,8 +713,6 @@ button.chip {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 220px;
-  overflow-y: auto;
 }
 
 .expr-help .help-sec {
@@ -821,8 +844,6 @@ button.chip {
 .filter-list {
   border-top: 1px solid var(--border);
   padding-top: 6px;
-  max-height: 180px;
-  overflow-y: auto;
 }
 
 .filter-list h3 {
