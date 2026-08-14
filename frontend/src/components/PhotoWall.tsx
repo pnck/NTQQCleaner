@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { api } from "../api";
 import { setFocusArea } from "../focus";
@@ -32,18 +32,20 @@ interface CellProps {
   checked: boolean;
   onSelect: (shift: boolean) => void;
   onToggle: () => void; // Cell 内部闭包：onToggle(row.id, row.size)
+  onCellMouseDown: (e: ReactMouseEvent) => void; // 划选手势起点
 }
 
 // One wall cell: lazy <img> (only virtualized rows exist in the DOM, so
 // images are naturally loaded on demand — docs/07 §4.3 #2).
 // 角标 = 文件扩展名；reason 短标签悬浮显示含义解释。
-const Cell = memo(function Cell({ row, dataIdx, selected, checked, onSelect, onToggle }: CellProps) {
+const Cell = memo(function Cell({ row, dataIdx, selected, checked, onSelect, onToggle, onCellMouseDown }: CellProps) {
   const reasons = explainReason(row.reason);
   return (
     <div
       className={`cell${selected ? " selected" : ""}`}
       data-idx={dataIdx}
       onClick={(e) => onSelect(e.shiftKey)}
+      onMouseDown={onCellMouseDown}
     >
       <input
         className="cell-check"
@@ -166,6 +168,11 @@ export function PhotoWall({ query, queryKey, selected, checked, onSelect, onTogg
   // 单击 = 聚焦预览；Shift+单击 = 从锚点连续勾选到当前行。
   const handleCellSelect = useCallback(
     (i: number, id: number, shift: boolean) => {
+      // 划选结束后的 click 不再触发聚焦（移动阈值内除外）
+      if (suppressClick.current) {
+        suppressClick.current = false;
+        return;
+      }
       if (shift && anchorRef.current >= 0) {
         onToggleRange(anchorRef.current, i, true);
         anchorRef.current = i;
@@ -176,6 +183,56 @@ export function PhotoWall({ query, queryKey, selected, checked, onSelect, onTogg
       onSelect(selected === id ? null : id);
     },
     [onToggleRange, onSelect, selected],
+  );
+
+  // 划选期间每次移动都取**最新**的范围回调（onToggleRange 随 App 的
+  // checked 变化重建，闭包捕获旧值会丢失中途的状态）。
+  const rangeRef = useRef(onToggleRange);
+  rangeRef.current = onToggleRange;
+
+  // 鼠标划选（手势无说明文案）：在 **check 角标**按下并拖动 = 从起点
+  // 连续勾选到松开位置；若起点已勾选，则整段连续取消勾选（方向由按下
+  // 位置的初始状态决定）。触发区与勾选一致（角标）；图片本体保留聚焦
+  // 语义，不参与划选。
+  const dragRef = useRef<{ mode: boolean; start: number; last: number; moved: boolean } | null>(null);
+  const dragXY = useRef({ x: 0, y: 0 });
+  const suppressClick = useRef(false);
+
+  const onCellMouseDown = useCallback(
+    (e: ReactMouseEvent, i: number, id: number) => {
+      if (e.button !== 0) return;
+      if (!(e.target as HTMLElement).closest(".cell-check")) return;
+      e.preventDefault();
+      dragXY.current = { x: e.clientX, y: e.clientY };
+      dragRef.current = { mode: !checked.has(id), start: i, last: i, moved: false };
+      const onMove = (ev: MouseEvent) => {
+        const d = dragRef.current;
+        if (!d) return;
+        if (
+          !d.moved &&
+          Math.abs(ev.clientX - dragXY.current.x) + Math.abs(ev.clientY - dragXY.current.y) > 4
+        ) {
+          d.moved = true;
+        }
+        const el = document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.("[data-idx]");
+        if (!el) return;
+        const j = Number(el.getAttribute("data-idx"));
+        if (Number.isFinite(j) && j !== d.last) {
+          d.last = j;
+          rangeRef.current(d.start, j, d.mode);
+        }
+      };
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        const d = dragRef.current;
+        if (d?.moved) suppressClick.current = true;
+        dragRef.current = null;
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    },
+    [checked],
   );
 
   // 方向键在照片墙内移动聚焦（键盘操作无说明文案）；未聚焦时从第一项
@@ -255,7 +312,15 @@ export function PhotoWall({ query, queryKey, selected, checked, onSelect, onTogg
                     selected={selected === row.id}
                     checked={checked.has(row.id)}
                     onSelect={(shift) => handleCellSelect(i, row.id, shift)}
-                    onToggle={() => onToggle(row.id, row.size)}
+                    onToggle={() => {
+                      // 划选结束后的 click 不再触发单格勾选（移动阈值内除外）
+                      if (suppressClick.current) {
+                        suppressClick.current = false;
+                        return;
+                      }
+                      onToggle(row.id, row.size);
+                    }}
+                    onCellMouseDown={(e) => onCellMouseDown(e, i, row.id)}
                   />
                 );
               })}
