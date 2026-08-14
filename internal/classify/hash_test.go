@@ -2,6 +2,8 @@ package classify
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"testing"
@@ -62,5 +64,31 @@ func TestHashDuplicatesCancelled(t *testing.T) {
 	}
 	if entries[0].ContentHash != "" {
 		t.Errorf("cancelled run must not hash, got %q", entries[0].ContentHash)
+	}
+}
+
+// TestHashDuplicatesEmptyFiles：零字节文件走常量短路（不 open），且与
+// 全量计算的 SHA-256 空串一致（精确而非启发式）。
+func TestHashDuplicatesEmptyFiles(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string) string {
+		t.Helper()
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	entries := []*FileEntry{
+		{Path: write("e1.bin"), Size: 0},
+		{Path: write("e2.bin"), Size: 0},
+	}
+	if err := HashDuplicates(context.Background(), entries, nil); err != nil {
+		t.Fatal(err)
+	}
+	empty := hex.EncodeToString(sha256.New().Sum(nil))
+	if entries[0].ContentHash != empty || entries[1].ContentHash != empty {
+		t.Errorf("empty files must share the constant SHA-256 of empty input, got %q / %q",
+			entries[0].ContentHash, entries[1].ContentHash)
 	}
 }

@@ -206,7 +206,7 @@ func HashDuplicates(ctx context.Context, entries []*FileEntry, progress func(don
 - 月目录：路径第一段匹配 `^\d{4}-\d{2}$`
 - **性能参考**：单账号 14 万文件（Pic），Go 全量扫描应在数秒~十几秒内完成
 - **内容哈希二次扫描**：`HashDuplicates` 按字节数分组，只读大小冲突组的文件；
-  8 路并发（磁盘 I/O 主导），进度事件 stage="hash"，ctx 可取消。
+  16 路并发（小文件 syscall 墙，磁盘 I/O 主导），进度事件 stage="hash"，ctx 可取消。
   实际读取量远小于总量（大小唯一即跳过）；SHA-256 约 1~2GB/s
 
 **维度指引（现象→模型）**：文件分类的轴应包含 `biz`（所属业务）与 `sub`（Ori/Thumb/Temp）两个**平级**维度；

@@ -34,8 +34,8 @@ func HashDuplicates(ctx context.Context, entries []*FileEntry, progress func(don
 	}
 
 	workers := runtime.GOMAXPROCS(0)
-	if workers > 8 {
-		workers = 8 // 磁盘 I/O 为主，8 路并发足够（docs/07 §4.3 并发预算）
+	if workers > 16 {
+		workers = 16 // 小文件为主，syscall 墙：NVMe/APFS 随机小文件读 16 路仍有余量（docs/07 §4.3）
 	}
 	jobs := make(chan int)
 	var done atomic.Uint64
@@ -73,9 +73,17 @@ feed:
 	return ctx.Err()
 }
 
+// emptySHA256 是零字节文件的 SHA-256 常量：跳过 open/read，直接赋值
+// （SHA-256 空串是数学常量，精确而非启发式）。
+var emptySHA256 = hex.EncodeToString(sha256.New().Sum(nil))
+
 // hashFile 计算单文件 SHA-256；读取失败或取消时保持 ContentHash 空串
 // （该文件不进入任何内容组——宁可漏报，不可误报）。
 func hashFile(ctx context.Context, e *FileEntry) {
+	if e.Size == 0 {
+		e.ContentHash = emptySHA256
+		return
+	}
 	f, err := os.Open(e.Path)
 	if err != nil {
 		return
