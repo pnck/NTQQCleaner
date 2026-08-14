@@ -655,6 +655,14 @@ button.chip {
   margin: 4px 0;
 }
 
+/* 表达式视图：纵向弹性布局，textarea / 帮助按钮 / 帮助面板 / 状态行 /
+   应用按钮行之间统一 8px 间距（此前无容器样式，块流下互相紧贴） */
+.expr-text-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .expr-text-view textarea {
   width: 100%;
   font: 12px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
