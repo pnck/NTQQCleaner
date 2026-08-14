@@ -111,7 +111,17 @@ runtime.EventsEmit(ctx, "scan:progress", map[string]any{"done": n, "total": tota
 ```
 
 - 语义顺序：**select → order → drop → take**（关联展开先改成员集合，排序只改
-  顺序，take/drop 在最后）
+  顺序，take/drop 在最后）；管道函数接在表达式末尾，纯管道表达式（无条件）
+  也合法：`select(ori, thumb) | take(100)`
+- 条件叶子：`字段 操作符 值`，AND（且）/ OR（或）连接，( ) 嵌套分组，含空格
+  的值加引号 `"…"`
+- 操作符：`=` `!=` `~`（包含 = 子串匹配 LIKE %值%） `in` `>` `>=` `<` `<=`
+  - `in` 的列表必须写在括号内：`biz in (pic, video)`（单值 `biz in pic` 兼容）；
+    逗号**只能**出现在 `in(...)` / `select(...)` / `order(...)` 的括号内，不能
+    并列语句（`biz in pic, size>0` 是非法语法，报错指向明确）
+  - size/age 按数值比较；month 按 YYYY-MM 字符串序（字典序即时间序）
+  - `md5` / `contentHash` 是普通字符串字段：`contentHash ~ <前缀>` 即可按
+    哈希前缀/片段筛选（哈希在详情面板完整显示，可复制）
 - `select` 的三个维度**正交**，可多选取并集：`select(ori, thumb, dup)`：
   - `ori`：缩略图 → 其原文件（文件名 md5 配对）；原文件保留自身；无配对无贡献
   - `thumb`：原文件 → 其全部缩略图（多尺寸）；缩略图保留自身

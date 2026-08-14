@@ -34,6 +34,21 @@ const SELECT_KINDS = [
   { value: "dup", label: "重复副本" },
 ] as const;
 
+// 语法帮助的字段取值参考（与 filters.ts 的 FILTER_FIELDS 语义一致）。
+const HELP_FIELDS: { field: string; note: string }[] = [
+  { field: "biz", note: "业务类型：pic / video / ptt / emoji / file / dataline" },
+  { field: "sub", note: "子目录：Ori / Thumb / OriTemp / ThumbTemp / file_assistant" },
+  { field: "category", note: "分类路径片段，如 marketface / personal-emoji" },
+  { field: "month", note: "月份，形如 2024-09（字符串比较即时间序）" },
+  { field: "age", note: "修改于 N 天前（数值）" },
+  { field: "size", note: "字节（编辑器中按 MB 输入）" },
+  { field: "md5", note: "文件名 md5；~ 可按前缀/片段匹配" },
+  { field: "contentHash", note: "SHA-256 内容哈希（仅同大小冲突组计算）；~ 可按前缀匹配" },
+  { field: "reason", note: "说明标签（缩略图/原图仍在/有缩略图/重复出现…）" },
+  { field: "thumb", note: "是否缩略图：true / false" },
+  { field: "temp", note: "是否 *Temp 下载残留：true / false" },
+];
+
 // ---- 条件叶子行 ----
 
 function ConditionRow({
@@ -213,6 +228,7 @@ export function FilterEditor({
   const [applied, setApplied] = useState(false);
   const [filterName, setFilterName] = useState("");
   const [selected, setSelected] = useState("");
+  const [helpOpen, setHelpOpen] = useState(false);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
   const dragFrom = useRef<number | null>(null);
@@ -426,27 +442,62 @@ export function FilterEditor({
                 setText(e.target.value);
                 setApplied(false);
               }}
-              placeholder="输入表达式，如：thumb = true AND age >= 90 | take(100)"
+              placeholder="输入表达式，如：biz in (pic, video) AND size > 1048576"
               rows={5}
             />
-            {/* 常驻参考：不随输入消失，随时可查语法 */}
-            <div className="expr-help">
-              <div>例：thumb = true AND age &gt;= 90 | order(size, desc) | take(100)</div>
-              <div>例：size &gt; 104857600 | drop(10) （除去最大的10个）</div>
-              <div>例：biz in pic,video OR category ~ marketface</div>
-              <div>
-                括号：( 与 ) 嵌套分组，如 biz = pic AND (size &gt; 1048576 OR month &lt;
-                2025-01)
+            {/* 可折叠语法参考：默认收起（常驻占位太大），需要时展开 */}
+            <button
+              className="mini help-toggle"
+              onClick={() => setHelpOpen((o) => !o)}
+              title="语法参考：字段取值 / 操作符 / 管道函数"
+            >
+              {helpOpen ? "▾" : "▸"} 语法帮助
+            </button>
+            {helpOpen && (
+              <div className="expr-help">
+                <div className="help-sec">
+                  <b>结构</b>
+                  <div>
+                    条件用 AND（且）/ OR（或）连接，( ) 嵌套分组；含空格的值加引号
+                    "…"。管道函数接在表达式末尾，执行顺序固定 select → order → drop →
+                    take。
+                  </div>
+                </div>
+                <div className="help-sec">
+                  <b>操作符</b>
+                  <div>= 等于 · != 不等于</div>
+                  <div>~ 包含：子串匹配（LIKE %值%）；contentHash ~ 9f2e 可按哈希前缀/片段筛选</div>
+                  <div>in 属于列表：列表写在括号内，如 biz in (pic, video)</div>
+                  <div>&gt; &gt;= &lt; &lt;= 比较：size/age 按数值，month 按字符串序</div>
+                </div>
+                <div className="help-sec">
+                  <b>字段与取值</b>
+                  {HELP_FIELDS.map((f) => (
+                    <div key={f.field}>
+                      <code>{f.field}</code> {f.note}
+                    </div>
+                  ))}
+                </div>
+                <div className="help-sec">
+                  <b>管道函数</b>
+                  <div>
+                    select(ori|thumb|dup, 可多个)：把结果替换为其中文件关联的原文件/缩略图/同内容副本（并集展开）
+                  </div>
+                  <div>
+                    order(size|mtime|month|md5, asc|desc)：排序，可链多个
+                  </div>
+                  <div>take(n)：取前 n 条 · drop(n)：跳过前 n 条</div>
+                </div>
+                <div className="help-sec">
+                  <b>示例</b>
+                  <div>thumb = true AND age &gt;= 90 | take(100)</div>
+                  <div>size &gt; 104857600 | order(size, desc) | drop(10)</div>
+                  <div>biz in (pic, video) OR category ~ marketface</div>
+                  <div>(biz = pic AND size &gt; 1048576) OR month &lt; 2025-01</div>
+                  <div>contentHash ~ 9f2e | select(dup)</div>
+                </div>
               </div>
-              <div>
-                字段：biz/sub/category/month/age/size/md5/contentHash/reason/thumb/temp
-              </div>
-              <div>操作符：= != ~ in &gt; &gt;= &lt; &lt;=</div>
-              <div>
-                管道：select(ori|thumb|dup, 可多个) 关联展开 · order(field, asc|desc)
-                排序 · take(n) 取前 n · drop(n) 跳过前 n
-              </div>
-            </div>
+            )}
             {parseErr ? (
               <div className="parse-err">✗ {parseErr}</div>
             ) : applied ? (
@@ -457,7 +508,7 @@ export function FilterEditor({
                 验证并应用
               </button>
               <span style={{ color: "var(--text-dim)", fontSize: 12 }}>
-                管道函数可放在任意位置（函数式组合）；order 决定 take/drop 的作用顺序
+                管道函数接在表达式末尾；select → order → drop → take 依固定顺序执行
               </span>
             </div>
           </div>

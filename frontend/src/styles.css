@@ -504,6 +504,13 @@ button.chip {
   cursor: text;
 }
 
+/* 内容哈希值：完整 64 位显示，等宽字体便于逐位比对与复制 */
+.preview .detail .hash {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  text-align: right;
+}
+
 .preview .big-warn {
   padding: 30px;
   text-align: center;
@@ -653,6 +660,43 @@ button.chip {
   border-radius: 6px;
   padding: 8px;
   color: var(--text);
+}
+
+/* 表达式语法参考：可折叠面板（默认收起） */
+.expr-text-view .help-toggle {
+  align-self: flex-start;
+}
+
+.expr-help {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.expr-help .help-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.expr-help .help-sec > b {
+  color: var(--accent);
+}
+
+.expr-help code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  background: var(--panel);
+  padding: 0 4px;
+  border-radius: 4px;
 }
 
 .parse-ok {

@@ -51,6 +51,8 @@ export default function App() {
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [scanGen, setScanGen] = useState(0);
+  // 预览面板「同内容 N 份」按钮的勾选模式（per-row：dups=只勾副本 / all=含保留份）
+  const [dupModes, setDupModes] = useState<Map<number, "dups" | "all">>(new Map());
 
   // 筛选状态 = 表达式树 + select/order/take/drop 管道（左栏/快捷控件/筛选器编辑器共享）
   const [expr, setExpr] = useState<Expr | null>(null);
@@ -94,6 +96,14 @@ export default function App() {
   }, []);
   const cycleTheme = useCallback(() => changeTheme(nextTheme(theme)), [theme, changeTheme]);
 
+  // toast 自动消失：提示性消息 ~6s 后隐去（错误提示也一并处理；用户中途
+  // 停止/重扫不会留下旧贴片）。
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(""), 6000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
   // ---- startup ----
   useEffect(() => {
     void api.discoverRoots().then((rs) => {
@@ -111,8 +121,9 @@ export default function App() {
           setToast(`扫描结束（含错误）：${d.error}`);
         } else {
           const files = d.accounts.reduce((a, x) => a + x.totalFiles, 0);
-          const hashed = d.accounts.reduce((a, x) => a + x.hashedFiles, 0);
-          setToast(`扫描完成：${files} 个文件，其中 ${hashed} 个参与内容哈希`);
+          // 参与内容哈希的文件数不再贴出（每个文件是否计算了哈希在详情
+          // 面板可见，贴总数是过拟合的冗余信息）。
+          setToast(`扫描完成：${files} 个文件`);
         }
       }),
       events.onError((d) => {
@@ -131,8 +142,10 @@ export default function App() {
     if (!root) return;
     setPhase("scanning");
     setError("");
+    setToast("");
     setSelected(null);
     setChecked(new Set());
+    setDupModes(new Map()); // 行 id 是本次扫描内的位置编号，重扫后作废
     setRows([]);
     void api
       .scan({ root, account, minAgeDays: 3, minSize: 0, onlyBizs: [] })
@@ -323,27 +336,49 @@ export default function App() {
     }
   }, [filter]);
 
-  // 预览面板「同内容 N 份」关联：按内容哈希圈定该组全部副本并直接勾选
-  // （跨账号、跨目录），每组仍保留一份。
-  const selectContentDups = useCallback(async (row: FileRow) => {
-    try {
-      const expr = leaf("contentHash", "eq", row.contentHash);
-      const groups = await api.getDupes({ account: "", expr });
-      const g = groups.find((x) => x.hash === row.contentHash);
-      if (!g || g.dupIds.length === 0) {
-        setToast("没有可勾选的副本");
-        return;
+  // 预览面板「同内容 N 份」按钮：在「勾选副本」（保留一份不勾）与「勾选
+  // 全部」（含保留的那份）之间切换。反复点击来回切换，便于两种批量选择
+  // 方式快速换用。模式按行 id 记录（PreviewPanel 每行重挂载）。
+  const selectContentDups = useCallback(
+    async (row: FileRow) => {
+      try {
+        const expr = leaf("contentHash", "eq", row.contentHash);
+        const groups = await api.getDupes({ account: "", expr });
+        const g = groups.find((x) => x.hash === row.contentHash);
+        if (!g || g.dupIds.length === 0) {
+          setToast("没有可勾选的副本");
+          return;
+        }
+        const mode = dupModes.get(row.id) ?? "dups";
+        setChecked((prev) => {
+          const next = new Set(prev);
+          if (mode === "dups") {
+            // 「勾选副本」：只勾副本，保留份保持不勾
+            next.delete(g.keepId);
+            g.dupIds.forEach((id) => next.add(id));
+          } else {
+            // 「勾选全部」：在副本基础上补上保留份
+            next.add(g.keepId);
+            g.dupIds.forEach((id) => next.add(id));
+          }
+          return next;
+        });
+        setDupModes((m) => {
+          const nm = new Map(m);
+          nm.set(row.id, mode === "dups" ? "all" : "dups");
+          return nm;
+        });
+        setToast(
+          mode === "dups"
+            ? `已勾选 ${g.dupIds.length} 个相同内容副本（保留 ${g.keepLabel}）`
+            : `已勾选全部 ${g.dupIds.length + 1} 份相同内容（含保留的 ${g.keepLabel}）`,
+        );
+      } catch (e) {
+        setToast(`去重分析失败：${e}`);
       }
-      setChecked((prev) => {
-        const next = new Set(prev);
-        g.dupIds.forEach((id) => next.add(id));
-        return next;
-      });
-      setToast(`已勾选 ${g.dupIds.length} 个相同内容副本（保留 ${g.keepLabel}）`);
-    } catch (e) {
-      setToast(`去重分析失败：${e}`);
-    }
-  }, []);
+    },
+    [dupModes],
+  );
 
   const pickRoot = useCallback(async () => {
     const d = await api.pickDirectory("选择 QQ 数据根目录");
@@ -533,6 +568,7 @@ export default function App() {
           key={selected ?? -1}
           row={rows.find((r) => r.id === selected) ?? null}
           rows={rows}
+          dupMode={selected !== null ? (dupModes.get(selected) ?? "dups") : "dups"}
           onNavigate={(r) => setSelected(r.id)}
           onToast={setToast}
           onSelectDups={(r) => void selectContentDups(r)}

@@ -8,6 +8,10 @@ import { Tooltip } from "./Tooltip";
 interface Props {
   row: FileRow | null;
   rows: FileRow[];
+  // 勾选模式：dups = 只勾副本（保留 keeper）；all = 勾选全部（含 keeper）。
+  // 按钮文案 = 本次点击执行的动作（dups →「勾选副本」，all →「勾选全部」），
+  // 点击后由 App 翻转到另一模式，反复点击来回切换。
+  dupMode: "dups" | "all";
   onNavigate: (row: FileRow) => void;
   onToast: (msg: string) => void;
   onSelectDups: (row: FileRow) => void;
@@ -47,7 +51,7 @@ function playable(row: FileRow): boolean {
   );
 }
 
-export function PreviewPanel({ row, rows, onNavigate, onToast, onSelectDups }: Props) {
+export function PreviewPanel({ row, rows, dupMode, onNavigate, onToast, onSelectDups }: Props) {
   // 初始态 = 缩略图 + 叠层图标；点击后切换为播放器/原文件（视频/音频即自动播放）。
   // 状态按 row.id 记录，切行时自动回到初始态。
   const [played, setPlayed] = useState<number | null>(null);
@@ -152,8 +156,12 @@ export function PreviewPanel({ row, rows, onNavigate, onToast, onSelectDups }: P
         </div>
         <div className="kv">
           <span className="k">内容哈希</span>
-          <span className="selectable">
-            {row.contentHash ? row.contentHash.slice(0, 16) + "…" : "未计算（大小唯一）"}
+          {/* 完整 64 位哈希（可选中复制到筛选器，contentHash ~ 前缀 匹配）； */}
+          <span className="selectable hash">
+            {row.contentHash
+              ? row.contentHash +
+                (row.contentDupCount < 2 ? " · 无重复（同大小但内容不同）" : "")
+              : "未计算（大小唯一）"}
           </span>
         </div>
         <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
@@ -161,9 +169,13 @@ export function PreviewPanel({ row, rows, onNavigate, onToast, onSelectDups }: P
           {row.contentDupCount >= 2 && (
             <button
               onClick={() => onSelectDups(row)}
-              title="内容完全相同的其它副本（按真实内容哈希识别）；勾选后只保留其中一份"
+              title={
+                dupMode === "all"
+                  ? "当前已勾选全部：点击回到只勾副本（保留一份不勾）"
+                  : "勾选全部副本（保留一份不勾）：点击后再点一次可切换为勾选全部"
+              }
             >
-              同内容 {row.contentDupCount} 份 · 勾选副本
+              同内容 {row.contentDupCount} 份 · {dupMode === "all" ? "勾选全部" : "勾选副本"}
             </button>
           )}
         </div>

@@ -6,9 +6,11 @@ export { leaf, group, isGroup } from "./exprbase";
 
 // 表达式（JQL 风格）：解析 / 序列化 / 树操作。
 // 语法：字段 操作符 值 [AND|OR 字段 操作符 值 ...]，支持括号与引号；
-// 尾部可接最小函数管道：| take(n)（取前 n）/ drop(n)（跳过前 n）。
+// in 的多值列表必须写在括号内（in(a, b)），逗号不能并列语句。
+// 尾部可接最小函数管道：| select(ori|thumb|dup, 可多个) / order(field, asc|desc) /
+// take(n) / drop(n)，语义顺序 select → order → drop → take。
 // 不设 first/tail 别名（= take(1)/drop(1)，避免功能重复）。
-// 操作符：= != ~（包含） in > >= < <=
+// 操作符：= != ~（包含，LIKE %x%） in > >= < <=
 
 export const OPS_SYM: Record<string, string> = {
   eq: "=",
@@ -40,7 +42,18 @@ function quoteValue(v: string): string {
 
 export function exprToText(e: Expr | null | undefined): string {
   if (!e) return "";
-  if (e.c) return `${e.c.field} ${OPS_SYM[e.c.op] ?? e.c.op} ${quoteValue(e.c.value)}`;
+  if (e.c) {
+    // in 的列表序列化为括号列表（树内存储为逗号连接的字符串，
+    // 与后端 matchOne 的 split(",") 契约一致）。
+    if (e.c.op === "in") {
+      const vals = e.c.value
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      return `${e.c.field} in (${vals.map(quoteValue).join(", ")})`;
+    }
+    return `${e.c.field} ${OPS_SYM[e.c.op] ?? e.c.op} ${quoteValue(e.c.value)}`;
+  }
   const isOr = Array.isArray(e.or);
   const parts = (e.or ?? e.and ?? []).map((sub) => {
     const inner = exprToText(sub);
@@ -59,6 +72,7 @@ type Tok =
   | { t: "str"; v: string }
   | { t: "op"; v: string }
   | { t: "pipe" }
+  | { t: "comma" }
   | { t: "lparen" }
   | { t: "rparen" };
 
@@ -88,6 +102,14 @@ function tokenize(text: string): Tok[] {
       i++;
       continue;
     }
+    if (ch === ",") {
+      // 逗号是独立记号：曾是「并进单词 + 剥尾逗号」的隐式并列（biz in pic,
+      // size>0 这类迷惑语法由此而来）。现在裸逗号一律报错，列表只出现在
+      // in(...) / select(...) / order(...) 的括号内。
+      toks.push({ t: "comma" });
+      i++;
+      continue;
+    }
     if (ch === '"' || ch === "'") {
       const quote = ch;
       let j = i + 1;
@@ -113,14 +135,14 @@ function tokenize(text: string): Tok[] {
       i++;
       continue;
     }
-    // 单词（逗号是 order(size, desc) 的参数分隔符，剥离不参与匹配）
+    // 单词（逗号/空格/括号为界；括号内的函数参数由逗号记号分隔）
     let j = i;
-    while (j < text.length && !/[\s()]/.test(text[j])) {
+    while (j < text.length && !/[\s(),]/.test(text[j])) {
       const c2 = text[j];
       if ("=><~".includes(c2) && j > i) break; // 值紧跟操作符时截断
       j++;
     }
-    const w = text.slice(i, j).replace(/,+$/, "");
+    const w = text.slice(i, j);
     if (!w) {
       i = j;
       continue;
@@ -170,11 +192,43 @@ export function parseExpr(text: string): ParseResult {
     if (!o || o.t !== "op") {
       return { expr: null, error: `字段「${f.v}」后缺少操作符（= != ~ in > >= < <=）` };
     }
+    const op = SYM_OPS[o.v] ?? o.v;
+    if (op === "in") {
+      // in 的列表必须写在括号内：in (a, b)（逗号是列表分隔符，不再能
+      // 并列语句）；单值写法 in pic 保留兼容（左栏多选序列化为列表）。
+      if (peek()?.t === "lparen") {
+        pos++;
+        const vals: string[] = [];
+        for (;;) {
+          const vt = next();
+          if (!vt || (vt.t !== "word" && vt.t !== "str")) {
+            return { expr: null, error: "in(...) 的列表里缺少值（含空格的值请加引号）" };
+          }
+          vals.push(vt.v);
+          const nxt = peek();
+          if (nxt?.t === "comma") {
+            pos++;
+            continue;
+          }
+          if (nxt?.t === "rparen") {
+            pos++;
+            break;
+          }
+          return { expr: null, error: "in(...) 列表值之间用逗号分隔，如 in (pic, video)" };
+        }
+        return { expr: leaf(f.v, op, vals.join(",")) };
+      }
+      const v = next();
+      if (!v || (v.t !== "word" && v.t !== "str")) {
+        return { expr: null, error: "in 后缺少值（多值列表写在括号内，如 biz in (pic, video)）" };
+      }
+      return { expr: leaf(f.v, op, v.v) };
+    }
     const v = next();
     if (!v || (v.t !== "word" && v.t !== "str")) {
       return { expr: null, error: `操作符后缺少值（含空格的值请加引号）` };
     }
-    return { expr: leaf(f.v, SYM_OPS[o.v] ?? o.v, v.v) };
+    return { expr: leaf(f.v, op, v.v) };
   };
 
   // 递归下降：orExpr := andExpr (OR andExpr)*
@@ -224,18 +278,27 @@ export function parseExpr(text: string): ParseResult {
     return parseCondition();
   };
 
-  const res = parseOr();
+  // 纯管道表达式（无过滤条件，如 select(ori, thumb) | take(100)）：首个
+  // 记号若是管道函数名，跳过条件解析直接进管道循环（否则会被当字段名
+  // 报「未知字段」——filterToText 对无条件筛选就序列化出这种形式）。
+  const firstTok = toks[0];
+  let startsWithPipeFn =
+    firstTok?.t === "word" &&
+    ["select", "order", "take", "drop"].includes(firstTok.v.toLowerCase());
+  const res = startsWithPipeFn ? { expr: null } : parseOr();
   if (res.error) return res;
 
   // 尾部最小函数管道：| select(ori|thumb|dup) / order(field, asc|desc) /
-  // take(n) / drop(n)
+  // take(n) / drop(n)。首轮允许省略 |（纯管道表达式），之后每轮必须 |
+  // 分隔。
   let limit: number | undefined;
   let offset: number | undefined;
   let select: string[] | undefined;
   const orders: { field: string; desc: boolean }[] = [];
   let t = peek();
-  while (t && t.t === "pipe") {
-    pos++;
+  while (t && (t.t === "pipe" || startsWithPipeFn)) {
+    if (t.t === "pipe") pos++;
+    startsWithPipeFn = false;
     const fnTok = next();
     if (!fnTok || fnTok.t !== "word") {
       return {
@@ -255,22 +318,21 @@ export function parseExpr(text: string): ParseResult {
         if (!kindTok || (kindTok.t !== "word" && kindTok.t !== "str")) {
           return { expr: null, error: `select() 的参数必须是 ori / thumb / dup（可多个，逗号分隔）` };
         }
-        // tokenizer 会把逗号并进单词（只有尾逗号被剥离），拆开以支持
-        // select(ori,thumb) 与 select(ori, thumb) 两种写法。
-        for (const part of kindTok.v.toLowerCase().split(",")) {
-          if (part === "") continue;
-          if (!["ori", "thumb", "dup"].includes(part)) {
-            return { expr: null, error: `select() 的参数必须是 ori / thumb / dup 之一（收到「${part}」）` };
-          }
-          if (!kinds.includes(part)) kinds.push(part);
+        const part = kindTok.v.toLowerCase();
+        if (!["ori", "thumb", "dup"].includes(part)) {
+          return { expr: null, error: `select() 的参数必须是 ori / thumb / dup 之一（收到「${part}」）` };
         }
-        if (kinds.length === 0) {
-          return { expr: null, error: `select() 需要至少一个参数` };
+        if (!kinds.includes(part)) kinds.push(part);
+        const nxt = peek();
+        if (nxt?.t === "comma") {
+          pos++;
+          continue;
         }
-        if (peek()?.t === "rparen") {
+        if (nxt?.t === "rparen") {
           pos++;
           break;
         }
+        return { expr: null, error: "select() 参数用逗号分隔，如 select(ori, thumb)" };
       }
       select = kinds;
       t = peek();
@@ -282,27 +344,24 @@ export function parseExpr(text: string): ParseResult {
       }
       pos++;
       const fieldTok = next();
-      const field =
-        fieldTok && fieldTok.t !== "lparen" && fieldTok.t !== "rparen" && fieldTok.t !== "pipe"
-          ? fieldTok.v
-          : "";
-      if (!ORDERABLE_FIELDS.includes(field)) {
+      if (!fieldTok || fieldTok.t !== "word" || !ORDERABLE_FIELDS.includes(fieldTok.v)) {
         return {
           expr: null,
           error: `order() 的字段必须是 ${ORDERABLE_FIELDS.join(" / ")} 之一`,
         };
       }
+      if (peek()?.t !== "comma") {
+        return { expr: null, error: "order() 的字段与方向用逗号分隔，如 order(size, desc)" };
+      }
+      pos++;
       const dirTok = next();
-      const dir =
-        dirTok && dirTok.t !== "lparen" && dirTok.t !== "rparen" && dirTok.t !== "pipe"
-          ? dirTok.v.toLowerCase()
-          : "desc";
+      const dir = dirTok?.t === "word" ? dirTok.v.toLowerCase() : "";
       if (dir !== "asc" && dir !== "desc") {
         return { expr: null, error: `order() 的方向只能是 asc 或 desc` };
       }
       if (peek()?.t !== "rparen") return { expr: null, error: `order() 括号未闭合` };
       pos++;
-      orders.push({ field, desc: dir === "desc" });
+      orders.push({ field: fieldTok.v, desc: dir === "desc" });
       t = peek();
       continue;
     }
@@ -314,6 +373,9 @@ export function parseExpr(text: string): ParseResult {
       const numTok = next();
       if (!numTok || (numTok.t !== "word" && numTok.t !== "str") || !/^\d+$/.test(numTok.v)) {
         return { expr: null, error: `${fn}() 的参数必须是非负整数` };
+      }
+      if (peek()?.t === "comma") {
+        return { expr: null, error: `${fn}() 只能有一个参数` };
       }
       if (peek()?.t !== "rparen") return { expr: null, error: `${fn}() 括号未闭合` };
       pos++;
@@ -328,6 +390,20 @@ export function parseExpr(text: string): ParseResult {
 
   if (pos < toks.length) {
     const t = toks[pos];
+    if (
+      t.t === "word" &&
+      ["select", "order", "take", "drop"].includes(t.v.toLowerCase())
+    ) {
+      return { expr: null, error: `无法解析「${t.v}」：管道函数之间用 | 连接` };
+    }
+    if (t.t === "comma") {
+      // 裸逗号不再并列语句（此前 biz in pic, size>0 一类写法报
+      // 「无法解析「size」」让人费解）：给出指向性的错误。
+      return {
+        expr: null,
+        error: "无法解析「,」：不能用逗号并列条件——条件之间用 AND/OR 连接，in 的多值列表写在括号内（如 biz in (pic, video)）",
+      };
+    }
     const v =
       t.t === "str"
         ? `"${t.v}"`
