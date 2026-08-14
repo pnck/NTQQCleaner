@@ -303,12 +303,18 @@ export default function App() {
     setPhase("idle");
     setRows([]);
     setChecked(new Set());
+    // 清理后索引已失效（文件被移走）：自动重扫恢复墙面与筛选结果。
+    // 先调 startScan（它会清 toast/error），再写清理结果提示。
+    startScan();
+    const errs = res.errors ?? [];
+    if (errs.length > 0) setError(errs.join("\n"));
     setToast(
       `清理完成：处理 ${res.processed}，移动 ${res.moved}，删除 ${res.deleted}，` +
-        `跳过 ${res.skipped}，失败 ${res.failed}，释放 ${fmtSize(res.bytesFreed)}`,
+        `跳过 ${res.skipped}，失败 ${res.failed}，释放 ${fmtSize(res.bytesFreed)}` +
+        (errs.length > 0 ? `；${errs.length} 个文件被跳过` : "") +
+        "；正在重新扫描…",
     );
-    if (res.errors.length > 0) setError(res.errors.join("\n"));
-  }, [checked, checkedBytes, checkedCount]);
+  }, [checked, checkedBytes, checkedCount, startScan]);
 
   const openDupes = useCallback(async () => {
     try {

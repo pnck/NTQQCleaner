@@ -41,11 +41,11 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Props) {
           </span>
         </div>
         <div className="row">
-          <label title="清理时把文件移动到该目录（可恢复）；留空则先计算 SHA-256 再删除">
+          <label title="清理时把文件移动到该目录（可恢复）；留空则直接删除，仅写审计日志（路径/大小/时间）">
             备份目录
           </label>
           <span style={{ color: "var(--text-dim)", fontSize: 12 }}>
-            {backup || "未设置（SHA-256 审计）"}
+            {backup || "未设置（仅审计日志）"}
           </span>
           <button
             onClick={() =>

@@ -88,7 +88,9 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	}
 	defer audit.Close()
 
-	var res Result
+	// Errors 初始化为空切片（JSON 序列化为 [] 而非 null）：前端契约
+	// 是数组，nil 切片经 Wails 传到 JS 会变成 null 引发 TypeError。
+	res := Result{Errors: []string{}}
 	lastQQCheck := time.Now()
 	for _, f := range req.Files {
 		if ctx.Err() != nil {
