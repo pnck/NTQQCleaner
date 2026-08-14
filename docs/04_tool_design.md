@@ -196,6 +196,12 @@ func Scan(ntData string, onlyTypes []string, skipDirs map[string]bool, minSize i
 func HashDuplicates(ctx context.Context, entries []*FileEntry, progress func(done, total uint64)) error
 ```
 - **并发**：目录并行遍历（`errgroup`），单目录内 `filepath.WalkDir`（用 `DirEntry` 避免额外 stat）
+- **扫描入库 = 结构白名单过滤**：classify 之后引擎按
+  `Whitelisted(rel, AllGates())` 过滤（全门控打开只验结构，与清理重验
+  同一条结构）——白名单结构之外的文件（未知布局）不进入索引：
+  **墙里可见的文件必然能通过清理重验**。分类门控仍在清理时按 config
+  判定（CLI 保守默认 / GUI 全开）。白名单结构随逆向结论补全
+  （dataline/.tmp 传输残留、log/log-cache 运行日志均已纳入，docs/03 §3）
 - 文件名解析：`^([0-9a-f]{32})(?:_(\d+))?\.(\w+)$`
 - 月目录：路径第一段匹配 `^\d{4}-\d{2}$`
 - **性能参考**：单账号 14 万文件（Pic），Go 全量扫描应在数秒~十几秒内完成

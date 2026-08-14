@@ -18,9 +18,10 @@
 - 只操作 `nt_data/` 下明确列入"可清理"白名单的目录：
   - 富媒体缓存：`Pic/ Video/ Ptt/ File/ dataline/ Emoji/emoji-recv/ Emoji/BaseEmojiSyastems/ThumbTemp/`
   - 超龄归档月目录（按配置）
-  - `*Temp` 目录（`OriTemp/ ThumbTemp/`）
+  - `*Temp` 目录（`OriTemp/ ThumbTemp/`）与 `dataline/.tmp/` 传输残留
+  - `log/ log-cache/` 运行日志（clean_log 门控，QQ 自动重建）
 - **工具永不删除/修改**（黑名单，代码里硬编码 + 运行时二次校验；「不删除」≠「不可读」——加密库读取属 dump enc_key 能力，不在本工具范围）：
-  - `mmkv/ msf/ OnlineStatus/ UnitedConfig/ config/ log*/ avatar/`
+  - `mmkv/ msf/ OnlineStatus/ UnitedConfig/ config/ avatar/`
   - 任何 `*.db` `*.db-wal` `*.db-shm` `*.db-first.material` `*.db-last.material`
   - `nt_db/`（账号与全局）
   - 账号目录根以外的任何文件

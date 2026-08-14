@@ -153,6 +153,9 @@ export default function App() {
   const stopScan = useCallback(() => void api.stop(), []);
 
   // ---- stats / groups ----
+  // 只在筛选/扫描结果变化（queryKey）时清勾选并刷新统计；phase 进出
+  // ready（如清理被拒绝/取消后回来）不动勾选——用户辛苦勾好的文件在
+  // 报错后仍保留。重扫会经 scanGen 改变 queryKey，照常清空。
   useEffect(() => {
     if (phase !== "ready") return;
     setSelected(null);
@@ -162,7 +165,7 @@ export default function App() {
     void api.getGroups(treeFilter, "biz").then(setBizGroups).catch(console.error);
     void api.getGroups(treeFilter, "month").then(setMonthGroups).catch(console.error);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryKey, phase]);
+  }, [queryKey]);
 
   // ---- 手动编辑 = 脱离筛选器（自定义状态）----
   const editExpr = useCallback((next: Expr | null) => {

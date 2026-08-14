@@ -140,6 +140,13 @@ func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []
 			if minAge > 0 && f.MTime > cutoff {
 				continue
 			}
+			// 结构性白名单过滤（全门控打开，与清理重验同一条结构）：
+			// 白名单结构之外的文件（如 dataline/.tmp 的 NFC 传输残留）
+			// 不进入索引——墙里看到的必然可清，扫描与清理不再不一致。
+			rel, err := filepath.Rel(acc.NtData, f.Path)
+			if err != nil || !k.Whitelisted(filepath.ToSlash(rel), qq.AllGates()) {
+				continue
+			}
 			kept = append(kept, f)
 		}
 		scans = append(scans, acctScan{acc: acc, kept: kept})

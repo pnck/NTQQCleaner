@@ -64,14 +64,31 @@ func TestEngineScanAll(t *testing.T) {
 		t.Fatalf("got %d accounts want 2", len(out.Accounts))
 	}
 	a, b := out.Accounts[0], out.Accounts[1]
-	if a.Hash != testutil.HashA || a.QQNum != testutil.QQA || a.TotalFiles != 12 {
+	if a.Hash != testutil.HashA || a.QQNum != testutil.QQA || a.TotalFiles != 15 {
 		t.Fatalf("account A: %+v", a)
 	}
 	if b.Hash != testutil.HashB || b.QQNum != testutil.QQB || b.TotalFiles != 1 {
 		t.Fatalf("account B: %+v", b)
 	}
-	if len(out.Entries) != 13 || len(out.Reasons) != 13 {
-		t.Fatalf("entries/reasons: %d/%d want 13/13", len(out.Entries), len(out.Reasons))
+	if len(out.Entries) != 16 || len(out.Reasons) != 16 {
+		t.Fatalf("entries/reasons: %d/%d want 16/16", len(out.Entries), len(out.Reasons))
+	}
+	// 已知可清结构必须进入索引：dataline/.tmp 的 NFC 传输残留（clean_temp）
+	// 与 log/log-cache 运行日志（clean_log）。
+	var nfc, logs int
+	for _, e := range out.Entries {
+		if strings.HasSuffix(e.Path, ".NFC") {
+			nfc++
+			if e.Sub != "tmp" || e.Category != "dataline/tmp" {
+				t.Fatalf("NFC residue classified wrong: sub=%q category=%q", e.Sub, e.Category)
+			}
+		}
+		if e.Biz == "log" || e.Biz == "log-cache" {
+			logs++
+		}
+	}
+	if nfc != 1 || logs != 2 {
+		t.Fatalf("NFC/log entries: nfc=%d logs=%d want 1/2", nfc, logs)
 	}
 	// 二次扫描生效的直接证据：A 账号 6 个大小冲突候选（2×MD5A 80KB、
 	// MD5F/MD5G 60KB、x.png/my.png 10KB）；B 账号 1 个（MD5D 60KB）。
@@ -187,8 +204,8 @@ func TestEngineMinAge(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The 1-day-old Ori is dropped; everything else (≥4 days) stays.
-	if out.Accounts[0].TotalFiles != 11 {
-		t.Fatalf("got %d files want 11", out.Accounts[0].TotalFiles)
+	if out.Accounts[0].TotalFiles != 14 {
+		t.Fatalf("got %d files want 14", out.Accounts[0].TotalFiles)
 	}
 }
 
@@ -282,8 +299,8 @@ func TestBackendScanQueryPreviewClean(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(groups) != 3 { // pic, emoji, file
-		t.Fatalf("biz groups: got %d want 3", len(groups))
+	if len(groups) != 6 { // pic, emoji, file, dataline, log, log-cache
+		t.Fatalf("biz groups: got %d want 6", len(groups))
 	}
 	for i := 1; i < len(groups); i++ {
 		if groups[i].Size > groups[i-1].Size {
@@ -512,8 +529,8 @@ func TestFilterStages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if all.Count != 13 {
-		t.Fatalf("all: got %d want 13", all.Count)
+	if all.Count != 16 {
+		t.Fatalf("all: got %d want 16", all.Count)
 	}
 	// take(3)：截断语义（GetStats 无 UI 排序，take 按自然顺序截断）
 	top3, err := backend.GetStats(Filter{Stages: []Stage{{Kind: "take", N: 3}}})
@@ -528,8 +545,8 @@ func TestFilterStages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rest.Count != 3 {
-		t.Fatalf("drop(10): got %d want 3", rest.Count)
+	if rest.Count != 6 {
+		t.Fatalf("drop(10): got %d want 6", rest.Count)
 	}
 	// drop(2)+take(1) → 恰好 1 条
 	mid, err := backend.GetStats(Filter{Stages: []Stage{{Kind: "drop", N: 2}, {Kind: "take", N: 1}}})

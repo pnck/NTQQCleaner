@@ -16,8 +16,8 @@ func TestScanClassifies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 12 {
-		t.Fatalf("got %d entries want 12", len(entries))
+	if len(entries) != 15 {
+		t.Fatalf("got %d entries want 15", len(entries))
 	}
 	by := map[string]FileEntry{}
 	for _, e := range entries {

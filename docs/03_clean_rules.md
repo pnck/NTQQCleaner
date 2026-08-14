@@ -48,6 +48,8 @@ for each file in nt_data 扫描范围:
 | 风险 | 目录/子目录 | 默认门控 | reason 标签 |
 |---|---|---|---|
 | 最低 | `*OriTemp/` `*ThumbTemp/`（含 `BaseEmojiSyastems/ThumbTemp/*.zip`） | clean_temp=true | 下载中断残留 |
+| 最低 | `dataline/.tmp/`（NFC 未完成拷贝传输残留，实测布局） | clean_temp=true | 传输残留 |
+| 最低 | `log/` `log-cache/`（运行日志，QQ 自动重建） | clean_log=true | 运行日志 |
 | 低 | `Emoji/emoji-recv/Thumb/`、`Pic|Video|.../Thumb/` | clean_thumb=true | 缩略图 |
 | 中 | `Emoji/emoji-recv/Ori/` | clean_ori=false | 原图/原文件 |
 | 中 | `Pic|Video|dataline/Ori/` | clean_ori=false | 原图/原文件 |
@@ -78,9 +80,9 @@ for each file in nt_data 扫描范围:
    - 不命中硬黑名单（状态目录/db 后缀）。
 
 **reason 标签**（`rules.Reason`）只做展示说明，**不影响可清性**。标签有：
-「下载中断残留」「缩略图」「表情包」「个人表情」「原图/原文件」「原图仍在」
-「有缩略图」「重复出现」「缓存文件」——前端悬浮 tooltip 解释每个标签的
-含义（docs/07 §4.4）。
+「下载中断残留」「传输残留」「运行日志」「缩略图」「表情包」「个人表情」
+「原图/原文件」「原图仍在」「有缩略图」「重复出现」「缓存文件」——前端
+悬浮 tooltip 解释每个标签的含义（docs/07 §4.4）。
 
 **关联情况严格区分三种**（同名 ≠ 同内容，同内容也可能不同名）：
 
@@ -124,15 +126,16 @@ for each file in nt_data 扫描范围:
 ```yaml
 # config.yaml（工具默认，可被 --config 覆盖）
 classify:
-  clean_temp: true                        # *Temp 直接可清
+  clean_temp: true                        # *Temp 与 dataline/.tmp 传输残留直接可清
   clean_thumb: true                       # 缩略图可清
   clean_ori: false                        # 原图/原文件默认只报告不清
   clean_base_emoji: false
   clean_marketface: false
   clean_personal_emoji: false
   clean_file: false
+  clean_log: true                         # 运行日志可清（QQ 自动重建）
 min_file_size_bytes: 0                    # 只统计大于此值的文件
-skip_dirs: [mmkv, msf, OnlineStatus, UnitedConfig, config, log, log-cache, avatar]
+skip_dirs: [mmkv, msf, OnlineStatus, UnitedConfig, config, avatar]
 ```
 
 - **GUI 模式**：所有 `clean_*` 门控全部放开（选什么清理由用户的筛选器决定）；

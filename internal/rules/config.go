@@ -32,6 +32,7 @@ type Config struct {
 	CleanMarketface    bool `yaml:"clean_marketface" json:"cleanMarketface"`
 	CleanPersonalEmoji bool `yaml:"clean_personal_emoji" json:"cleanPersonalEmoji"`
 	CleanFile          bool `yaml:"clean_file" json:"cleanFile"`
+	CleanLog           bool `yaml:"clean_log" json:"cleanLog"` // log/log-cache 运行日志（QQ 自动重建）
 
 	MinFileSizeBytes int64    `yaml:"min_file_size_bytes" json:"minFileSizeBytes"`
 	SkipDirs         []string `yaml:"skip_dirs" json:"skipDirs"`
@@ -47,8 +48,9 @@ func Default() Config {
 		CleanMarketface:    false,
 		CleanPersonalEmoji: false,
 		CleanFile:          false,
+		CleanLog:           true,
 		MinFileSizeBytes:   0,
-		SkipDirs:           []string{"mmkv", "msf", "OnlineStatus", "UnitedConfig", "config", "log", "log-cache", "avatar"},
+		SkipDirs:           []string{"mmkv", "msf", "OnlineStatus", "UnitedConfig", "config", "avatar"},
 	}
 }
 

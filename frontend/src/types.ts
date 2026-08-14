@@ -133,6 +133,7 @@ export interface Config {
   cleanMarketface: boolean;
   cleanPersonalEmoji: boolean;
   cleanFile: boolean;
+  cleanLog: boolean;
   minFileSizeBytes: number;
   skipDirs: string[];
 }
@@ -144,6 +145,8 @@ export const BIZ_LABEL: Record<string, string> = {
   emoji: "表情",
   file: "文件",
   dataline: "设备互传",
+  log: "运行日志",
+  "log-cache": "日志缓存",
 };
 
 export function fmtSize(n: number): string {

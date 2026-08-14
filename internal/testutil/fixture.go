@@ -93,6 +93,13 @@ func BuildQQTree(t *testing.T) *Fixture {
 	mkFile(t, filepath.Join(f.NtDataA, "Emoji", "personal_emoji", "Ori", "my.png"), personal, nowDate(2024, 1, 1))
 	mkFile(t, filepath.Join(f.NtDataA, "File", "Thumb", MD5C+".png"), bytesN(30<<10), nowDate(2022, 6, 1))
 	mkFile(t, filepath.Join(f.NtDataA, "File", "file_assistant", "doc.txt"), []byte("x"), nowDate(2022, 6, 1))
+	// dataline/.tmp 的 NFC 传输残留：已知可清结构（clean_temp 门控），
+	// 必须进入索引（用户实测布局：dataline/.tmp/output(1).mp4.<hash>.NFC）。
+	// 3KB 大小唯一，不触发内容哈希。
+	mkFile(t, filepath.Join(f.NtDataA, "dataline", ".tmp", "output(1).mp4."+MD5G+".NFC"), bytesN(3<<10), Now.AddDate(0, 0, -5))
+	// 运行日志：clean_log 门控（默认开），QQ 自动重建。
+	mkFile(t, filepath.Join(f.NtDataA, "log", "2026-08.log"), bytesN(2), Now.AddDate(0, 0, -10))
+	mkFile(t, filepath.Join(f.NtDataA, "log-cache", "x"), bytesN(4), Now.AddDate(0, 0, -10))
 
 	// must never be scanned or cleaned
 	mkFile(t, filepath.Join(f.NtDataA, "mmkv", "mmkv.default"), []byte("x"), Now)

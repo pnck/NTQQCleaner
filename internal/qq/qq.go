@@ -28,6 +28,19 @@ type Gates struct {
 	CleanBaseEmoji     bool
 	CleanMarketface    bool
 	CleanPersonalEmoji bool
+	CleanLog           bool
+}
+
+// AllGates 全部门控打开：只问「结构是否在白名单内」，不问删除政策。
+// 扫描入库用它过滤（保证索引里的文件必然可通过清理重验的结构校验），
+// 分类门控留到清理时按 config 判定。
+func AllGates() Gates {
+	return Gates{
+		CleanTemp: true, CleanThumb: true, CleanOri: true,
+		CleanFile: true, CleanBaseEmoji: true,
+		CleanMarketface: true, CleanPersonalEmoji: true,
+		CleanLog: true,
+	}
 }
 
 // Knowledge 是一个「QQ 平台×版本族」的逆向结论实现。

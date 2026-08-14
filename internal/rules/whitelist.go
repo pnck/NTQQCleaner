@@ -22,6 +22,7 @@ func Whitelisted(k Knowledge, rel string, cfg Config) bool {
 		CleanBaseEmoji:     cfg.CleanBaseEmoji,
 		CleanMarketface:    cfg.CleanMarketface,
 		CleanPersonalEmoji: cfg.CleanPersonalEmoji,
+		CleanLog:           cfg.CleanLog,
 	})
 }
 

@@ -90,10 +90,10 @@ func identifyFromUnitedConfig(ntData string) (string, error) {
 // ---- 布局与命名（docs/01）----
 
 var (
-	bizDirs  = []string{"Pic", "Video", "Ptt", "File", "dataline", "Emoji"}
+	bizDirs  = []string{"Pic", "Video", "Ptt", "File", "dataline", "Emoji", "log", "log-cache"}
 	skipDirs = map[string]bool{
 		"mmkv": true, "msf": true, "OnlineStatus": true, "UnitedConfig": true,
-		"config": true, "log": true, "log-cache": true, "avatar": true,
+		"config": true, "avatar": true,
 		"nt_db": true,
 	}
 	monthRe = regexp.MustCompile(`^\d{4}-\d{2}$`)
@@ -127,9 +127,21 @@ func (*NT) Classify(segments []string) (biz, category, sub, month string) {
 		}
 	}
 	switch biz {
-	case "pic", "video", "ptt", "dataline":
+	case "pic", "video", "ptt":
 		sub = lastOf(segments, "Ori", "Thumb", "OriTemp", "ThumbTemp")
 		category = biz + "/" + strings.ToLower(sub)
+	case "dataline":
+		// dataline/.tmp/* = 数据线传输残留（NFC 未完成拷贝，实测布局）；
+		// 月目录下的 Ori/Thumb 结构与 pic 等一致。
+		if len(segments) >= 3 && strings.EqualFold(segments[1], ".tmp") {
+			return biz, "dataline/tmp", "tmp", month
+		}
+		sub = lastOf(segments, "Ori", "Thumb", "OriTemp", "ThumbTemp")
+		category = biz + "/" + strings.ToLower(sub)
+	case "log", "log-cache":
+		// 运行日志：文件直接位于 biz 目录下，QQ 自动重建（docs/01 §2.4）。
+		sub = ""
+		category = biz
 	case "file":
 		sub = lastOf(segments, "Ori", "Thumb", "OriTemp", "ThumbTemp", "file_assistant")
 		category = biz + "/" + strings.ToLower(sub)
@@ -205,12 +217,19 @@ func (*NT) Whitelisted(rel string, g qq.Gates) bool {
 	}
 	switch segs[0] {
 	case "Pic", "Video", "Ptt", "dataline":
+		// dataline/.tmp/* = 传输残留（NFC 未完成拷贝），CleanTemp 门控
+		if segs[0] == "dataline" && len(segs) >= 3 && strings.EqualFold(segs[1], ".tmp") {
+			return g.CleanTemp
+		}
 		// {biz}/{YYYY-MM}/{Ori|Thumb|OriTemp|ThumbTemp}/{file}
 		if len(segs) < 4 || !monthRe.MatchString(segs[1]) {
 			return false
 		}
 		on, ok := gateOf(segs[2])
 		return ok && on
+	case "log", "log-cache":
+		// {biz}/{file}：运行日志，CleanLog 门控
+		return len(segs) >= 2 && g.CleanLog
 	case "File":
 		// File/ 作为整体由 CleanFile 门控（docs/03 §3），不分子类型。
 		if len(segs) < 3 {
@@ -249,7 +268,9 @@ func (*NT) Whitelisted(rel string, g qq.Gates) bool {
 }
 
 func (*NT) StateDirs() []string {
-	return []string{"mmkv", "msf", "OnlineStatus", "UnitedConfig", "config", "log", "log-cache", "avatar", "nt_db"}
+	// log/log-cache 已从硬黑名单移入白名单政策（clean_log 门控，默认开）：
+	// QQ 会自动重建日志，docs/01 §2.4 本就标注「可按龄清理」。
+	return []string{"mmkv", "msf", "OnlineStatus", "UnitedConfig", "config", "avatar", "nt_db"}
 }
 
 func (*NT) DBSuffixes() []string {

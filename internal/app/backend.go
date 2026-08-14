@@ -568,6 +568,7 @@ func cfgOpenGates(cfg rules.Config) rules.Config {
 	cfg.CleanMarketface = true
 	cfg.CleanPersonalEmoji = true
 	cfg.CleanFile = true
+	cfg.CleanLog = true
 	return cfg
 }
 

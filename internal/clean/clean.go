@@ -173,7 +173,7 @@ func VerifyPath(k rules.Knowledge, abs string, allowedRoots []string, cfg rules.
 		return err
 	}
 	if !rules.Whitelisted(k, rel, cfg) {
-		return fmt.Errorf("not whitelisted")
+		return fmt.Errorf("not in the clean whitelist (structure or category gate)")
 	}
 	return nil
 }

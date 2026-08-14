@@ -29,12 +29,16 @@ func Reason(e classify.FileEntry, hasOri, hasThumb bool, contentCount int) strin
 	switch {
 	case e.IsTemp:
 		parts = append(parts, "下载中断残留")
+	case strings.Contains(strings.ToLower(e.Category), "dataline/tmp"):
+		parts = append(parts, "传输残留")
 	case e.IsThumb:
 		parts = append(parts, "缩略图")
 	case strings.Contains(strings.ToLower(e.Category), "marketface"):
 		parts = append(parts, "表情包")
 	case strings.Contains(strings.ToLower(e.Category), "personal-emoji"):
 		parts = append(parts, "个人表情")
+	case e.Biz == "log" || e.Biz == "log-cache":
+		parts = append(parts, "运行日志")
 	case strings.HasSuffix(strings.ToLower(e.Category), "/ori"):
 		parts = append(parts, "原图/原文件")
 	}
