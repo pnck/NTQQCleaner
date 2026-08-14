@@ -131,7 +131,7 @@ func previewHandler(rw http.ResponseWriter, req *http.Request) {
 │ │  媒体区（图片自适应 / 视频   │ │
 │ │  播放器 / 元数据卡片）       │ │
 │ └─────────────────────────────┘ │
-│ 详情：路径 / 大小 / mtime / md5 / 内容哈希│
+│ 详情：路径 / 大小 / mtime / 文件ID / 内容哈希│
 │       说明（reason 标签，悬浮释义）/ 关联情况│
 │ [在文件夹中显示] [同内容 N 份 · 勾选副本/勾选全部] │
 └─────────────────────────────────┘
@@ -160,7 +160,7 @@ func previewHandler(rw http.ResponseWriter, req *http.Request) {
 - 点月份 = 过滤该月；显示各节点文件数与大小（扫描后填充）
 
 ### ③ 中栏（文件浏览工作区）
-- 虚拟化表格，列：`[☑] 缩略图 | 名称(md5) | 类型 | 大小 | 修改时间 | 说明`
+- 虚拟化表格，列：`[☑] 缩略图 | 名称（文件ID = QQ 原文件名 md5）| 类型 | 大小 | 修改时间 | 说明`
 - 排序（点击列头）：大小 / 时间；筛选由命名筛选器（条件表达式）承担
 - reason 标签：短标签 + 悬浮 tooltip 解释含义（见 03 §4）
 - 勾选列：默认不勾选；勾选实时反馈到底栏
@@ -210,7 +210,7 @@ func previewHandler(rw http.ResponseWriter, req *http.Request) {
 // 前端只拿这些轻量对象
 type FileRow struct {          // 中栏一行
     ID       int    `json:"id"`        // 后端索引行号
-    MD5      string `json:"md5"`
+    MD5      string `json:"md5"`       // 文件ID：QQ 取自原文件名的 md5（标识，非内容）
     Biz      string `json:"biz"`       // pic/video/...
     Sub      string `json:"sub"`       // Ori/Thumb/...
     Month    string `json:"month"`

@@ -81,7 +81,7 @@ export const FILTER_FIELDS: FilterFieldDef[] = [
   },
   {
     field: "md5",
-    label: "md5",
+    label: "文件ID",
     kind: "text",
     ops: ["contains", "eq"],
   },

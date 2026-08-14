@@ -42,7 +42,7 @@ const HELP_FIELDS: { field: string; note: string }[] = [
   { field: "month", note: "月份，形如 2024-09（字符串比较即时间序）" },
   { field: "age", note: "修改于 N 天前（数值）" },
   { field: "size", note: "字节（编辑器中按 MB 输入）" },
-  { field: "md5", note: "文件名 md5；~ 可按前缀/片段匹配" },
+  { field: "md5", note: "文件ID：QQ 取自原文件名的 md5（标识文件，与内容无关）；~ 可按前缀匹配" },
   { field: "contentHash", note: "SHA-256 内容哈希（仅同大小冲突组计算）；~ 可按前缀匹配" },
   { field: "reason", note: "说明标签（缩略图/原图仍在/有缩略图/重复出现…）" },
   { field: "thumb", note: "是否缩略图：true / false" },

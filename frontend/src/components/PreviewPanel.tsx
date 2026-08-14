@@ -151,7 +151,9 @@ export function PreviewPanel({ row, rows, dupMode, onNavigate, onToast, onSelect
           <span className="selectable">{fmtTime(row.mtime)}</span>
         </div>
         <div className="kv">
-          <span className="k">md5</span>
+          <Tooltip content="QQ 的文件识别方式：原文件名的 md5 用作文件 ID（标识文件，不代表内容；与下方内容哈希无关）">
+            <span className="k">文件ID</span>
+          </Tooltip>
           <span className="selectable">{row.md5 || "—"}</span>
         </div>
         <div className="kv">

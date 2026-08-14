@@ -13,7 +13,7 @@ export interface AccountReport {
 
 export interface FileRow {
   id: number;
-  md5: string;
+  md5: string; // 文件ID：QQ 取自原文件名的 md5（标识文件，不代表内容）
   biz: string;
   sub: string;
   month: string;

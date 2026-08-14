@@ -489,6 +489,9 @@ button.chip {
 
 .preview .detail .k {
   color: var(--text-dim);
+  /* 标签最小 4 个汉字宽（修改时间/内容哈希/文件ID），保证值列对齐 */
+  min-width: 4em;
+  flex-shrink: 0;
 }
 
 .preview .detail .kv {

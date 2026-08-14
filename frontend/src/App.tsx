@@ -536,7 +536,7 @@ export default function App() {
               仅缩略图
             </label>
             <input
-              placeholder="搜索 md5…"
+              placeholder="搜索 文件ID…"
               value={searchQ}
               onChange={(e) => setSearchQ(e.target.value)}
               style={{ width: 140 }}
