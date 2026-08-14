@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { QQRunningError, api, events } from "./api";
 import { BottomBar } from "./components/BottomBar";
+import { CleanConfirmDialog } from "./components/CleanConfirmDialog";
 import { CleanReportDialog } from "./components/CleanReportDialog";
 import { DupesDialog } from "./components/DupesDialog";
 import { FilterEditor } from "./components/FilterEditor";
@@ -67,6 +68,10 @@ export default function App() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [checked, setChecked] = useState<Set<number>>(new Set());
+  // 已勾选字节：在 App 精确累计（toggle 带 size、全选 = 筛选总量、
+  // 去重组带逐份大小增量）。绝不从虚拟列表已加载行推算——全选/去重等
+  // 大批量勾选会跨出已加载页，行外的文件必须同样生效。
+  const [checkedBytes, setCheckedBytes] = useState(0);
   const [rows, setRows] = useState<FileRow[]>([]);
   const [stats, setStats] = useState<Stats>({ count: 0, size: 0 });
   const [bizGroups, setBizGroups] = useState<GroupStat[]>([]);
@@ -75,8 +80,10 @@ export default function App() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [dupesOpen, setDupesOpen] = useState(false);
   const [dupes, setDupes] = useState<DupGroup[]>([]);
-  // 清理结果对话框（清理完成后自动弹出，逐文件回显）
+  // 清理结果对话框（清理完成后自动弹出：统计 + 跳过/失败明细）
   const [cleanReport, setCleanReport] = useState<CleanResult | null>(null);
+  // 清理确认对话框（审计/移动两个显式 opt-in，最终确认在 Go 侧原生对话框）
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(getTheme());
   // 后端 config（设置对话框的高级门控/备份策略；普通门控 GUI 恒全开）
   const [cfg, setCfg] = useState<Config | null>(null);
@@ -148,6 +155,7 @@ export default function App() {
     setToast("");
     setSelected(null);
     setChecked(new Set());
+    setCheckedBytes(0);
     setDupModes(new Map()); // 行 id 是本次扫描内的位置编号，重扫后作废
     setRows([]);
     void api
@@ -168,6 +176,7 @@ export default function App() {
     if (phase !== "ready") return;
     setSelected(null);
     setChecked(new Set());
+    setCheckedBytes(0);
     void api.getStats(filter).then(setStats).catch(console.error);
     const treeFilter = { account, expr: null };
     void api.getGroups(treeFilter, "biz").then(setBizGroups).catch(console.error);
@@ -233,19 +242,25 @@ export default function App() {
   const setSearchQ = (q: string) => editExprFn((e) => setSearchExpr(e, q));
 
   // ---- selection ----
-  const toggleChecked = useCallback((id: number) => {
-    setChecked((prev) => {
-      const next = new Set(prev);
+  const toggleChecked = useCallback(
+    (id: number, size: number) => {
+      const next = new Set(checked);
       if (next.has(id)) next.delete(id);
       else next.add(id);
-      return next;
-    });
-  }, []);
+      setChecked(next);
+      setCheckedBytes(checkedBytes + (next.has(id) ? size : -size));
+    },
+    [checked, checkedBytes],
+  );
 
   const selectAll = useCallback(async () => {
     try {
-      const ids = await api.getIDs(filter);
+      // 全选 = 当前筛选的全部文件：总量与 id 列表走同一条 applyStages
+      // 管线并行取（不读 stats 状态——筛选刚切换时它可能是上一轮的
+      // 异步残留），不存在虚拟列表已加载页的偏差。
+      const [ids, st] = await Promise.all([api.getIDs(filter), api.getStats(filter)]);
       setChecked(new Set(ids));
+      setCheckedBytes(st.size);
       setToast(`已勾选当前筛选中的 ${ids.length} 个文件`);
     } catch (e) {
       setToast(`全选失败：${e}`);
@@ -253,31 +268,34 @@ export default function App() {
   }, [filter]);
 
   const checkedCount = checked.size;
-  const checkedBytes = useMemo(
-    () => rows.filter((r) => checked.has(r.id)).reduce((acc, r) => acc + r.size, 0),
-    [rows, checked],
-  );
 
   const handleRowsChange = useCallback((rs: FileRow[]) => setRows(rs), []);
 
   // ---- clean ----
-  const clean = useCallback(async () => {
-    const backup = cfg?.backupDir ?? "";
-    const msg =
-      `将清理 ${checkedCount} 个文件（${fmtSize(checkedBytes)}）。\n` +
-      (backup ? `文件将移动到：${backup}` : "未设置备份目录：删除前会写入审计日志（路径/大小/时间）。") +
-      "\n\n确定继续？";
-    const answer = await api.confirmClean(msg);
-    if (answer !== "清理") return;
-    setPhase("cleaning");
-    const runClean = (ignoreRunning: boolean) =>
-      api.clean({
-        ids: [...checked],
-        backupDir: backup,
-        force: true,
-        confirmed: true,
-        ignoreRunning,
-      });
+  // 入口：底栏「清理」先弹选项对话框（审计/移动两个显式 opt-in），
+  // 确认后在 Go 侧原生对话框做最终确认（红线：确认在 Go 侧）。
+  const openCleanConfirm = useCallback(() => setConfirmOpen(true), []);
+
+  const doClean = useCallback(
+    async (audit: boolean, move: boolean) => {
+      const backup = cfg?.backupDir ?? "";
+      const msg =
+        `将清理 ${checkedCount} 个文件（${fmtSize(checkedBytes)}）。\n` +
+        `处理方式：${move ? `移动到备份目录：${backup}` : "直接删除"}。\n` +
+        `审计记录：${audit ? "生成（完成后自动打开）" : "不生成"}。\n\n确定继续？`;
+      const answer = await api.confirmClean(msg);
+      if (answer !== "清理") return;
+      setPhase("cleaning");
+      const runClean = (ignoreRunning: boolean) =>
+        api.clean({
+          ids: [...checked],
+          backupDir: backup,
+          audit,
+          move,
+          force: true,
+          confirmed: true,
+          ignoreRunning,
+        });
     let res: CleanResult;
     try {
       res = await runClean(false);
@@ -314,6 +332,7 @@ export default function App() {
     setPhase("idle");
     setRows([]);
     setChecked(new Set());
+    setCheckedBytes(0);
     // 清理后索引已失效（文件被移走）：自动重扫恢复墙面与筛选结果。
     // 先调 startScan（它会清 toast/error），再写清理结果提示。
     startScan();
@@ -322,10 +341,11 @@ export default function App() {
     setToast(
       `清理完成：处理 ${res.processed}，移动 ${res.moved}，删除 ${res.deleted}，` +
         `跳过 ${res.skipped}，失败 ${res.failed}，释放 ${fmtSize(res.bytesFreed)}` +
+        (res.auditPath ? "；审计报告已生成" : "") +
         (errs.length > 0 ? `；${errs.length} 个文件被跳过` : "") +
         "；正在重新扫描…",
     );
-    // 逐文件结果自动弹出（清理结果对话框）。
+    // 清理结果自动弹出（统计 + 跳过/失败明细）。
     setCleanReport(res);
   }, [checked, checkedBytes, checkedCount, startScan, cfg]);
 
@@ -356,19 +376,29 @@ export default function App() {
           return;
         }
         const mode = dupModes.get(row.id) ?? "dups";
-        setChecked((prev) => {
-          const next = new Set(prev);
-          if (mode === "dups") {
-            // 「勾选副本」：只勾副本，保留份保持不勾
-            next.delete(g.keepId);
-            g.dupIds.forEach((id) => next.add(id));
-          } else {
-            // 「勾选全部」：在副本基础上补上保留份
-            next.add(g.keepId);
-            g.dupIds.forEach((id) => next.add(id));
-          }
-          return next;
-        });
+        // 域内重置 + 精确字节增量（dupSizes 与 dupIds 对齐；keepSize
+        // 供保留份的取消勾选/补勾选换算）。
+        const next = new Set(checked);
+        let bytes = checkedBytes;
+        if (mode === "dups") {
+          // 「勾选副本」：只勾副本，保留份保持不勾
+          if (checked.has(g.keepId)) bytes -= g.keepSize;
+          next.delete(g.keepId);
+          g.dupIds.forEach((id, i) => {
+            if (!checked.has(id)) bytes += g.dupSizes[i];
+            next.add(id);
+          });
+        } else {
+          // 「勾选全部」：在副本基础上补上保留份
+          if (!checked.has(g.keepId)) bytes += g.keepSize;
+          next.add(g.keepId);
+          g.dupIds.forEach((id, i) => {
+            if (!checked.has(id)) bytes += g.dupSizes[i];
+            next.add(id);
+          });
+        }
+        setChecked(next);
+        setCheckedBytes(bytes);
         setDupModes((m) => {
           const nm = new Map(m);
           nm.set(row.id, mode === "dups" ? "all" : "dups");
@@ -383,7 +413,7 @@ export default function App() {
         setToast(`去重分析失败：${e}`);
       }
     },
-    [dupModes],
+    [checked, checkedBytes, dupModes, filter],
   );
 
   // 保存设置：高级门控变化影响扫描入库范围，变化时自动重扫生效。
@@ -605,8 +635,11 @@ export default function App() {
         checkedBytes={checkedBytes}
         busy={phase === "scanning" || phase === "cleaning"}
         onSelectAll={() => void selectAll()}
-        onClearSelection={() => setChecked(new Set())}
-        onClean={() => void clean()}
+        onClearSelection={() => {
+          setChecked(new Set());
+          setCheckedBytes(0);
+        }}
+        onClean={openCleanConfirm}
       />
       <FilterEditor
         open={filterOpen}
@@ -632,28 +665,48 @@ export default function App() {
         onSelectGroup={(g) => {
           // 域内重置：去重建议是另一种筛选器，其作用域内（该内容组）
           // 的勾选状态以建议为准——副本勾上、保留份取消勾选；域外文件
-          // 不受影响。
-          setChecked((prev) => {
-            const next = new Set(prev);
-            next.delete(g.keepId);
-            g.dupIds.forEach((id) => next.add(id));
-            return next;
+          // 不受影响。字节增量按逐份大小精确换算（不依赖虚拟列表行）。
+          const next = new Set(checked);
+          next.delete(g.keepId);
+          g.dupIds.forEach((id) => next.add(id));
+          let bytes = checkedBytes;
+          if (checked.has(g.keepId)) bytes -= g.keepSize;
+          g.dupIds.forEach((id, i) => {
+            if (!checked.has(id)) bytes += g.dupSizes[i];
           });
+          setChecked(next);
+          setCheckedBytes(bytes);
           setToast(`已勾选 ${g.dupIds.length} 个副本（保留 ${g.keepLabel} 未勾选）`);
         }}
         onSelectAll={(groups) => {
-          setChecked((prev) => {
-            const next = new Set(prev);
-            groups.forEach((g) => {
-              next.delete(g.keepId);
-              g.dupIds.forEach((id) => next.add(id));
+          const next = new Set(checked);
+          let bytes = checkedBytes;
+          groups.forEach((g) => {
+            if (checked.has(g.keepId)) bytes -= g.keepSize;
+            next.delete(g.keepId);
+            g.dupIds.forEach((id, i) => {
+              if (!checked.has(id)) bytes += g.dupSizes[i];
+              next.add(id);
             });
-            return next;
           });
+          setChecked(next);
+          setCheckedBytes(bytes);
           const n = groups.reduce((a, g) => a + g.dupIds.length, 0);
           setToast(`已勾选筛选内全部多余副本：${n} 个（保留份均已取消勾选）`);
         }}
         onClose={() => setDupesOpen(false)}
+      />
+      <CleanConfirmDialog
+        open={confirmOpen}
+        count={checkedCount}
+        bytes={checkedBytes}
+        hasBackup={!!(cfg?.backupDir ?? "")}
+        onConfirm={(audit, move) => {
+          setConfirmOpen(false);
+          void doClean(audit, move);
+        }}
+        onCancel={() => setConfirmOpen(false)}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
       {cleanReport && (
         <CleanReportDialog res={cleanReport} onClose={() => setCleanReport(null)} />

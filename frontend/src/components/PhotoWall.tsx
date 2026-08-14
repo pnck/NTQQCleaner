@@ -18,8 +18,8 @@ interface Props {
   selected: number | null;
   checked: Set<number>;
   onSelect: (id: number | null) => void;
-  onToggle: (id: number) => void;
-  onRowsChange: (rows: FileRow[]) => void; // App mirrors the loaded rows for preview/checked sums
+  onToggle: (id: number, size: number) => void;
+  onRowsChange: (rows: FileRow[]) => void; // App mirrors the loaded rows for preview
 }
 
 interface CellProps {
@@ -27,7 +27,7 @@ interface CellProps {
   selected: boolean;
   checked: boolean;
   onSelect: () => void;
-  onToggle: () => void;
+  onToggle: () => void; // Cell 内部闭包：onToggle(row.id, row.size)
 }
 
 // One wall cell: lazy <img> (only virtualized rows exist in the DOM, so
@@ -188,7 +188,7 @@ export function PhotoWall({ query, queryKey, selected, checked, onSelect, onTogg
                     selected={selected === row.id}
                     checked={checked.has(row.id)}
                     onSelect={() => onSelect(selected === row.id ? null : row.id)}
-                    onToggle={() => onToggle(row.id)}
+                    onToggle={() => onToggle(row.id, row.size)}
                   />
                 );
               })}

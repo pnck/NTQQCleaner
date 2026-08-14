@@ -957,3 +957,42 @@ button.chip {
   z-index: 20;
   font-size: 12px;
 }
+
+/* 清理确认对话框：审计/移动两个显式 opt-in（docs/07 §5） */
+.confirm-opt {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-top: 10px;
+  cursor: pointer;
+}
+
+.confirm-opt input {
+  margin-top: 2px;
+}
+
+.confirm-opt > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.confirm-note {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.confirm-warn {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

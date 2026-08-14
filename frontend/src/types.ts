@@ -109,13 +109,16 @@ export interface Progress {
 
 export interface CleanRequest {
   ids: number[];
-  backupDir: string;
+  backupDir: string; // Move=true 时使用的备份目录
+  audit: boolean; // 生成审计报告（确认对话框勾选，默认关）
+  move: boolean; // 以移动代替删除（确认对话框勾选，默认关）
   force: boolean;
   confirmed: boolean;
   ignoreRunning?: boolean; // QQ 运行中仍清理（需二次确认）
 }
 
-// CleanItem：清理结果对话框中逐文件回显（审计日志仍是权威记录）。
+// CleanItem：清理结果对话框中回显（仅 skip/fail 明细；完整清单见
+// 审计报告——按需生成）。
 export interface CleanItem {
   path: string;
   action: "move" | "remove" | "skip" | "fail";
@@ -180,7 +183,8 @@ export function fmtTime(unix: number): string {
 export const emptyFilter = (): Filter => ({ account: "", expr: null });
 
 // DupGroup：一份字节级相同的内容（SHA-256 分组）在全索引中有 ≥2 份时
-// 的去重建言。
+// 的去重建言。keepSize/dupSizes 供勾选字节精确累计（勾选统计不得依赖
+// 虚拟列表已加载行）。
 export interface DupGroup {
   hash: string;
   count: number;
@@ -188,7 +192,9 @@ export interface DupGroup {
   keepLabel: string;
   keepMtime: number;
   keepInFilter: boolean; // 保留份是否在当前筛选内（行内「筛选外」标记）
+  keepSize: number; // 保留份大小
   dupIds: number[];
+  dupSizes: number[]; // 与 dupIds 对齐的逐份大小
   dupBytes: number;
   totalBytes: number;
 }
