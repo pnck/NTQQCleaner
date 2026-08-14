@@ -255,7 +255,7 @@ func (b *Backend) QueryRows(q PageQuery) (PageResult, error) {
 	if q.Sort.Field != "" {
 		sortIDs(out, ids, q.Sort)
 	}
-	// take/drop 管道在排序后应用（take = 排序后前 n 条）
+	// 管道在 UI 排序后按书写顺序应用
 	ids = out.applyStages(ids, q.Filter)
 	total := len(ids)
 	if q.PageSize <= 0 {

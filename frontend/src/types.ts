@@ -42,18 +42,20 @@ export interface Expr {
   c?: Condition | null;
 }
 
-export interface OrderStage {
-  field: string; // size|mtime|month|md5
-  desc: boolean;
+// 管道 stage：与后端 internal/app/types.go 的 Stage JSON 契约一致。
+// 管道按书写顺序从左到右组合，每个 stage 作用于前一 stage 的输出。
+export interface Stage {
+  kind: "select" | "order" | "drop" | "take";
+  kinds?: string[]; // select: ori/thumb/dup（正交并集）
+  field?: string; // order: size|mtime|month|md5
+  desc?: boolean; // order: 降序
+  n?: number; // drop/take: 条数
 }
 
 export interface Filter {
   account: string;
   expr?: Expr | null; // null/undefined = 全部
-  select?: string[]; // select(ori|thumb|dup)：关联展开，可多个（正交并集）
-  orders?: OrderStage[]; // order(field, asc|desc) 管道
-  limit?: number; // take(n)：排序后取前 n 条
-  offset?: number; // drop(n)：跳过前 n 条
+  stages?: Stage[]; // 管道（书写顺序执行）
 }
 
 export interface Stats {

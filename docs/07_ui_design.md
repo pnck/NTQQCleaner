@@ -187,7 +187,7 @@ func previewHandler(rw http.ResponseWriter, req *http.Request) {
 - 表达式视图内嵌**可折叠「语法帮助」面板**（默认收起，避免常驻占位）：
   完整列出操作符语义（`~` = 子串包含 LIKE %值%；`in` 括号列表）、全部字段
   与取值（biz/sub 的枚举、month 格式、contentHash 前缀匹配等）、管道函数
-  （select/order/take/drop）与示例
+  （select/order/take/drop，按书写顺序执行）与示例
 - 表达式解析错误就地显示（红色），指向具体记号与修正方式；验证通过才可应用
 
 ### ④ 右栏（预览面板，见 §4.4）

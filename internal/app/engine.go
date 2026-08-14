@@ -238,25 +238,31 @@ func (o *Outcome) matchedIDs(f Filter) []int {
 	return out
 }
 
-// applyStages applies the pipeline stages in order: select()（关联展开）
-// → order()（稳定多键排序）→ drop → take. When the filter carries no
-// order(), callers sort by the UI sort field first (QueryRows) or leave
-// the natural order (aggregates).
+// applyStages applies the pipeline in **written order**（函数式组合，
+// docs/04 §3）：每个 stage 作用于前一 stage 的输出。take(10) | select(dup)
+// 先取 10 条再展开，与 select(dup) | take(10) 语义不同。未知 stage 种类
+// 无效果（fail closed）。QueryRows 会在管道前按 UI 排序字段预排序
+// （无 order() 时即最终顺序；有 order() 时在其位置重排）。
 func (o *Outcome) applyStages(ids []int, f Filter) []int {
-	if len(f.Select) > 0 {
-		ids = o.selectAssociated(ids, f.Select)
-	}
-	for _, ord := range f.Orders {
-		sortIDs(o, ids, Sort{Field: ord.Field, Desc: ord.Desc})
-	}
-	if f.Offset > 0 {
-		if f.Offset >= len(ids) {
-			return nil
+	for _, s := range f.Stages {
+		switch s.Kind {
+		case "select":
+			ids = o.selectAssociated(ids, s.Kinds)
+		case "order":
+			sortIDs(o, ids, Sort{Field: s.Field, Desc: s.Desc})
+		case "drop":
+			if s.N <= 0 {
+				continue
+			}
+			if s.N >= len(ids) {
+				return nil
+			}
+			ids = ids[s.N:]
+		case "take":
+			if s.N > 0 && s.N < len(ids) {
+				ids = ids[:s.N]
+			}
 		}
-		ids = ids[f.Offset:]
-	}
-	if f.Limit > 0 && f.Limit < len(ids) {
-		ids = ids[:f.Limit]
 	}
 	return ids
 }
@@ -268,6 +274,7 @@ func (o *Outcome) applyStages(ids []int, f Filter) []int {
 //   - thumb ：原文件 → 其全部缩略图（多尺寸）；缩略图保留自身
 //   - dup   ：展开为内容哈希组（字节级相同的全部文件，含列表内的自身）；
 //     无哈希（大小唯一）的文件对本维度无贡献
+//
 // 未知类别视为无贡献（前端解析器已严格校验，这里防 API 误用）。
 //
 // 关联依据：ori/thumb 走文件名 md5 配对（同名关系）；dup 走二次扫描的
@@ -352,8 +359,6 @@ func (o *Outcome) matchOne(id int, c Condition) bool {
 			return e.Sub
 		case "category":
 			return e.Category
-		case "month":
-			return e.Month
 		case "md5":
 			return e.MD5
 		case "contentHash":
@@ -384,11 +389,21 @@ func (o *Outcome) matchOne(id int, c Condition) bool {
 
 	switch c.Field {
 	case "age", "size":
+		v := numVal()
+		if c.Op == "in" {
+			// 列表形式：逐项解析，跳过不可解析项
+			for _, item := range strings.Split(c.Value, ",") {
+				n2, err := strconv.ParseInt(strings.TrimSpace(item), 10, 64)
+				if err == nil && v == n2 {
+					return true
+				}
+			}
+			return false
+		}
 		n, err := strconv.ParseInt(strings.TrimSpace(c.Value), 10, 64)
 		if err != nil {
 			return false
 		}
-		v := numVal()
 		switch c.Op {
 		case "gt":
 			return v > n
@@ -410,7 +425,51 @@ func (o *Outcome) matchOne(id int, c Condition) bool {
 			return boolVal() != want
 		}
 		return boolVal() == want
-	default: // string fields: biz/sub/category/month/md5/contentHash/reason
+	case "month":
+		// 月份操作数按可计算时间比较：YYYY-MM 解析为当月起始时间戳
+		// （实现细节不对用户暴露）。字符串序在跨年/缺位写法下不可靠，
+		// 解析失败一律不匹配（fail closed）。contains 保留在规范字符串
+		// 上做子串匹配（month ~ 2025 = 全年），与顺序无关。
+		mv, ok := monthVal(e.Month)
+		if !ok {
+			return false
+		}
+		switch c.Op {
+		case "eq":
+			w, ok := monthVal(c.Value)
+			return ok && mv == w
+		case "ne":
+			w, ok := monthVal(c.Value)
+			return !ok || mv != w
+		case "gt", "gte", "lt", "lte":
+			w, ok := monthVal(c.Value)
+			if !ok {
+				return false
+			}
+			switch c.Op {
+			case "gt":
+				return mv > w
+			case "gte":
+				return mv >= w
+			case "lt":
+				return mv < w
+			case "lte":
+				return mv <= w
+			}
+			return false
+		case "in":
+			for _, item := range strings.Split(c.Value, ",") {
+				w, ok := monthVal(item)
+				if ok && mv == w {
+					return true
+				}
+			}
+			return false
+		case "contains":
+			return strings.Contains(e.Month, strings.TrimSpace(c.Value))
+		}
+		return false
+	default: // string fields: biz/sub/category/md5/contentHash/reason
 		v := strVal()
 		switch c.Op {
 		case "eq":
@@ -427,7 +486,7 @@ func (o *Outcome) matchOne(id int, c Condition) bool {
 		case "contains":
 			return strings.Contains(strings.ToLower(v), strings.ToLower(strings.TrimSpace(c.Value)))
 		case "gt", "gte", "lt", "lte":
-			// 月份等可比字符串：YYYY-MM 字典序即时间序
+			// 可比字符串（biz/sub/category 等）：字典序
 			w := strings.TrimSpace(c.Value)
 			switch c.Op {
 			case "gt":
@@ -443,4 +502,14 @@ func (o *Outcome) matchOne(id int, c Condition) bool {
 		}
 		return false
 	}
+}
+
+// monthVal 把 "YYYY-MM" 解析为当月起始时间戳，供月份操作数的可计算比较
+// （不按字符串序）。解析失败返回 ok=false —— 调用方 fail closed。
+func monthVal(s string) (int64, bool) {
+	t, err := time.Parse("2006-01", strings.TrimSpace(s))
+	if err != nil {
+		return 0, false
+	}
+	return t.Unix(), true
 }

@@ -1,4 +1,4 @@
-import type { Condition, Expr, Sort } from "./types";
+import type { Condition, Expr, Sort, Stage } from "./types";
 import { group, leaf } from "./exprbase";
 
 // 筛选器领域：字段定义 + 命名筛选（= 名称 + 表达式 + 排序 + 是否置顶工具栏）。
@@ -62,14 +62,14 @@ export const FILTER_FIELDS: FilterFieldDef[] = [
     field: "month",
     label: "月份",
     kind: "text",
-    ops: ["eq", "ne", "gte", "lte"],
+    ops: ["eq", "ne", "gte", "lte", "gt", "lt", "in"],
   },
   {
     field: "age",
     label: "修改于",
     kind: "number",
     unit: "天前",
-    ops: ["gte", "lte", "gt", "lt"],
+    ops: ["gte", "lte", "gt", "lt", "in"],
   },
   {
     field: "size",
@@ -111,10 +111,7 @@ export interface NamedFilter {
   name: string;
   expr: Expr | null;
   sort: Sort;
-  select?: string[]; // select(ori|thumb|dup) 关联展开管道（可多个）
-  orders?: { field: string; desc: boolean }[]; // 表达式 order() 管道
-  limit?: number; // take(n)
-  offset?: number; // drop(n)
+  stages?: Stage[]; // 管道（书写顺序执行）
   pinned?: boolean; // 固定到工具栏直选
 }
 
@@ -163,7 +160,22 @@ const KEY = "qq-cleaner-named-filters";
 // 之后存储就是唯一权威——用户删除内置筛选器后不会在下次启动被复活。
 const SEEDED_KEY = "qq-cleaner-named-filters-seeded";
 
-// readStored 读取用户筛选器；兼容旧存储（conditions 数组迁移为 AND 组）。
+// legacyStages 迁移旧存储的 select/orders/limit/offset 字段（旧规范顺序
+// select → order → drop → take）为统一管道 stages。
+function legacyStages(f: Record<string, unknown>): Stage[] | undefined {
+  const out: Stage[] = [];
+  const sel = f.select as string[] | undefined;
+  if (sel && sel.length > 0) out.push({ kind: "select", kinds: sel });
+  for (const o of (f.orders as { field: string; desc: boolean }[] | undefined) ?? []) {
+    out.push({ kind: "order", field: o.field, desc: o.desc });
+  }
+  if (typeof f.offset === "number" && f.offset > 0) out.push({ kind: "drop", n: f.offset });
+  if (typeof f.limit === "number" && f.limit > 0) out.push({ kind: "take", n: f.limit });
+  return out.length > 0 ? out : undefined;
+}
+
+// readStored 读取用户筛选器；兼容旧存储（conditions 数组迁移为 AND 组，
+// select/orders/limit/offset 迁移为 stages）。
 function readStored(): NamedFilter[] {
   try {
     const raw = localStorage.getItem(KEY);
@@ -177,6 +189,7 @@ function readStored(): NamedFilter[] {
           name: String(f.name ?? ""),
           expr: (f.expr as Expr | null) ?? (conds?.length ? { and: conds.map((c) => ({ c })) } : null),
           sort: (f.sort as Sort) ?? DEFAULT_SORT,
+          stages: (f.stages as Stage[] | undefined) ?? legacyStages(f),
           pinned: Boolean(f.pinned),
         };
       })

@@ -1,23 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { filterToText, group, leaf, parseExpr, updateTree } from "../expression";
-import type { Condition, Expr, Sort } from "../types";
+import type { Condition, Expr, Sort, Stage } from "../types";
 import { FILTER_FIELDS, OPS_LABEL, fieldDef, type NamedFilter } from "../filters";
 
 interface Props {
   open: boolean;
   expr: Expr | null;
   onChangeExpr: (e: Expr | null) => void;
-  limit?: number;
-  offset?: number;
-  orders?: { field: string; desc: boolean }[];
-  select?: string[];
-  onStagesChange: (s: {
-    limit?: number;
-    offset?: number;
-    orders?: { field: string; desc: boolean }[];
-    select?: string[];
-  }) => void;
+  stages: Stage[];
+  onStagesChange: (s: Stage[]) => void;
   sort: Sort;
   onSortChange: (s: Sort) => void;
   filters: NamedFilter[];
@@ -210,10 +202,7 @@ export function FilterEditor({
   open,
   expr,
   onChangeExpr,
-  limit,
-  offset,
-  orders,
-  select,
+  stages,
   onStagesChange,
   sort,
   onSortChange,
@@ -239,12 +228,12 @@ export function FilterEditor({
   // 点击「应用」）时重置为当前筛选的规范文本——列表应用随动到表达式视图。
   useEffect(() => {
     if (open && view === "text") {
-      setText(filterToText(expr, limit, offset, orders, select));
+      setText(filterToText(expr, stages));
       setParseErr("");
       setApplied(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, view, expr, limit, offset, orders, select]);
+  }, [open, view, expr, stages]);
 
   useEffect(() => {
     if (!open) return;
@@ -260,8 +249,8 @@ export function FilterEditor({
   const root = expr ?? group("and", []);
 
   // 管道含 order/take/drop = 高级函数 → 简易模式只读
-  // （select 是独立下拉，两个视图都可编辑，不参与 advanced 判定）
-  const advanced = (orders?.length ?? 0) > 0 || limit !== undefined || offset !== undefined;
+  // （select 是复选框，两个视图都可编辑，不参与 advanced 判定）
+  const advanced = stages.some((s) => s.kind !== "select");
 
   // 表达式视图：按钮验证并应用
   const applyText = (): boolean => {
@@ -273,8 +262,8 @@ export function FilterEditor({
     }
     setParseErr("");
     onChangeExpr(res.expr ?? null);
-    onStagesChange({ limit: res.limit, offset: res.offset, orders: res.orders, select: res.select });
-    setText(filterToText(res.expr ?? null, res.limit, res.offset, res.orders, res.select));
+    onStagesChange(res.stages);
+    setText(filterToText(res.expr ?? null, res.stages));
     setApplied(true);
     return true;
   };
@@ -284,11 +273,40 @@ export function FilterEditor({
     if (!name) return;
     const next = [
       ...filters.filter((f) => f.name !== name),
-      { name, expr, sort, limit, offset, orders, select },
+      { name, expr, sort, stages },
     ];
     onSaveFilters(next);
     setSelected(name);
     setFilterName("");
+  };
+
+  // 复选框编辑 select() 管道：改管道中已有的 select stage（保持其位置）；
+  // 没有时在管道最前面新建（列表视图的「关联展开」语义 = 先展开）。
+  const toggleSelectKind = (kind: string, on: boolean) => {
+    const kinds = new Set(stages.find((s) => s.kind === "select")?.kinds ?? []);
+    if (on) kinds.add(kind);
+    else kinds.delete(kind);
+    if (kinds.size === 0) {
+      onStagesChange(stages.filter((s) => s.kind !== "select"));
+      return;
+    }
+    const withKinds: Stage = { kind: "select", kinds: [...kinds] };
+    const idx = stages.findIndex((s) => s.kind === "select");
+    if (idx < 0) {
+      onStagesChange([withKinds, ...stages]);
+      return;
+    }
+    onStagesChange(stages.map((s, i) => (i === idx ? withKinds : s)));
+  };
+
+  // 清空条件 = 清掉表达式与管道，并同步表达式视图的本地文本
+  // （此前只改 expr：表达式视图的 text 不同步、stages 残留）。
+  const clearAll = () => {
+    onChangeExpr(null);
+    onStagesChange([]);
+    setText("");
+    setParseErr("");
+    setApplied(false);
   };
 
   const deleteFilter = (name: string) => {
@@ -407,7 +425,9 @@ export function FilterEditor({
                   title="select() 管道：把当前结果替换为其中文件关联的其它文件（可多选，正交并集）"
                 >
                   {SELECT_KINDS.map((k) => {
-                    const on = (select ?? []).includes(k.value);
+                    const on = (stages.find((s) => s.kind === "select")?.kinds ?? []).includes(
+                      k.value,
+                    );
                     return (
                       <label
                         key={k.value}
@@ -416,18 +436,13 @@ export function FilterEditor({
                         <input
                           type="checkbox"
                           checked={on}
-                          onChange={(e) => {
-                            const next = new Set(select ?? []);
-                            if (e.target.checked) next.add(k.value);
-                            else next.delete(k.value);
-                            onStagesChange({ select: next.size > 0 ? [...next] : undefined });
-                          }}
+                          onChange={(e) => toggleSelectKind(k.value, e.target.checked)}
                         />
                         {k.label}
                       </label>
                     );
                   })}
-                  {(select?.length ?? 0) === 0 && (
+                  {!stages.some((s) => s.kind === "select") && (
                     <span style={{ color: "var(--text-dim)" }}>（不展开）</span>
                   )}
                 </span>
@@ -459,8 +474,7 @@ export function FilterEditor({
                   <b>结构</b>
                   <div>
                     条件用 AND（且）/ OR（或）连接，( ) 嵌套分组；含空格的值加引号
-                    "…"。管道函数接在表达式末尾，执行顺序固定 select → order → drop →
-                    take。
+                    "…"。管道函数接在表达式末尾，按书写顺序从左到右执行。
                   </div>
                 </div>
                 <div className="help-sec">
@@ -487,6 +501,10 @@ export function FilterEditor({
                     order(size|mtime|month|md5, asc|desc)：排序，可链多个
                   </div>
                   <div>take(n)：取前 n 条 · drop(n)：跳过前 n 条</div>
+                  <div>
+                    按书写顺序执行：take(10) | select(dup) 先取 10 条再展开，
+                    select(dup) | take(10) 先展开再取 10 条
+                  </div>
                 </div>
                 <div className="help-sec">
                   <b>示例</b>
@@ -508,7 +526,7 @@ export function FilterEditor({
                 验证并应用
               </button>
               <span style={{ color: "var(--text-dim)", fontSize: 12 }}>
-                管道函数接在表达式末尾；select → order → drop → take 依固定顺序执行
+                管道函数接在表达式末尾，按书写顺序从左到右执行
               </span>
             </div>
           </div>
@@ -565,7 +583,7 @@ export function FilterEditor({
         </div>
 
         <div className="actions">
-          <button onClick={() => onChangeExpr(null)}>清空条件</button>
+          <button onClick={clearAll}>清空条件</button>
           <button onClick={onClose}>取消</button>
           <button className="primary" onClick={finish}>
             完成

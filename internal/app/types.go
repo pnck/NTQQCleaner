@@ -53,26 +53,27 @@ type Expr struct {
 	C   *Condition `json:"c,omitempty"`   // leaf condition
 }
 
-// OrderStage is one order() pipeline function: sort by field asc/desc.
-// Multiple stages sort stably in sequence (= 多关键字排序).
-type OrderStage struct {
-	Field string `json:"field"` // size|mtime|month|md5
-	Desc  bool   `json:"desc"`
+// Stage is one pipeline function (docs/04 §3): select(kind, ...)（关联展开）、
+// order(field, asc|desc)、drop(n) = 跳过前 n 条、take(n) = 取前 n 条。
+// 管道按**书写顺序**从左到右组合（函数式）：每个 stage 作用于前一
+// stage 的输出——take(10) | select(dup)（先取 10 再展开）与
+// select(dup) | take(10)（先展开再取 10）语义不同。
+type Stage struct {
+	Kind  string   `json:"kind"`            // select|order|drop|take
+	Kinds []string `json:"kinds,omitempty"` // select: ori/thumb/dup（正交并集）
+	Field string   `json:"field,omitempty"` // order: size|mtime|month|md5
+	Desc  bool     `json:"desc,omitempty"`  // order: 降序
+	N     int      `json:"n,omitempty"`     // drop/take: 条数
 }
 
 // Filter selects a subset of the scanned index. The UI's left tree,
 // quick toggles and the filter editor all compile down to one Expr,
-// plus optional pipeline stages: select(kind)（关联展开）、
-// order(field, asc|desc)、drop(n) = 跳过前 n 条、take(n) = 取排序后前 n 条。
-// 语义顺序：select → order → drop → take（关联展开先改成员集合，
-// 排序只改顺序，take/drop 在最后——筛选器自包含）。
+// plus an optional pipeline (Stages). Unknown stage kinds fail closed
+// (no effect).
 type Filter struct {
-	Account string       `json:"account"` // instance hash, "" = all
-	Expr    *Expr        `json:"expr"`    // nil = everything
-	Select  []string     `json:"select,omitempty"` // ori/thumb/dup 关联展开（可多个，正交并集）
-	Orders  []OrderStage `json:"orders,omitempty"`
-	Limit   int          `json:"limit,omitempty"`  // take(n)
-	Offset  int          `json:"offset,omitempty"` // drop(n)
+	Account string  `json:"account"` // instance hash, "" = all
+	Expr    *Expr   `json:"expr"`    // nil = everything
+	Stages  []Stage `json:"stages,omitempty"`
 }
 
 // Sort orders query results.

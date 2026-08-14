@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -420,10 +421,25 @@ func TestMatchOne(t *testing.T) {
 		{Condition{"temp", "eq", "true"}, false},
 		{Condition{"month", "gte", "2022-01"}, true},
 		{Condition{"month", "lt", "2023-01"}, false},
-		{Condition{"age", "gte", "1000"}, true}, // ~3.5 years old
-		{Condition{"age", "lt", "100"}, false},  // older than 100 days
+		// month 按可计算时间比较（当月时间戳），非字符串序
+		{Condition{"month", "eq", "2023-01"}, true},
+		{Condition{"month", "ne", "2023-02"}, true},
+		{Condition{"month", "in", "2022-12,2023-01"}, true},
+		{Condition{"month", "in", "2022-12,2022-11"}, false},
+		{Condition{"month", "gt", "2022-12"}, true},
+		{Condition{"month", "gte", "2023-01"}, true},
+		{Condition{"month", "lt", "2023-02"}, true},
+		{Condition{"month", "lte", "2022-12"}, false},
+		{Condition{"month", "contains", "2023"}, true},
+		{Condition{"month", "contains", "2024"}, false},
+		{Condition{"month", "gt", "2023-13"}, false}, // 非法月份 fail closed
+		{Condition{"month", "gt", "junk"}, false},    // 不可解析 fail closed
+		{Condition{"age", "gte", "1000"}, true},      // ~3.5 years old
+		{Condition{"age", "lt", "100"}, false},       // older than 100 days
 		{Condition{"size", "lt", "100000"}, true},
 		{Condition{"size", "gt", "100000"}, false},
+		{Condition{"size", "in", "70000,81920"}, true}, // 80KB = 81920
+		{Condition{"size", "in", "70000,80000"}, false},
 		{Condition{"md5", "contains", "aaaa"}, true},
 		{Condition{"md5", "eq", "nope"}, false},
 		{Condition{"nonsense", "eq", "x"}, false}, // unknown field fails closed
@@ -432,6 +448,15 @@ func TestMatchOne(t *testing.T) {
 		if got := out.matchOne(target, c.cond); got != c.want {
 			t.Errorf("matchOne(%+v) = %v, want %v", c.cond, got, c.want)
 		}
+	}
+	// age 的 in 按真实天数精确比较（Now 注入固定，按目标文件动态计算，
+	// 不硬编码天数魔法值）。
+	ageDays := int64(out.Now.Sub(time.Unix(out.Entries[target].MTime, 0)).Hours() / 24)
+	if !out.matchOne(target, Condition{"age", "in", fmt.Sprintf("999,%d", ageDays)}) {
+		t.Errorf("age in exact value %d failed", ageDays)
+	}
+	if out.matchOne(target, Condition{"age", "in", "999,1000"}) {
+		t.Error("age in without the exact value matched")
 	}
 	// 布尔树语义：AND/OR/嵌套。
 	if !out.evalExpr(target, and(leaf("thumb", "eq", "true"), leaf("age", "gte", "1000"))) {
@@ -490,9 +515,8 @@ func TestFilterStages(t *testing.T) {
 	if all.Count != 13 {
 		t.Fatalf("all: got %d want 13", all.Count)
 	}
-	// take(3)：大小降序后前 3 条（sort 由 QueryRows 的 Sort 参数控制；
-	// GetStats 无法排序，故 take 语义与调用方排序配合——这里只验证截断）
-	top3, err := backend.GetStats(Filter{Limit: 3})
+	// take(3)：截断语义（GetStats 无 UI 排序，take 按自然顺序截断）
+	top3, err := backend.GetStats(Filter{Stages: []Stage{{Kind: "take", N: 3}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -500,7 +524,7 @@ func TestFilterStages(t *testing.T) {
 		t.Fatalf("take(3): got %d want 3", top3.Count)
 	}
 	// drop(10)：跳过 10 条 → 剩 3
-	rest, err := backend.GetStats(Filter{Offset: 10})
+	rest, err := backend.GetStats(Filter{Stages: []Stage{{Kind: "drop", N: 10}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -508,16 +532,16 @@ func TestFilterStages(t *testing.T) {
 		t.Fatalf("drop(10): got %d want 3", rest.Count)
 	}
 	// drop(2)+take(1) → 恰好 1 条
-	mid, err := backend.GetStats(Filter{Offset: 2, Limit: 1})
+	mid, err := backend.GetStats(Filter{Stages: []Stage{{Kind: "drop", N: 2}, {Kind: "take", N: 1}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if mid.Count != 1 {
 		t.Fatalf("drop(2)+take(1): got %d want 1", mid.Count)
 	}
-	// QueryRows：take(3) 在排序后应用
+	// QueryRows：take(3) 在 UI 排序后应用
 	page, err := backend.QueryRows(PageQuery{
-		Filter:   Filter{Limit: 3},
+		Filter:   Filter{Stages: []Stage{{Kind: "take", N: 3}}},
 		Sort:     Sort{Field: "size", Desc: true},
 		Page:     1,
 		PageSize: 200,
@@ -530,7 +554,7 @@ func TestFilterStages(t *testing.T) {
 	}
 	// order() 管道自包含：order(size, desc) | take(3) —— 无需外部 Sort
 	page, err = backend.QueryRows(PageQuery{
-		Filter:   Filter{Orders: []OrderStage{{Field: "size", Desc: true}}, Limit: 3},
+		Filter:   Filter{Stages: []Stage{{Kind: "order", Field: "size", Desc: true}, {Kind: "take", N: 3}}},
 		Page:     1,
 		PageSize: 200,
 	})
@@ -726,7 +750,7 @@ func TestSelectAssociated(t *testing.T) {
 		t.Fatal(err)
 	}
 	cap.waitFor(t, EvDone)
-	stats, err := backend.GetStats(Filter{Expr: leaf("md5", "eq", testutil.MD5F), Select: []string{"dup"}})
+	stats, err := backend.GetStats(Filter{Expr: leaf("md5", "eq", testutil.MD5F), Stages: []Stage{{Kind: "select", Kinds: []string{"dup"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -734,7 +758,7 @@ func TestSelectAssociated(t *testing.T) {
 		t.Fatalf("select(dup) via Filter: got %d want 3", stats.Count)
 	}
 	// 缩略图筛选 + select(ori)：只有 MD5A 有原图 → 1 条。
-	oriStats, err := backend.GetStats(Filter{Expr: leaf("thumb", "eq", "true"), Select: []string{"ori"}})
+	oriStats, err := backend.GetStats(Filter{Expr: leaf("thumb", "eq", "true"), Stages: []Stage{{Kind: "select", Kinds: []string{"ori"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -742,12 +766,36 @@ func TestSelectAssociated(t *testing.T) {
 		t.Fatalf("select(ori) via Filter: got %d want 1 (only MD5A has an Ori)", oriStats.Count)
 	}
 	// 未知 select 类别：无贡献（前端解析器严格校验；这里是 API 误用兜底）。
-	noop, err := backend.GetStats(Filter{Expr: leaf("thumb", "eq", "true"), Select: []string{"nonsense"}})
+	noop, err := backend.GetStats(Filter{Expr: leaf("thumb", "eq", "true"), Stages: []Stage{{Kind: "select", Kinds: []string{"nonsense"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if noop.Count != 0 {
 		t.Fatalf("unknown select kind must contribute nothing: got %d want 0", noop.Count)
+	}
+	// 书写顺序语义：take(n) | select(dup)（先取 n 条再展开）与
+	// select(dup) | take(n)（先展开再截断）结果不同。以 md5F 单条起手：
+	// take(1) | select(dup) → 3（取到 md5F 后展开为内容组）；
+	// select(dup) | take(1) → 1（展开后截断）。
+	takeThenSelect, err := backend.GetStats(Filter{
+		Expr:   leaf("md5", "eq", testutil.MD5F),
+		Stages: []Stage{{Kind: "take", N: 1}, {Kind: "select", Kinds: []string{"dup"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if takeThenSelect.Count != 3 {
+		t.Fatalf("take(1)|select(dup): got %d want 3", takeThenSelect.Count)
+	}
+	selectThenTake, err := backend.GetStats(Filter{
+		Expr:   leaf("md5", "eq", testutil.MD5F),
+		Stages: []Stage{{Kind: "select", Kinds: []string{"dup"}}, {Kind: "take", N: 1}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selectThenTake.Count != 1 {
+		t.Fatalf("select(dup)|take(1): got %d want 1", selectThenTake.Count)
 	}
 }
 
