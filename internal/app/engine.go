@@ -269,7 +269,7 @@ func (o *Outcome) applyStages(ids []int, f Filter) []int {
 
 // selectAssociated 把结果集替换为其中文件关联的另一组文件（docs/04 §3
 // 管道 select()）。kinds 是正交的展开维度，取**并集**（去重）：
-//   - ori   ：缩略图 → 其原文件；原文件保留自身；无配对（无 md5/无 Ori）
+//   - origin：缩略图 → 其原文件；原文件保留自身；无配对（无 md5/无 Ori）
 //     的文件对本维度无贡献
 //   - thumb ：原文件 → 其全部缩略图（多尺寸）；缩略图保留自身
 //   - dup   ：展开为内容哈希组（字节级相同的全部文件，含列表内的自身）；
@@ -277,7 +277,7 @@ func (o *Outcome) applyStages(ids []int, f Filter) []int {
 //
 // 未知类别视为无贡献（前端解析器已严格校验，这里防 API 误用）。
 //
-// 关联依据：ori/thumb 走文件名 md5 配对（同名关系）；dup 走二次扫描的
+// 关联依据：origin/thumb 走文件名 md5 配对（同名关系）；dup 走二次扫描的
 // SHA-256 内容组（同名 ≠ 同内容，同内容可能不同名）。
 func (o *Outcome) selectAssociated(ids []int, kinds []string) []int {
 	seen := make(map[int]bool, len(ids)*2)
@@ -292,7 +292,7 @@ func (o *Outcome) selectAssociated(ids []int, kinds []string) []int {
 		e := o.Entries[id]
 		for _, kind := range kinds {
 			switch kind {
-			case "ori":
+			case "origin":
 				if strings.EqualFold(e.Sub, "Ori") {
 					add(id)
 					continue
@@ -359,7 +359,7 @@ func (o *Outcome) matchOne(id int, c Condition) bool {
 			return e.Sub
 		case "category":
 			return e.Category
-		case "md5":
+		case "fileId":
 			return e.MD5
 		case "contentHash":
 			return e.ContentHash

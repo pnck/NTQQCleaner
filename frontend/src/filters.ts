@@ -80,7 +80,7 @@ export const FILTER_FIELDS: FilterFieldDef[] = [
     ops: ["gte", "lte", "gt", "lt"],
   },
   {
-    field: "md5",
+    field: "fileId",
     label: "文件ID",
     kind: "text",
     ops: ["contains", "eq"],
@@ -174,6 +174,26 @@ function legacyStages(f: Record<string, unknown>): Stage[] | undefined {
   return out.length > 0 ? out : undefined;
 }
 
+// normalizeLegacyNames 把已存筛选器里的旧语言词一次性映射为现行名
+// （字段 md5 → fileId；select 维度 ori → origin；order 字段跟随字段名）。
+function normalizeExpr(e: Expr): Expr {
+  if (e.c) {
+    return { c: e.c.field === "md5" ? { ...e.c, field: "fileId" } : e.c };
+  }
+  return { and: e.and?.map(normalizeExpr), or: e.or?.map(normalizeExpr) };
+}
+
+function normalizeStages(stages?: Stage[]): Stage[] | undefined {
+  const out = (stages ?? []).map((s) => {
+    if (s.kind === "select") {
+      return { ...s, kinds: (s.kinds ?? []).map((k) => (k === "ori" ? "origin" : k)) };
+    }
+    if (s.kind === "order" && s.field === "md5") return { ...s, field: "fileId" };
+    return s;
+  });
+  return out.length > 0 ? out : undefined;
+}
+
 // readStored 读取用户筛选器；兼容旧存储（conditions 数组迁移为 AND 组，
 // select/orders/limit/offset 迁移为 stages）。
 function readStored(): NamedFilter[] {
@@ -185,11 +205,12 @@ function readStored(): NamedFilter[] {
     return parsed
       .map((f): NamedFilter => {
         const conds = f.conditions as Condition[] | undefined;
+        const expr = (f.expr as Expr | null) ?? (conds?.length ? { and: conds.map((c) => ({ c })) } : null);
         return {
           name: String(f.name ?? ""),
-          expr: (f.expr as Expr | null) ?? (conds?.length ? { and: conds.map((c) => ({ c })) } : null),
+          expr: expr ? normalizeExpr(expr) : null,
           sort: (f.sort as Sort) ?? DEFAULT_SORT,
-          stages: (f.stages as Stage[] | undefined) ?? legacyStages(f),
+          stages: normalizeStages((f.stages as Stage[] | undefined) ?? legacyStages(f)),
           pinned: Boolean(f.pinned),
         };
       })

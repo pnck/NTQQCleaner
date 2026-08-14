@@ -440,8 +440,8 @@ func TestMatchOne(t *testing.T) {
 		{Condition{"size", "gt", "100000"}, false},
 		{Condition{"size", "in", "70000,81920"}, true}, // 80KB = 81920
 		{Condition{"size", "in", "70000,80000"}, false},
-		{Condition{"md5", "contains", "aaaa"}, true},
-		{Condition{"md5", "eq", "nope"}, false},
+		{Condition{"fileId", "contains", "aaaa"}, true},
+		{Condition{"fileId", "eq", "nope"}, false},
 		{Condition{"nonsense", "eq", "x"}, false}, // unknown field fails closed
 	}
 	for _, c := range cases {
@@ -685,17 +685,17 @@ func TestSelectAssociated(t *testing.T) {
 	}
 
 	// ori：两个 MD5A 缩略图 → 同一张原图（去重）。
-	oris := out.selectAssociated(thumbs, []string{"ori"})
+	oris := out.selectAssociated(thumbs, []string{"origin"})
 	if len(oris) != 1 || oris[0] != oriID {
-		t.Fatalf("select(ori) on thumbs: got %v want [%d]", oris, oriID)
+		t.Fatalf("select(origin) on thumbs: got %v want [%d]", oris, oriID)
 	}
 	// ori：原文件保留自身。
-	if got := out.selectAssociated([]int{oriID}, []string{"ori"}); len(got) != 1 || got[0] != oriID {
-		t.Fatalf("select(ori) on ori: got %v want self", got)
+	if got := out.selectAssociated([]int{oriID}, []string{"origin"}); len(got) != 1 || got[0] != oriID {
+		t.Fatalf("select(origin) on ori: got %v want self", got)
 	}
 	// ori：无配对（marketface 无 md5）→ 无贡献。
-	if got := out.selectAssociated([]int{market}, []string{"ori"}); len(got) != 0 {
-		t.Fatalf("select(ori) on unpaired: got %v want empty", got)
+	if got := out.selectAssociated([]int{market}, []string{"origin"}); len(got) != 0 {
+		t.Fatalf("select(origin) on unpaired: got %v want empty", got)
 	}
 
 	// thumb：原文件 → 其全部缩略图（多尺寸）。
@@ -720,7 +720,7 @@ func TestSelectAssociated(t *testing.T) {
 	}
 
 	// 正交并集：select(ori, thumb) 在缩略图上 → {缩略图自身 ∪ 原图} = 整族。
-	family := out.selectAssociated(thumbs, []string{"ori", "thumb"})
+	family := out.selectAssociated(thumbs, []string{"origin", "thumb"})
 	if len(family) != 3 { // 2 thumbs + 1 ori（去重）
 		t.Fatalf("select(ori,thumb) family: got %d want 3: %v", len(family), family)
 	}
@@ -750,20 +750,20 @@ func TestSelectAssociated(t *testing.T) {
 		t.Fatal(err)
 	}
 	cap.waitFor(t, EvDone)
-	stats, err := backend.GetStats(Filter{Expr: leaf("md5", "eq", testutil.MD5F), Stages: []Stage{{Kind: "select", Kinds: []string{"dup"}}}})
+	stats, err := backend.GetStats(Filter{Expr: leaf("fileId", "eq", testutil.MD5F), Stages: []Stage{{Kind: "select", Kinds: []string{"dup"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if stats.Count != 3 {
 		t.Fatalf("select(dup) via Filter: got %d want 3", stats.Count)
 	}
-	// 缩略图筛选 + select(ori)：只有 MD5A 有原图 → 1 条。
-	oriStats, err := backend.GetStats(Filter{Expr: leaf("thumb", "eq", "true"), Stages: []Stage{{Kind: "select", Kinds: []string{"ori"}}}})
+	// 缩略图筛选 + select(origin)：只有 MD5A 有原图 → 1 条。
+	oriStats, err := backend.GetStats(Filter{Expr: leaf("thumb", "eq", "true"), Stages: []Stage{{Kind: "select", Kinds: []string{"origin"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if oriStats.Count != 1 {
-		t.Fatalf("select(ori) via Filter: got %d want 1 (only MD5A has an Ori)", oriStats.Count)
+		t.Fatalf("select(origin) via Filter: got %d want 1 (only MD5A has an Ori)", oriStats.Count)
 	}
 	// 未知 select 类别：无贡献（前端解析器严格校验；这里是 API 误用兜底）。
 	noop, err := backend.GetStats(Filter{Expr: leaf("thumb", "eq", "true"), Stages: []Stage{{Kind: "select", Kinds: []string{"nonsense"}}}})
@@ -778,7 +778,7 @@ func TestSelectAssociated(t *testing.T) {
 	// take(1) | select(dup) → 3（取到 md5F 后展开为内容组）；
 	// select(dup) | take(1) → 1（展开后截断）。
 	takeThenSelect, err := backend.GetStats(Filter{
-		Expr:   leaf("md5", "eq", testutil.MD5F),
+		Expr:   leaf("fileId", "eq", testutil.MD5F),
 		Stages: []Stage{{Kind: "take", N: 1}, {Kind: "select", Kinds: []string{"dup"}}},
 	})
 	if err != nil {
@@ -788,7 +788,7 @@ func TestSelectAssociated(t *testing.T) {
 		t.Fatalf("take(1)|select(dup): got %d want 3", takeThenSelect.Count)
 	}
 	selectThenTake, err := backend.GetStats(Filter{
-		Expr:   leaf("md5", "eq", testutil.MD5F),
+		Expr:   leaf("fileId", "eq", testutil.MD5F),
 		Stages: []Stage{{Kind: "select", Kinds: []string{"dup"}}, {Kind: "take", N: 1}},
 	})
 	if err != nil {

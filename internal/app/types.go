@@ -39,7 +39,7 @@ type ScanOptions struct {
 // Condition is one leaf of a filter expression (Jira-style):
 // {field, operator, value}.
 type Condition struct {
-	Field string `json:"field"` // biz|sub|category|month|age|size|md5|reason|thumb|temp
+	Field string `json:"field"` // biz|sub|category|month|age|size|fileId|reason|thumb|temp
 	Op    string `json:"op"`    // eq|ne|in|gt|gte|lt|lte|contains
 	Value string `json:"value"`
 }
@@ -60,7 +60,7 @@ type Expr struct {
 // select(dup) | take(10)（先展开再取 10）语义不同。
 type Stage struct {
 	Kind  string   `json:"kind"`            // select|order|drop|take
-	Kinds []string `json:"kinds,omitempty"` // select: ori/thumb/dup（正交并集）
+	Kinds []string `json:"kinds,omitempty"` // select: origin/thumb/dup（正交并集）
 	Field string   `json:"field,omitempty"` // order: size|mtime|month|md5
 	Desc  bool     `json:"desc,omitempty"`  // order: 降序
 	N     int      `json:"n,omitempty"`     // drop/take: 条数

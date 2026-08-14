@@ -329,7 +329,7 @@ func sortIDs(out *Outcome, ids []int, s Sort) {
 			less = a.MTime < b.MTime
 		case "month":
 			less = a.Month < b.Month
-		default: // md5
+		default: // fileId
 			less = a.MD5 < b.MD5
 		}
 		if s.Desc {

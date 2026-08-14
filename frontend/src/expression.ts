@@ -22,10 +22,11 @@ export { leaf, group, isGroup } from "./exprbase";
 //   after/before 是 >/< 的可读别名（age/month 等时间性字段的自然写法），
 //   解析期规范化为 gt/lt（序列化回显为 >/<）。
 //   operand   := WORD | STRING            （in 固定为括号列表，见下）
+//   size 的 WORD 可为带二进制单位的数字：1k/1m/1g/1t（解析期折算为字节）
 //   inOperand := "(" WORD ("," WORD)* ")"
 //   pipeline  := stepFirst ["|" step]*
 //   stepFirst := step                     （文本开头可省略 |）
-//   step      := "select" "(" KIND ("," KIND)* ")"
+//   step      := "select" "(" KIND ("," KIND)* ")"   KIND ∈ origin|thumb|dup
 //              | "order" "(" FIELD "," ("asc"|"desc") ")"
 //              | ("take"|"drop") "(" INT ")"
 //
@@ -61,10 +62,10 @@ const SYM_OPS: Record<string, string> = {
 const STEP_NAMES = ["select", "order", "take", "drop"];
 
 // select() 的合法维度（docs/04 §3：正交并集）。
-const SELECT_KINDS = ["ori", "thumb", "dup"];
+const SELECT_KINDS = ["origin", "thumb", "dup"];
 
 // order() 可用的排序字段（与后端 sortIDs 一致）
-export const ORDERABLE_FIELDS = ["size", "mtime", "month", "md5"];
+export const ORDERABLE_FIELDS = ["size", "mtime", "month", "fileId"];
 
 // ---- 词法 ----
 
@@ -220,7 +221,7 @@ class Parser {
       if (!fnTok || fnTok.t !== "word" || !this.isStepName(fnTok.v)) {
         return {
           stages: [],
-          error: "| 后需要函数名：select(ori|thumb|dup) / order(field, asc|desc) / take(n) / drop(n)",
+          error: "| 后需要函数名：select(origin|thumb|dup) / order(field, asc|desc) / take(n) / drop(n)",
         };
       }
       const s = this.parseStep();
@@ -235,7 +236,7 @@ class Parser {
     if (!fnTok || fnTok.t !== "word") {
       return {
         stage: { kind: "select", kinds: [] },
-        error: "| 后需要函数名：select(ori|thumb|dup) / order(field, asc|desc) / take(n) / drop(n)",
+        error: "| 后需要函数名：select(origin|thumb|dup) / order(field, asc|desc) / take(n) / drop(n)",
       };
     }
     const name = fnTok.v.toLowerCase();
@@ -277,7 +278,7 @@ class Parser {
 
   private parseSelect(): { stage: Stage; error?: string } {
     if (this.peek()?.t !== "lparen") {
-      return { stage: { kind: "select", kinds: [] }, error: "select 需要括号参数，如 select(ori, thumb)" };
+      return { stage: { kind: "select", kinds: [] }, error: "select 需要括号参数，如 select(origin, thumb)" };
     }
     const l = this.parseWordList();
     if (l.error) return { stage: { kind: "select", kinds: [] }, error: l.error };
@@ -286,7 +287,7 @@ class Parser {
     if (bad) {
       return {
         stage: { kind: "select", kinds: [] },
-        error: `select() 的参数必须是 ori / thumb / dup 之一（收到「${bad}」）`,
+        error: `select() 的参数必须是 origin / thumb / dup 之一（收到「${bad}」）`,
       };
     }
     return { stage: { kind: "select", kinds } };
@@ -352,11 +353,23 @@ class Parser {
         error: `未知字段「${f.v}」（可用：${FILTER_FIELDS.map((d) => d.field).join(" / ")}）`,
       };
     }
+    const def = FILTER_FIELDS.find((d) => d.field === f.v)!;
+    // 数值字段（size，toBytes）：值必须是数字，可带二进制单位后缀
+    // k/m/g/t（1k=1024B…），解析期折算为规范字节值存入树。
+    const norm = (raw: string): string | null => {
+      if (!def.toBytes) return raw;
+      const m = /^(\d+)([kmgt]?)$/i.exec(raw);
+      if (!m) return null;
+      const mult: Record<string, number> = { "": 1, k: 1024, m: 1024 ** 2, g: 1024 ** 3, t: 1024 ** 4 };
+      return String(Number(m[1]) * mult[m[2].toLowerCase()]);
+    };
     const o = this.next();
     if (!o || o.t !== "op") {
       return { expr: null, error: `字段「${f.v}」后缺少操作符（= != ~ in after before > >= < <=）` };
     }
     const op = SYM_OPS[o.v] ?? o.v;
+    const sizeErr = (raw: string) =>
+      `${f.v} 的值必须是数字（可带单位 k/m/g/t，如 1g；收到「${raw}」）`;
     if (op === "in") {
       // in 的操作数固定为括号列表（树内存储为逗号连接的字符串，
       // 与后端 matchOne 的 split(",") 契约一致）。
@@ -365,13 +378,18 @@ class Parser {
       }
       const l = this.parseWordList();
       if (l.error) return { expr: null, error: l.error };
-      return { expr: leaf(f.v, op, l.words.join(",")) };
+      const vals = l.words.map(norm);
+      const bad = vals.findIndex((v) => v === null);
+      if (bad >= 0) return { expr: null, error: sizeErr(l.words[bad]) };
+      return { expr: leaf(f.v, op, vals.join(",")) };
     }
     const v = this.next();
     if (!v || (v.t !== "word" && v.t !== "str")) {
       return { expr: null, error: "操作符后缺少值（含空格的值请加引号）" };
     }
-    return { expr: leaf(f.v, op, v.v) };
+    const nv = norm(v.v);
+    if (nv === null) return { expr: null, error: sizeErr(v.v) };
+    return { expr: leaf(f.v, op, nv) };
   }
 
   // 递归下降：orExpr := andExpr (OR andExpr)*

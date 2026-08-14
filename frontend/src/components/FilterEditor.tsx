@@ -21,7 +21,7 @@ interface Props {
 // select() 管道的三个正交维度（可多选，并集展开）：把结果集替换为其中
 // 文件关联的另一组文件。
 const SELECT_KINDS = [
-  { value: "ori", label: "原文件" },
+  { value: "origin", label: "原文件" },
   { value: "thumb", label: "缩略图" },
   { value: "dup", label: "重复副本" },
 ] as const;
@@ -33,8 +33,8 @@ const HELP_FIELDS: { field: string; note: string }[] = [
   { field: "category", note: "分类路径片段，如 marketface / personal-emoji" },
   { field: "month", note: "月份，形如 2024-09（字符串比较即时间序）" },
   { field: "age", note: "修改于 N 天前（数值）" },
-  { field: "size", note: "字节（编辑器中按 MB 输入）" },
-  { field: "md5", note: "文件ID：QQ 取自原文件名的 md5（标识文件，与内容无关）；~ 可按前缀匹配" },
+  { field: "size", note: "字节，可带单位 k/m/g/t（如 1g = 1024³）；编辑器中按 MB 输入" },
+  { field: "fileId", note: "文件ID：QQ 取自原文件名的 md5（标识文件，与内容无关）；~ 可按前缀匹配" },
   { field: "contentHash", note: "SHA-256 内容哈希（仅同大小冲突组计算）；~ 可按前缀匹配" },
   { field: "reason", note: "说明标签（缩略图/原图仍在/有缩略图/重复出现…）" },
   { field: "thumb", note: "是否缩略图：true / false" },
@@ -495,7 +495,7 @@ export function FilterEditor({
                 <div className="help-sec">
                   <b>管道函数</b>
                   <div>
-                    select(ori|thumb|dup, 可多个)：把结果替换为其中文件关联的原文件/缩略图/同内容副本（并集展开）
+                    select(origin|thumb|dup, 可多个)：把结果替换为其中文件关联的原文件/缩略图/同内容副本（并集展开）
                   </div>
                   <div>
                     order(size|mtime|month|md5, asc|desc)：排序，可链多个
@@ -509,7 +509,7 @@ export function FilterEditor({
                 <div className="help-sec">
                   <b>示例</b>
                   <div>thumb = true AND age &gt;= 90 | take(100)</div>
-                  <div>size &gt; 104857600 | order(size, desc) | drop(10)</div>
+                  <div>size &gt; 100m | order(size, desc) | drop(10)</div>
                   <div>biz in (pic, video) OR category ~ marketface</div>
                   <div>(biz = pic AND size &gt; 1048576) OR month &lt; 2025-01</div>
                   <div>contentHash ~ 9f2e | select(dup)</div>

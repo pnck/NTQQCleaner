@@ -104,7 +104,7 @@ runtime.EventsEmit(ctx, "scan:progress", map[string]any{"done": n, "total": tota
 
 ```
 条件布尔树（AND/OR 组 + 条件叶子，支持括号/引号）
-  | select(ori|thumb|dup)    关联展开：把结果集替换为其中文件关联的其它文件
+  | select(origin|thumb|dup)    关联展开：把结果集替换为其中文件关联的其它文件
   | order(field, asc|desc)   排序（可叠加 = 多关键字）
   | drop(n)                  跳过前 n 条
   | take(n)                  取前 n 条
@@ -114,27 +114,29 @@ runtime.EventsEmit(ctx, "scan:progress", map[string]any{"done": n, "total": tota
   输出——`take(10) | select(dup)`（先取 10 条再展开）与
   `select(dup) | take(10)`（先展开再截断）语义不同，序列化不做改写；
   管道函数接在表达式末尾，纯管道表达式（无条件）也合法：
-  `select(ori, thumb) | take(100)`
+  `select(origin, thumb) | take(100)`
 - 条件叶子：`字段 操作符 值`，AND（且）/ OR（或）连接，( ) 嵌套分组，含空格
   的值加引号 `"…"`
 - 操作符：`=` `!=` `~`（包含 = 子串匹配 LIKE %值%） `in` `>` `>=` `<` `<=`，
   `after`/`before` 是 `>`/`<` 的可读别名（age/month 等时间性字段的自然
   写法，解析后规范化为 `>`/`<`）
-  - `in` 的列表必须写在括号内：`biz in (pic, video)`（单值 `biz in pic` 兼容）；
-    逗号**只能**出现在 `in(...)` / `select(...)` / `order(...)` 的括号内，不能
-    并列语句（`biz in pic, size>0` 是非法语法，报错指向明确）
-  - size/age 按数值比较（`in` 支持括号列表）；month 的操作数按**可计算时间**
-    比较——YYYY-MM 解析为当月起始时间戳（实现细节不对用户暴露，用户仍写
-    YYYY-MM），字符串序在跨年/缺位写法下不可靠；`in`/`after`/`before` 同样适用
-  - `md5` / `contentHash` 是普通字符串字段：`contentHash ~ <前缀>` 即可按
+  - `in` 的列表必须写在括号内：`biz in (pic, video)`；逗号**只能**出现在
+    `in(...)` / `select(...)` / `order(...)` 的括号内，不能并列语句
+    （`biz in pic, size>0` 是非法语法，报错指向明确）
+  - size/age 按数值比较（`in` 支持括号列表）；size 支持二进制单位后缀
+    `k/m/g/t`（如 `size > 1g` = 1073741824 字节，解析期折算，序列化输出
+    字节数）；month 的操作数按**可计算时间**比较——YYYY-MM 解析为当月起始
+    时间戳（实现细节不对用户暴露，用户仍写 YYYY-MM），字符串序在跨年/
+    缺位写法下不可靠；`in`/`after`/`before` 同样适用
+  - `fileId` / `contentHash` 是普通字符串字段：`contentHash ~ <前缀>` 即可按
     哈希前缀/片段筛选（哈希在详情面板完整显示，可复制）
-- `select` 的三个维度**正交**，可多选取并集：`select(ori, thumb, dup)`：
-  - `ori`：缩略图 → 其原文件（文件名 md5 配对）；原文件保留自身；无配对无贡献
+- `select` 的三个维度**正交**，可多选取并集：`select(origin, thumb, dup)`：
+  - `origin`：缩略图 → 其原文件（文件名 md5 配对）；原文件保留自身；无配对无贡献
   - `thumb`：原文件 → 其全部缩略图（多尺寸）；缩略图保留自身
   - `dup`：展开为内容哈希组（字节级相同的全部文件，含列表内自身）；无哈希（大小唯一）无贡献
-- 典型用法：`thumb = true AND age >= 90 | select(ori) | take(100)`
+- 典型用法：`thumb = true AND age >= 90 | select(origin) | take(100)`
   （把 90 天前的缩略图圈定，展开为其原图再看前 100 个）；
-  `select(ori, thumb)` = 圈定文件的完整家族（原图 + 全部缩略图）
+  `select(origin, thumb)` = 圈定文件的完整家族（原图 + 全部缩略图）
 
 ---
 

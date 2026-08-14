@@ -215,8 +215,8 @@ export default function App() {
   const onlyThumb = getSimpleExpr(expr, "thumb") === "true";
   const setOnlyThumb = (v: boolean) =>
     editExprFn((e) => setSimpleExpr(e, "thumb", "eq", v ? "true" : ""));
-  const searchQ = getSimpleExpr(expr, "md5");
-  const setSearchQ = (q: string) => editExprFn((e) => setSimpleExpr(e, "md5", "contains", q));
+  const searchQ = getSimpleExpr(expr, "fileId");
+  const setSearchQ = (q: string) => editExprFn((e) => setSimpleExpr(e, "fileId", "contains", q));
 
   // ---- selection ----
   const toggleChecked = useCallback((id: number) => {
