@@ -118,6 +118,15 @@ export interface NamedFilter {
 const MB = 1024 * 1024;
 export const DEFAULT_SORT: Sort = { field: "size", desc: true };
 
+// monthAgo 返回 N 天前所在月份的 "YYYY-MM"。时间预设（「XX前」）用月份
+// 边界表达（month lte YYYY-MM）而不是 age 天数——与左栏月份树的勾选天然
+// 联动；边界在种入时按当日计算，之后作为普通筛选器保存。
+function monthAgo(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 // SEED_FILTERS 仅是「首次启动」写入用户筛选器列表的种子：写入后它们就是
 // 普通筛选器，与用户自建的完全同权（可重排/修改/置顶/删除）。之后每次
 // 启动都以存储为准，删除即永久删除。
@@ -125,7 +134,10 @@ export const SEED_FILTERS: NamedFilter[] = [
   { name: "全部", expr: null, sort: DEFAULT_SORT, pinned: true },
   {
     name: "缩略图 · 90天前",
-    expr: group("and", [leaf("thumb", "eq", "true"), leaf("age", "gte", "90")]),
+    expr: group("and", [
+      leaf("thumb", "eq", "true"),
+      leaf("month", "lte", monthAgo(90)),
+    ]),
     sort: { field: "size", desc: true },
     pinned: true,
   },
@@ -137,7 +149,7 @@ export const SEED_FILTERS: NamedFilter[] = [
   },
   {
     name: "一年前",
-    expr: leaf("age", "gte", "365"),
+    expr: leaf("month", "lte", monthAgo(365)),
     sort: { field: "mtime", desc: false },
     pinned: true,
   },
@@ -158,7 +170,9 @@ export const SEED_FILTERS: NamedFilter[] = [
 const KEY = "ntqq-cleaner-named-filters";
 // 种子合并标记：旧版本（内置筛选器硬编码在代码里）升级时只合并一次，
 // 之后存储就是唯一权威——用户删除内置筛选器后不会在下次启动被复活。
+// 预设语义升级（如「XX前」改用 month 匹配）时递增 SEED_VERSION 重种。
 const SEEDED_KEY = "ntqq-cleaner-named-filters-seeded";
+const SEED_VERSION = "2";
 
 // legacyStages 迁移旧存储的 select/orders/limit/offset 字段（旧规范顺序
 // select → order → drop → take）为统一管道 stages。
@@ -220,16 +234,18 @@ function readStored(): NamedFilter[] {
   }
 }
 
-// loadFilters 返回完整筛选器列表。首次使用（或旧版本首次升级）时把内置
-// 种子写入存储——从此种子与自定义筛选器地位完全相同。同名条目保留用户
-// 已有的（用户版本优先），避免旧版本自定义筛选器与内置重名时产生重复。
+// loadFilters 返回完整筛选器列表。首次使用（或预设语义升级）时把内置
+// 种子写入存储——从此种子与自定义筛选器地位完全相同。升级重种时内置
+// 种子**覆盖同名条目**（预设语义变更，如「XX前」从 age 改为 month 边界），
+// 其余用户条目保留；此后存储就是唯一权威。
 export function loadFilters(): NamedFilter[] {
   const stored = readStored();
-  if (localStorage.getItem(SEEDED_KEY) === "1") return stored;
-  const names = new Set(stored.map((f) => f.name));
-  const merged = [...SEED_FILTERS.filter((s) => !names.has(s.name)).map((s) => ({ ...s })), ...stored];
+  if (localStorage.getItem(SEEDED_KEY) === SEED_VERSION) return stored;
+  const seedNames = new Set(SEED_FILTERS.map((s) => s.name));
+  const rest = stored.filter((f) => !seedNames.has(f.name));
+  const merged = [...SEED_FILTERS.map((s) => ({ ...s })), ...rest];
   localStorage.setItem(KEY, JSON.stringify(merged));
-  localStorage.setItem(SEEDED_KEY, "1");
+  localStorage.setItem(SEEDED_KEY, SEED_VERSION);
   return merged;
 }
 

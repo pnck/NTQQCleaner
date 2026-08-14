@@ -1,4 +1,4 @@
-import type { Expr, Stage } from "./types";
+import type { Condition, Expr, Stage } from "./types";
 import { FILTER_FIELDS } from "./filters";
 import { leaf, group } from "./exprbase";
 
@@ -629,6 +629,60 @@ export function setSearchExpr(root: Expr | null | undefined, q: string): Expr | 
     children.push(searchShape(q));
   }
   return children.length > 0 ? group(kind, children) : null;
+}
+
+// ---- 月份树联动 ----
+// 左侧月份树的勾选 = 通过当前表达式**全部**月份条件的月份。求值与后端
+// matchOne 的可计算时间比较一致：YYYY-MM 解析为当月起始时间戳；解析
+// 失败 fail closed（ne 对不可解析值恒真）；contains 在规范字符串上做
+// 子串匹配。预设（month lte …）应用后左栏月份随动。
+
+function monthStamp(s: string): number {
+  return Date.parse(`${s.trim()}-01T00:00:00`);
+}
+
+export function monthCondPasses(c: Condition, m: string): boolean {
+  const mv = monthStamp(m);
+  if (!Number.isFinite(mv)) return false;
+  if (c.op === "contains") return m.includes(c.value.trim());
+  if (c.op === "in") {
+    return c.value.split(",").some((item) => {
+      const w = monthStamp(item);
+      return Number.isFinite(w) && w === mv;
+    });
+  }
+  const w = monthStamp(c.value);
+  if (!Number.isFinite(w)) return c.op === "ne";
+  switch (c.op) {
+    case "eq":
+      return mv === w;
+    case "ne":
+      return mv !== w;
+    case "gt":
+      return mv > w;
+    case "gte":
+      return mv >= w;
+    case "lt":
+      return mv < w;
+    case "lte":
+      return mv <= w;
+  }
+  return false;
+}
+
+// monthsInFilter：通过全部月份条件的月份；无月份条件时为空列表。
+export function monthsInFilter(root: Expr | null | undefined, months: string[]): string[] {
+  const conds: Condition[] = [];
+  const walk = (e: Expr) => {
+    if (e.c) {
+      if (e.c.field === "month") conds.push(e.c);
+      return;
+    }
+    (e.and ?? e.or ?? []).forEach(walk);
+  };
+  if (root) walk(root);
+  if (conds.length === 0) return [];
+  return months.filter((m) => conds.every((c) => monthCondPasses(c, m)));
 }
 
 // ---- 通用树路径操作（编辑对话框用）----

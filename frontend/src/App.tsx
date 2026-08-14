@@ -14,6 +14,7 @@ import {
   getInExpr,
   getSearchExpr,
   getSimpleExpr,
+  monthsInFilter,
   setInExpr,
   setSearchExpr,
   setSimpleExpr,
@@ -269,6 +270,13 @@ export default function App() {
     [monthGroups, expr, setMonths],
   );
   const onlyThumb = getSimpleExpr(expr, "thumb") === "true";
+  // 月份树随动：勾选态 = 通过当前表达式全部月份条件的月份（in 列表、
+  // month lte/gt 范围、after/before、contains）——预设应用后左栏月份
+  // 自动呈现匹配到的月份；点击仍是在 in 列表上的正负切换。
+  const activeMonths = useMemo(
+    () => monthsInFilter(expr, monthGroups.map((g) => g.key)),
+    [expr, monthGroups],
+  );
   const setOnlyThumb = (v: boolean) =>
     editExprFn((e) => setSimpleExpr(e, "thumb", "eq", v ? "true" : ""));
   // 搜索框：文件ID 或 内容哈希 任一匹配。搜索词在表达式里至多一个
@@ -599,7 +607,7 @@ export default function App() {
           bizGroups={bizGroups}
           monthGroups={monthGroups}
           activeBizs={getInExpr(expr, "biz")}
-          activeMonths={getInExpr(expr, "month")}
+          activeMonths={activeMonths}
           onToggleBiz={toggleBiz}
           onToggleMonth={toggleMonth}
           onShiftBiz={shiftBiz}
