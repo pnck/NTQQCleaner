@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { SyntheticEvent } from "react";
 import { api } from "../api";
 import { explainReason } from "../reasons";
 import type { FileRow } from "../types";
@@ -51,12 +52,71 @@ function playable(row: FileRow): boolean {
   );
 }
 
+// 音量/静音与自动播放是**全局单例**（模块级）：切换媒体文件（视频/音频
+// 元素按 src 重挂载）或切换行后状态保留；原生控件的改动经 volumechange
+// 回流到单例。
+const volumeState = { v: 1, muted: false };
+const autoLoopState = { on: false };
+
+// MediaEl：视频/音频元素。挂载回调里**先于播放**套用音量/静音/循环
+// （autoPlay 属性会立即起播，放 effect 里会在播放后跳变）；自动循环的
+// 起播在 effect 里做——WebKit 自动播放策略下非用户手势只允许静音起播，
+// 'playing' 后恢复单例的静音状态（切换媒体文件时也能自动续播）。
+function MediaEl({
+  src,
+  kind,
+  autoLoop,
+  onEl,
+}: {
+  src: string;
+  kind: "video" | "audio";
+  autoLoop: boolean;
+  onEl: (el: HTMLVideoElement | HTMLAudioElement | null) => void;
+}) {
+  const ref = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.loop = autoLoop;
+    if (!autoLoop) return;
+    const wasMuted = volumeState.muted;
+    el.muted = true;
+    const restore = () => {
+      el.removeEventListener("playing", restore);
+      el.muted = wasMuted;
+    };
+    el.addEventListener("playing", restore);
+    void el.play().catch(() => {});
+  }, [src, autoLoop]);
+  const elProps = {
+    key: src,
+    src,
+    controls: true,
+    autoPlay: true,
+    ref: (el: HTMLVideoElement | HTMLAudioElement | null) => {
+      ref.current = el;
+      onEl(el);
+      if (el) {
+        el.volume = volumeState.v;
+        el.muted = volumeState.muted;
+        el.loop = autoLoop;
+      }
+    },
+    onVolumeChange: (e: SyntheticEvent<HTMLVideoElement | HTMLAudioElement>) => {
+      volumeState.v = e.currentTarget.volume;
+      volumeState.muted = e.currentTarget.muted;
+    },
+  };
+  return kind === "video" ? <video {...elProps} /> : <audio {...elProps} />;
+}
+
 export function PreviewPanel({ row, rows, dupMode, onNavigate, onToast, onSelectDups }: Props) {
   // 初始态 = 缩略图 + 叠层图标；点击后切换为播放器/原文件（视频/音频即自动播放）。
   // 状态按 row.id 记录，切行时自动回到初始态。
   const [played, setPlayed] = useState<number | null>(null);
   const [forceBig, setForceBig] = useState<number | null>(null);
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
+  const [autoLoop, setAutoLoop] = useState(autoLoopState.on);
 
   // 空格 = 播放/暂停当前媒体（键盘操作无说明文案）；焦点在输入控件时
   // 不接管。媒体尚未切换（仍是缩略图叠层）时直接开始播放。
@@ -115,6 +175,22 @@ export function PreviewPanel({ row, rows, dupMode, onNavigate, onToast, onSelect
         <button disabled={!next} onClick={() => next && onNavigate(next)}>
           →
         </button>
+        <label className="autoplay-toggle" title="勾选后循环自动播放当前媒体">
+          <input
+            type="checkbox"
+            checked={autoLoop}
+            onChange={(e) => {
+              const on = e.target.checked;
+              autoLoopState.on = on;
+              setAutoLoop(on);
+              // 勾选 = 直接尝试开始循环播放：尚未切换到播放器时先切换。
+              // 不做「可播放性」预判——扩展名与 MIME 常不一致（如 jpg
+              // 实为 webp），交给元素自身尽力播放即可。
+              if (on && !full) setPlayed(row.id);
+            }}
+          />
+          自动播放
+        </label>
         <span className="stage" style={{ marginLeft: "auto" }}>
           {idx + 1} / {rows.length}
         </span>
@@ -136,25 +212,14 @@ export function PreviewPanel({ row, rows, dupMode, onNavigate, onToast, onSelect
             <br />
             <button onClick={() => setForceBig(row.id)}>仍然加载</button>
           </div>
-        ) : kind === "video" ? (
-          <video
-            key={src}
-            ref={(el) => {
+        ) : kind === "video" || kind === "audio" ? (
+          <MediaEl
+            src={src}
+            kind={kind}
+            autoLoop={autoLoop}
+            onEl={(el) => {
               mediaRef.current = el;
             }}
-            src={src}
-            controls
-            autoPlay
-          />
-        ) : kind === "audio" ? (
-          <audio
-            key={src}
-            ref={(el) => {
-              mediaRef.current = el;
-            }}
-            src={src}
-            controls
-            autoPlay
           />
         ) : kind === "card" ? (
           <div className="big-warn">

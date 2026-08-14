@@ -419,9 +419,20 @@ button.chip {
 
 .preview .nav {
   display: flex;
+  align-items: center;
   gap: 6px;
   padding: 8px;
   border-bottom: 1px solid var(--border);
+}
+
+/* 导航内的自动播放开关：与方向按钮同行，不挤占右侧位置指示 */
+.autoplay-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
 }
 
 .preview .media {
