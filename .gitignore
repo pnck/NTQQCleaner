@@ -14,7 +14,6 @@ frontend/wailsjs/
 *.test
 
 # tool
-.qq-cleaner/
 *.log
 
 # os
@@ -23,3 +22,4 @@ Thumbs.db
 
 # 本地容器编排（含 API key，勿提交）
 claude-code.yml
+.claude/

@@ -72,7 +72,7 @@ func BuildQQTree(t *testing.T) *Fixture {
 
 	// --- account A ---
 	f.NtDataA = filepath.Join(root, "nt_qq_"+HashA, "nt_data")
-	mkFile(t, filepath.Join(f.NtDataA, "UnitedConfig", QQA, "10001", "config"), []byte("x"), Now.AddDate(0, 0, -10))
+	mkFile(t, filepath.Join(f.NtDataA, "UnitedConfig", QQA, "10002", "config"), []byte("x"), Now.AddDate(0, 0, -10))
 
 	mkFile(t, filepath.Join(f.NtDataA, "Pic", "2023-01", "Ori", MD5A+".jpg"), bytesN(2<<20), nowDate(2023, 1, 15))
 	mkFile(t, filepath.Join(f.NtDataA, "Pic", "2023-01", "Thumb", MD5A+"_720.jpg"), bytesN(80<<10), nowDate(2023, 1, 15))
