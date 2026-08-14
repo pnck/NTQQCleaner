@@ -82,7 +82,10 @@ export function PhotoWall({ query, queryKey, selected, checked, onSelect, onTogg
   const [cols, setCols] = useState(4);
   const [loading, setLoading] = useState(false);
   const nextPage = useRef(1);
-  const key = useRef(queryKey);
+  // 初始值 null：挂载即触发首次加载。此前用 useRef(queryKey) 初值，
+  // 挂载时与当前 queryKey 相等导致首屏跳过加载——扫描完成/清理报错后的
+  // 重挂载都会出现空白墙，直到筛选器变化才恢复。
+  const key = useRef<string | null>(null);
 
   // Reset and reload the first page whenever the query changes.
   useEffect(() => {

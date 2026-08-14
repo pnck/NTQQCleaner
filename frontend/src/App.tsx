@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, events } from "./api";
+import { QQRunningError, api, events } from "./api";
 import { BottomBar } from "./components/BottomBar";
 import { DupesDialog } from "./components/DupesDialog";
 import { FilterEditor } from "./components/FilterEditor";
@@ -268,9 +268,10 @@ export default function App() {
     try {
       res = await runClean(false);
     } catch (e) {
-      // 后端哨兵错误：QQ 运行中。POSIX 下 unlink 不被写锁阻塞，但 QQ
-      // 正在写的缓存条目可能失效（重新下载即恢复）—— 二次确认后可覆盖。
-      if (String(e) === "qq-running") {
+      // 后端哨兵：QQ 运行中（api 层已恢复为类型化 QQRunningError）。
+      // POSIX 下 unlink 不被写锁阻塞，但 QQ 正在写的缓存条目可能失效
+      // （重新下载即恢复）—— 二次确认后可覆盖。
+      if (e instanceof QQRunningError) {
         const again = await api.confirm(
           "QQ 正在运行",
           "检测到 QQ 进程正在运行。\n\n删除本身不会被写入锁阻塞，但 QQ 正在写入的缓存条目可能失效（重新下载即可恢复）。\n\n仍要继续清理吗？",

@@ -46,6 +46,37 @@ function call<T>(name: string, ...args: unknown[]): Promise<T> {
   return fn(...args) as Promise<T>;
 }
 
+// QQRunningError：后端预检哨兵的**类型化封装**。Wails 绑定只序列化
+// error 文本，Go 侧错误类型无法穿越边界——消息到类型的恢复集中在
+// 这一个边界点（clean 包装内），业务代码只 instanceof，不再匹配字符串。
+export class QQRunningError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "QQRunningError";
+  }
+}
+
+function errText(e: unknown): string {
+  if (typeof e === "string") return e;
+  const m = (e as { message?: unknown })?.message;
+  return m === undefined ? String(e) : String(m);
+}
+
+// clean 包装：捕获 Wails 的拒绝，把 QQ 运行守卫的错误恢复为类型化
+// 错误；其余错误原样抛出。后端哨兵（"qq-running"）与 clean 层
+// ErrQQRunning（"QQ is running…"）两种消息形态都在此归一。
+async function cleanBound(r: CleanRequest): Promise<CleanResult> {
+  try {
+    return await call<CleanResult>("Clean", r);
+  } catch (e) {
+    const msg = errText(e).toLowerCase();
+    if (msg.includes("qq-running") || msg.includes("qq is running")) {
+      throw new QQRunningError(errText(e));
+    }
+    throw e;
+  }
+}
+
 function callDialogs<T>(name: string, ...args: unknown[]): Promise<T> {
   const fn = window.go?.main?.Dialogs?.[name];
   if (!fn) throw new Error(`dialogs method ${name} not bound`);
@@ -64,7 +95,7 @@ export const api = {
   getIDs: (f: Filter) => call<number[]>("GetIDs", f),
   getDupes: (f: Filter) => call<DupGroup[]>("GetDupes", f),
   getGroups: (f: Filter, by: string) => call<GroupStat[]>("GetGroups", f, by),
-  clean: (r: CleanRequest) => call<CleanResult>("Clean", r),
+  clean: cleanBound,
   getConfig: () => call<Config>("GetConfig"),
   setConfig: (c: Config) => call<void>("SetConfig", c),
   reveal: (id: number) => call<void>("Reveal", id),
