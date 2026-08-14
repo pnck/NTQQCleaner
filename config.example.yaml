@@ -1,5 +1,7 @@
-# qq-cleaner 默认配置（docs/03_clean_rules.md §6）。
-# 复制为 ~/.qq-cleaner/config.yaml 后按需修改；未写出的键保持内置默认值。
+# NTQQ Cleaner 默认配置（docs/03_clean_rules.md §6；键名与内置默认值一一对应）。
+# 工具自身的全部文件都在系统临时目录（<tmp>/ntqq-cleaner/，本次开机内跨启动
+# 复用，OS 自动清理）：GUI 设置对话框改的就是这份；CLI 用 --config PATH 覆盖。
+# 未写出的键保持内置默认值。
 
 # 各类目开关：false = 只报告不清理（CLI 政策；GUI 全部放开，
 # 选什么清理由用户的筛选器决定）
@@ -10,11 +12,17 @@ clean_base_emoji: false      # 基础表情资源
 clean_marketface: false      # 表情包
 clean_personal_emoji: false  # 个人制作表情
 clean_file: false            # 文件传输目录
-clean_log: false             # 日志
-clean_avatar: false          # 头像缓存
+
+# 高级 opt-in 门控（设置对话框「高级」区；默认关，勾选后扫描与清理才覆盖）
+clean_log: false             # 运行日志（log/log-cache，QQ 自动重建）
+clean_dataline_tmp: false    # 传输缓存（dataline/.tmp NFC 残留）
+clean_avatar: false          # 头像缓存（重新拉取即可）
 
 # 只统计大于该字节数的文件
 min_file_size_bytes: 0
 
 # 永不扫描/清理的目录（黑名单硬编码兜底见 internal/rules/whitelist.go）
-skip_dirs: [mmkv, msf, OnlineStatus, UnitedConfig, config, log, log-cache, avatar]
+skip_dirs: [mmkv, msf, OnlineStatus, UnitedConfig, config]
+
+# 清理时把文件移动到的备份目录（空 = 直接删除，仅写审计报告）
+backup_dir: ""

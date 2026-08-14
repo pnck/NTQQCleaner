@@ -4,7 +4,7 @@
 
 export type Theme = "auto" | "light" | "dark";
 
-const KEY = "qq-cleaner-theme";
+const KEY = "ntqq-cleaner-theme";
 
 export function getTheme(): Theme {
   const t = localStorage.getItem(KEY);

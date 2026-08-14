@@ -1,4 +1,4 @@
-# QQ Cleaner — 更安全的 QQ 缓存清理工具
+# NTQQ Cleaner — 更安全的 NTQQ 缓存清理工具
 
 跨平台（macOS/Windows）QQ 桌面版缓存清理工具：**Go + Wails v2**（内嵌 Web UI）+ React 虚拟滚动照片墙，另提供 CLI 子命令供脚本/CI。**默认 dry-run，删除需显式确认。**
 

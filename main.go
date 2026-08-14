@@ -2,9 +2,9 @@
 //
 // Subcommands (docs/04 §8):
 //
-//	qq-cleaner scan  [--root R] [--account HASH] [--json] ...   dry-run scan
-//	qq-cleaner clean --file manifest.json [--force] ...         execute a manifest
-//	qq-cleaner gui                                             embedded web UI (default)
+//	ntqq-cleaner scan  [--root R] [--account HASH] [--json] ...   dry-run scan
+//	ntqq-cleaner clean --file manifest.json [--force] ...         execute a manifest
+//	ntqq-cleaner gui                                             embedded web UI (default)
 //
 // The default build is CLI-only; the GUI is included with `-tags wails`
 // (see Makefile). Both share the same internal/ logic and redlines.
@@ -79,7 +79,7 @@ scan flags:
   --only-biz NAME      only this biz dir (repeatable: Pic Video Ptt File dataline Emoji)
   --min-age-days N     skip files newer than N days (default 3)
   --min-size BYTES     skip files smaller than this (default 0)
-  --config PATH        config file (default ~/.qq-cleaner/config.yaml)
+  --config PATH        config file (default: <tmp>/ntqq-cleaner/config.yaml)
   --json               emit a JSON manifest (feed it to the clean command)
 
 clean flags:
@@ -94,7 +94,7 @@ whitelist/blacklist re-verified per file, QQ-running guard (--ignore-running
 覆盖需显式确认), audit log for every deletion, explicit --force + confirmation.
 `
 
-// configPath returns the default user config path (~/.qq-cleaner/config.yaml).
+// configPath returns the default config path (<tmp>/ntqq-cleaner/config.yaml).
 func configPath() string { return filepath.Join(app.ConfigDir(), "config.yaml") }
 
 // loadConfig reads --config or the default user config, falling back to

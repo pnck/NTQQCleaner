@@ -155,10 +155,10 @@ export const SEED_FILTERS: NamedFilter[] = [
   },
 ];
 
-const KEY = "qq-cleaner-named-filters";
+const KEY = "ntqq-cleaner-named-filters";
 // 种子合并标记：旧版本（内置筛选器硬编码在代码里）升级时只合并一次，
 // 之后存储就是唯一权威——用户删除内置筛选器后不会在下次启动被复活。
-const SEEDED_KEY = "qq-cleaner-named-filters-seeded";
+const SEEDED_KEY = "ntqq-cleaner-named-filters-seeded";
 
 // legacyStages 迁移旧存储的 select/orders/limit/offset 字段（旧规范顺序
 // select → order → drop → take）为统一管道 stages。

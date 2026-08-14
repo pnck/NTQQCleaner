@@ -31,7 +31,7 @@ type Backend struct {
 	emitter     Emitter
 	cfg         rules.Config
 	cfgPath     string
-	auditPath   string // "" = ~/.qq-cleaner/audit.log (injectable for tests)
+	auditPath   string // "" = tmp 下带时间戳的审计文件（测试可注入）
 	scanCtx     context.Context
 	cancel      context.CancelFunc
 	scanning    bool

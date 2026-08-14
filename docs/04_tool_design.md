@@ -28,7 +28,7 @@
 ## 2. 总体架构
 
 ```
-qq-cleaner/
+ntqq-cleaner/
 ├── main.go                 # 入口：wails.Run + Bind + embed.FS
 ├── internal/
 │   ├── discovery/          # 数据目录发现 + 账号识别（见 02）
@@ -277,7 +277,7 @@ func Run(req Request) (Result, error) {
 4. **Wails 安全**：仅加载 `embed.FS` 本地资源，禁止远程内容；`Bind` 只暴露白名单方法；
    前端事件与命令不经网络（Wails 原生 IPC，天然无 CSRF）
 5. **路径安全**：所有 `filepath` 操作用 `filepath.Clean` + 前缀校验，防 `..` 穿越
-6. **审计日志**：每次 Clean 写 `~/.qq-cleaner/audit.log`（或用户指定），含删除清单与校验和
+6. **审计日志**：每次 Clean 写系统 tmp 下带时间戳的 JSONL 审计报告（`--audit-log` 可指定；清理后自动打开，含逐文件动作与 reason 标签）
 
 ---
 
@@ -287,7 +287,7 @@ func Run(req Request) (Result, error) {
 # Makefile（Wails 官方 CLI 打包）
 # 开发:  wails dev      （热重载 + Vite）
 # 发布:  wails build -clean -trimpath -ldflags="-s -w"
-#        → build/bin/qq-cleaner（单二进制，前端已 embed）
+#        → build/bin/ntqq-cleaner（单二进制，前端已 embed）
 # Windows: 需 WebView2 运行时（Win10/11 自带）；wails build 默认无控制台窗口
 # macOS:  使用系统 WKWebView，无额外运行时
 # Linux:  需 webkit2gtk-4.0 库
@@ -313,11 +313,11 @@ func Run(req Request) (Result, error) {
 
 ## 8. 可选 CLI 子命令（无窗口模式）
 
-`qq-cleaner` 同时提供无 UI 入口（便于脚本/CI/无图形环境）：
+`ntqq-cleaner` 同时提供无 UI 入口（便于脚本/CI/无图形环境）：
 ```
-qq-cleaner scan [--root R] [--account HASH] [--json]     # dry-run 扫描输出 JSON
-qq-cleaner clean --file manifest.json [--backup-dir D]    # 按清单执行（需 --force 确认）
-qq-cleaner gui                                            # 默认：启动内嵌 Web 窗口
+ntqq-cleaner scan [--root R] [--account HASH] [--json]     # dry-run 扫描输出 JSON
+ntqq-cleaner clean --file manifest.json [--backup-dir D]    # 按清单执行（需 --force 确认）
+ntqq-cleaner gui                                            # 默认：启动内嵌 Web 窗口
 ```
 - `gui` 为默认命令；`scan/clean` 供无头环境与自动化
 - 前端 UI 与 CLI 共享同一 `internal/` 逻辑层，红线一致
