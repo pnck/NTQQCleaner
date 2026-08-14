@@ -57,3 +57,8 @@ func (windowsAdapter) MoveFile(src, dst string) error {
 func (windowsAdapter) Reveal(path string) error {
 	return exec.Command("explorer", "/select,", path).Start()
 }
+
+// OpenFile 用默认程序打开文件（cmd /c start）。
+func (windowsAdapter) OpenFile(path string) error {
+	return exec.Command("cmd", "/c", "start", "", path).Start()
+}

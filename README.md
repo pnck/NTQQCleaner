@@ -24,9 +24,9 @@
 
 ```sh
 task build-cli
-./build/bin/qq-cleaner-cli scan --root <QQ数据根>           # dry-run 统计（默认）
-./build/bin/qq-cleaner-cli scan --root R --json > m.json    # 生成清单
-./build/bin/qq-cleaner-cli clean --file m.json --force --backup-dir ~/qq-backup   # 执行（需输入 yes）
+./build/bin/ntqq-cleaner-cli scan --root <QQ数据根>           # dry-run 统计（默认）
+./build/bin/ntqq-cleaner-cli scan --root R --json > m.json    # 生成清单
+./build/bin/ntqq-cleaner-cli clean --file m.json --force --backup-dir ~/qq-backup   # 执行（需输入 yes）
 ```
 
 ### GUI
@@ -51,7 +51,7 @@ task dev          # 热重载开发（需 wails CLI + pnpm）
 | 默认 dry-run，零写入 | `app.Engine` 只读；`clean.Run` 需 Force+Confirmed |
 | 白名单/黑名单逐文件二次校验 | `rules.Whitelisted/Blacklisted` + `clean.VerifyPath` |
 | QQ 运行中拒绝清理 | `clean.QQRunning`（开始前 + 每 30s 复查） |
-| 删除必留痕：备份移动 或 SHA-256 审计 | `clean.deleteOne` + `~/.qq-cleaner/audit.log`（JSONL） |
+| 删除必留痕：备份移动 或 审计报告 | `clean.deleteOne` + 系统 tmp 下带时间戳的审计文件（清理后自动打开） |
 | 前端不可信，红线全在 Go 侧 | `internal/app` 不暴露任意路径/文件能力 |
 
 ## 架构
@@ -72,7 +72,7 @@ discover → classify → reason/关联索引 → report ──(dry-run)──�
 
 ## 配置
 
-`config.example.yaml` 含全部默认值（对齐 QQ 官方 3 天规则 259199s）。复制为 `~/.qq-cleaner/config.yaml` 后修改；GUI 设置对话框可改。
+`config.example.yaml` 含全部默认值（对齐 QQ 官方 3 天规则 259199s）。工具自身的全部文件都在系统临时目录（`<tmp>/ntqq-cleaner/`，本次开机内跨启动复用，OS 自动清理）；GUI 设置对话框可改。
 
 ## 测试
 

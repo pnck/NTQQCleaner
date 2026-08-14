@@ -20,6 +20,9 @@ type Adapter interface {
 
 	// Reveal 在系统文件管理器中定位文件（仅展示，不操作文件）。
 	Reveal(path string) error
+
+	// OpenFile 用系统默认程序打开文件（审计报告等）。
+	OpenFile(path string) error
 }
 
 // impl 由各平台 build-tagged 文件的 defaultAdapter() 初始化。

@@ -21,14 +21,11 @@ type auditEntry struct {
 	Reason     string `json:"reason"`
 }
 
-// maxAuditBytes 是审计日志的轮转上限（1 MiB）：工具自身不留垃圾——
-// 超出后旧日志滚动为 <path>.1（覆盖上一轮），只保留最近两份。
-const maxAuditBytes = 1 << 20
-
 // auditLogger appends JSONL records to a log file (created on demand).
+// 审计文件是每次清理生成的一份**临时报告**（位于系统 tmp），清理后
+// 由调用方打开供用户查看/另存——不轮转、不积累（工具自身不留垃圾）。
 type auditLogger struct {
-	f    *os.File
-	path string
+	f *os.File
 }
 
 func openAuditLog(path string) (*auditLogger, error) {
@@ -39,32 +36,12 @@ func openAuditLog(path string) (*auditLogger, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &auditLogger{f: f, path: path}, nil
+	return &auditLogger{f: f}, nil
 }
 
 func (a *auditLogger) Close() error { return a.f.Close() }
 
-func (a *auditLogger) rotate() error {
-	if err := a.f.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(a.path, a.path+".1"); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	f, err := os.OpenFile(a.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	a.f = f
-	return nil
-}
-
 func (a *auditLogger) Log(e auditEntry) error {
-	if st, err := a.f.Stat(); err == nil && st.Size() >= maxAuditBytes {
-		if err := a.rotate(); err != nil {
-			return err
-		}
-	}
 	e.Time = time.Now().Format(time.RFC3339)
 	b, err := json.Marshal(e)
 	if err != nil {

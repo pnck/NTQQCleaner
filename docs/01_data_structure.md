@@ -23,7 +23,7 @@
 │   ├── nt_data/                 # ★ 缓存主体（清理目标）
 │   ├── nt_db/                   # 账号加密库，读取需 dump enc_key，工具不清理
 │   └── nt_temp/                 # 临时文件，可清
-└── <数字>/                      # 旧版明文目录（登录前旧格式）
+└── <数字>/                      # 旧版明文目录（登录前旧格式；NTQQ Cleaner 不支持，fail-closed）
 ```
 
 **实例目录命名**：`nt_qq_` + MD5(MD5(uid) + "nt_kernel")。uid 是内部标识（≠ QQ 号），

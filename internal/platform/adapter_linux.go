@@ -32,3 +32,8 @@ func (linuxAdapter) QQProcesses() []string {
 func (linuxAdapter) Reveal(path string) error {
 	return exec.Command("xdg-open", filepath.Dir(path)).Start()
 }
+
+// OpenFile 用默认程序打开文件（xdg-open）。
+func (linuxAdapter) OpenFile(path string) error {
+	return exec.Command("xdg-open", path).Start()
+}

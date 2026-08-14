@@ -29,6 +29,11 @@ export function CleanReportDialog({ res, onClose }: Props) {
           处理 {res.processed}：移动到备份 {res.moved} · 已删除 {res.deleted} · 跳过{" "}
           {res.skipped} · 失败 {res.failed} · 释放 {fmtSize(res.bytesFreed)}
         </div>
+        {res.auditPath && (
+          <div style={{ fontSize: 11, color: "var(--text-dim)" }} title={res.auditPath}>
+            审计报告已生成并打开（系统临时目录，可另存；路径见悬浮提示）
+          </div>
+        )}
         <div className="clean-report">
           {items.length === 0 && <div className="cond-empty">无逐文件记录</div>}
           {items.map((it, i) => {

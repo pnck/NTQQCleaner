@@ -99,7 +99,7 @@ nt_qq_<32hex>  ↔  QQ <号码>     # 示例：任意账号目录均可识别
 ## 4. 新工作区建议结构
 
 ```
-qq-cleaner/
+ntqq-cleaner/
 ├── main.go                 # 入口：wails.Run + Bind + embed.FS
 ├── internal/
 │   ├── discovery/          # 数据目录发现 + 账号识别

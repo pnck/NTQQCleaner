@@ -1,4 +1,4 @@
-# qq-cleaner 构建目标（https://taskfile.dev）
+# ntqq-cleaner 构建目标（https://taskfile.dev）
 #
 #   task build                当前主机的原生 GUI 二进制
 #   task build-cli            纯 CLI 二进制（无 GUI 依赖，任何环境可构建）
@@ -27,7 +27,7 @@ vars:
     sh: command -v pnpm
   GOOS:
     sh: '{{.GO}} env GOOS'
-  APP: qq-cleaner
+  APP: ntqq-cleaner
   BINDIR: build/bin
   LDFLAGS: "-s -w"
   TAGS: wails,production

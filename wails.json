@@ -1,7 +1,7 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "qq-cleaner",
-  "outputfilename": "qq-cleaner",
+  "name": "ntqq-cleaner",
+  "outputfilename": "ntqq-cleaner",
   "frontend:install": "pnpm --config.verify-deps-before-run=warn install",
   "frontend:build": "pnpm --config.verify-deps-before-run=warn run build",
   "frontend:dev:watcher": "pnpm --config.verify-deps-before-run=warn run dev",

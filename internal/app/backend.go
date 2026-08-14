@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"qqcleaner/internal/classify"
 	"qqcleaner/internal/clean"
@@ -601,7 +602,9 @@ func (b *Backend) Clean(req CleanRequest) (CleanResult, error) {
 	roots := b.outcomeRootsLocked()
 	auditLog := b.auditPath
 	if auditLog == "" {
-		auditLog = filepath.Join(configDir(), "audit.log")
+		// 每次清理生成一份带时间戳的临时审计报告（系统 tmp），清理后
+		// 打开供用户查看/另存——不轮转、不积累。
+		auditLog = filepath.Join(configDir(), "audit-"+time.Now().Format("20060102-150405")+".jsonl")
 	}
 	b.mu.Unlock()
 
@@ -642,6 +645,10 @@ func (b *Backend) Clean(req CleanRequest) (CleanResult, error) {
 			Size:       it.Size,
 		})
 	}
+	// 审计报告已生成：打开供用户查看/另存（失败不影响清理结果）。
+	if err := platform.Current().OpenFile(auditLog); err != nil {
+		res.Errors = append(res.Errors, fmt.Sprintf("audit report %s: %v", auditLog, err))
+	}
 	return CleanResult{
 		Processed:  res.Processed,
 		Moved:      res.Moved,
@@ -650,17 +657,18 @@ func (b *Backend) Clean(req CleanRequest) (CleanResult, error) {
 		Failed:     res.Failed,
 		BytesFreed: res.BytesFreed,
 		Items:      items,
+		AuditPath:  auditLog,
 		Errors:     res.Errors,
 	}, nil
 }
 
-// ConfigDir returns the tool's config directory (~/.qq-cleaner).
+// ConfigDir returns the tool's own data directory — 系统 tmp 下的
+// ntqq-cleaner/（非 $HOME 隐藏目录）：工具写入的全部文件都是可弃的，
+// 由 OS 清理；config 与审计报告在本次开机内跨启动复用。
 func ConfigDir() string { return configDir() }
 
 func configDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ".qq-cleaner"
-	}
-	return filepath.Join(home, ".qq-cleaner")
+	d := filepath.Join(os.TempDir(), "ntqq-cleaner")
+	_ = os.MkdirAll(d, 0o755)
+	return d
 }

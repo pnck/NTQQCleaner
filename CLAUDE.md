@@ -1,4 +1,4 @@
-# CLAUDE.md — qq-cleaner
+# CLAUDE.md — ntqq-cleaner
 
 跨平台 QQ 缓存清理工具（Go + Wails v2 + React/TanStack Virtual）。设计文档在 `docs/`（7 份，是需求与规则的唯一权威来源）；安全红线见 `docs/06_safety_redlines.md`。
 
@@ -57,9 +57,8 @@ internal/qq          QQ 知识层抽象 + 版本 dispatcher：
                      识别平台×版本族）。上层（discovery/classify/rules/
                      clean）通过窄接口显式接收知识实现
 internal/qq/impl/nt      NT 架构实现（nt_qq_<32hex> 布局，macOS 已逆向；
-                         布局跨平台共享，根路径 per-OS 文件）
-internal/qq/impl/legacy  旧版占位（数字目录+msg3.0.db；ScanCapable=false
-                         保守拒绝，逆向完成后补全本包即可）
+                         布局跨平台共享，根路径 per-OS 文件）。仅支持 NT：
+                         旧版（数字目录+msg3.0.db）无实现、fail-closed
 internal/qqimpl          副作用导入注册 probe 与根路径；新增实现在此加一行
 internal/qq/generic.go   包内兜底：未知布局 fail-closed（拒绝扫描/清理，
                          仅保留版本无关黑名单底线）

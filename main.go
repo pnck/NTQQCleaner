@@ -1,4 +1,4 @@
-// qq-cleaner: a safer QQ cache cleaner (docs/README.md).
+// ntqq-cleaner: NTQQ cache cleaner (docs/README.md).
 //
 // Subcommands (docs/04 §8):
 //
@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"qqcleaner/internal/app"
 	"qqcleaner/internal/discovery"
@@ -52,7 +53,7 @@ func run(args []string) error {
 	case "gui":
 		return runGUI()
 	case "version", "-v", "--version":
-		fmt.Println("qq-cleaner", version)
+		fmt.Println("ntqq-cleaner", version)
 		return nil
 	case "help", "-h", "--help":
 		usage()
@@ -64,13 +65,13 @@ func run(args []string) error {
 
 func usage() { fmt.Print(usageText) }
 
-const usageText = `qq-cleaner — safer QQ cache cleaner (default: dry-run)
+const usageText = `ntqq-cleaner — NTQQ cache cleaner (default: dry-run)
 
 Usage:
-  qq-cleaner [gui]                              start the GUI (default)
-  qq-cleaner scan [flags]                       dry-run scan and report
-  qq-cleaner clean --file manifest.json [flags] execute a scan manifest
-  qq-cleaner version
+  ntqq-cleaner [gui]                              start the GUI (default)
+  ntqq-cleaner scan [flags]                       dry-run scan and report
+  ntqq-cleaner clean --file manifest.json [flags] execute a scan manifest
+  ntqq-cleaner version
 
 scan flags:
   --root PATH          QQ data root (default: auto-detect)
@@ -85,7 +86,7 @@ clean flags:
   --file PATH          manifest from scan --json (required)
   --force              required for any deletion (redline)
   --backup-dir PATH    move files there instead of deleting (recommended)
-  --audit-log PATH     JSONL audit log (default ~/.qq-cleaner/audit.log)
+  --audit-log PATH     JSONL audit report (default: a timestamped file under the OS temp dir)
   --config PATH        config file
 
 Redlines (always enforced, see docs/06): dry-run by default, path
@@ -228,7 +229,7 @@ func cleanCmd(args []string) error {
 		return err
 	}
 	if *auditLog == "" {
-		*auditLog = filepath.Join(app.ConfigDir(), "audit.log")
+		*auditLog = filepath.Join(app.ConfigDir(), "audit-"+time.Now().Format("20060102-150405")+".jsonl")
 	}
 
 	// 清单中的全部条目都进入清理流程；每个文件在 clean.Run 内逐条
@@ -265,6 +266,7 @@ func cleanCmd(args []string) error {
 	}
 	fmt.Printf("完成: 处理 %d, 移动 %d, 删除 %d, 跳过 %d, 失败 %d, 释放 %s\n",
 		res.Processed, res.Moved, res.Deleted, res.Skipped, res.Failed, humanSize(res.BytesFreed))
+	fmt.Printf("审计报告: %s\n", *auditLog)
 	for _, e := range res.Errors {
 		fmt.Fprintln(os.Stderr, "  !", e)
 	}

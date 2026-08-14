@@ -132,6 +132,7 @@ export interface CleanResult {
   failed: number;
   bytesFreed: number;
   items: CleanItem[];
+  auditPath: string; // 本次审计报告（系统 tmp，后端已打开）
   errors: string[];
 }
 
@@ -148,6 +149,7 @@ export interface Config {
   cleanAvatar: boolean; // 高级 opt-in：头像缓存
   minFileSizeBytes: number;
   skipDirs: string[];
+  backupDir: string; // 备份目录（空 = 直接删除，仅写审计报告）
 }
 
 export const BIZ_LABEL: Record<string, string> = {

@@ -25,12 +25,13 @@ const ADVANCED: { key: keyof Config; label: string; note: string }[] = [
 ];
 
 export function SettingsDialog({ open, onClose, theme, onThemeChange, config, onConfigSave }: Props) {
-  const [backup, setBackup] = useState(getBackupDir());
+  const [backup, setBackup] = useState("");
   const [advanced, setAdvanced] = useState<Record<string, boolean>>({});
 
-  // 打开时同步后端 config（含高级门控的持久值）。
+  // 打开时同步后端 config（备份目录 + 高级门控的暂存值，tmp 下跨启动复用）。
   useEffect(() => {
     if (!open || !config) return;
+    setBackup(config.backupDir ?? "");
     setAdvanced({
       cleanDatalineTmp: Boolean(config.cleanDatalineTmp),
       cleanLog: Boolean(config.cleanLog),
@@ -41,13 +42,13 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange, config, on
   if (!open) return null;
 
   const finish = () => {
-    setBackupDir(backup);
     if (config) {
       onConfigSave({
         ...config,
         cleanDatalineTmp: Boolean(advanced.cleanDatalineTmp),
         cleanLog: Boolean(advanced.cleanLog),
         cleanAvatar: Boolean(advanced.cleanAvatar),
+        backupDir: backup,
       });
     }
     onClose();
@@ -123,13 +124,4 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange, config, on
       </div>
     </div>
   );
-}
-
-// 备份目录暂存于模块级（进入 clean 请求时读取）。
-let backupDir = "";
-export function getBackupDir() {
-  return backupDir;
-}
-export function setBackupDir(d: string) {
-  backupDir = d;
 }

@@ -6,5 +6,4 @@ package qqimpl
 
 import (
 	_ "qqcleaner/internal/qq/impl/nt"
-	_ "qqcleaner/internal/qq/impl/legacy"
 )

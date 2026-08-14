@@ -7,7 +7,7 @@ import { FilterEditor } from "./components/FilterEditor";
 import { LeftTree } from "./components/LeftTree";
 import { PhotoWall } from "./components/PhotoWall";
 import { PreviewPanel } from "./components/PreviewPanel";
-import { SettingsDialog, getBackupDir } from "./components/SettingsDialog";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { TopBar } from "./components/TopBar";
 import {
   getInExpr,
@@ -258,7 +258,7 @@ export default function App() {
 
   // ---- clean ----
   const clean = useCallback(async () => {
-    const backup = getBackupDir();
+    const backup = cfg?.backupDir ?? "";
     const msg =
       `将清理 ${checkedCount} 个文件（${fmtSize(checkedBytes)}）。\n` +
       (backup ? `文件将移动到：${backup}` : "未设置备份目录：删除前会写入审计日志（路径/大小/时间）。") +
@@ -323,7 +323,7 @@ export default function App() {
     );
     // 逐文件结果自动弹出（清理结果对话框）。
     setCleanReport(res);
-  }, [checked, checkedBytes, checkedCount, startScan]);
+  }, [checked, checkedBytes, checkedCount, startScan, cfg]);
 
   const openDupes = useCallback(async () => {
     try {

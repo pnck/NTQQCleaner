@@ -39,6 +39,9 @@ type Config struct {
 
 	MinFileSizeBytes int64    `yaml:"min_file_size_bytes" json:"minFileSizeBytes"`
 	SkipDirs         []string `yaml:"skip_dirs" json:"skipDirs"`
+	// BackupDir 清理时把文件移动到的备份目录（GUI 设置项；空 = 直接删除，
+	// 仅写审计报告）。与其它设置一同存在 tmp 下的 config.yaml。
+	BackupDir string `yaml:"backup_dir" json:"backupDir"`
 }
 
 // Default returns the documented defaults (docs/03 §6).

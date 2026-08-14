@@ -7,7 +7,7 @@ set -euo pipefail
 HASH=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1
 QQ=10001
 WORK=$(mktemp -d)
-BIN="$WORK/qq-cleaner-cli"
+BIN="$WORK/ntqq-cleaner-cli"
 GO=$(command -v go)
 echo "workdir: $WORK"
 

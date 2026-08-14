@@ -52,8 +52,8 @@ func TestDetectPrefersCapable(t *testing.T) {
 	}
 }
 
-// TestDetectLegacyOnly：只有旧版布局时报告 legacy（上层据此给出
-// 具体错误信息，区别于 generic 未知布局）。
+// TestDetectLegacyOnly：旧版布局（数字目录+msg3.0.db）无实现——
+// NTQQ Cleaner 仅支持 NT 架构，旧版 fail-closed（回退 generic 未知布局）。
 func TestDetectLegacyOnly(t *testing.T) {
 	root := t.TempDir()
 	legacyDir := filepath.Join(root, "10003")
@@ -64,7 +64,7 @@ func TestDetectLegacyOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	k := qq.Detect(root)
-	if k.Name() != "legacy" || k.ScanCapable() {
-		t.Fatalf("got %s (capable=%v), want legacy incapable", k.Name(), k.ScanCapable())
+	if k.Name() != "generic" || k.ScanCapable() {
+		t.Fatalf("got %s (capable=%v), want generic incapable (legacy unsupported, fail-closed)", k.Name(), k.ScanCapable())
 	}
 }

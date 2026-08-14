@@ -145,5 +145,6 @@ type CleanResult struct {
 	Failed     int         `json:"failed"`
 	BytesFreed int64       `json:"bytesFreed"`
 	Items      []CleanItem `json:"items"`
+	AuditPath  string      `json:"auditPath"` // 本次审计报告（系统 tmp，已打开）
 	Errors     []string    `json:"errors"`
 }

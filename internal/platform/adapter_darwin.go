@@ -31,3 +31,8 @@ func (darwinAdapter) QQProcesses() []string {
 func (darwinAdapter) Reveal(path string) error {
 	return exec.Command("open", "-R", path).Start()
 }
+
+// OpenFile 用默认程序打开文件（open）。
+func (darwinAdapter) OpenFile(path string) error {
+	return exec.Command("open", path).Start()
+}

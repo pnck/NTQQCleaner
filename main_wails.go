@@ -70,7 +70,7 @@ func runGUI() error {
 	emitter := &wailsEmitter{}
 	dlgs := &Dialogs{}
 	return wails.Run(&options.App{
-		Title:     "QQ Cleaner",
+		Title:     "NTQQ Cleaner",
 		Width:     1280,
 		Height:    800,
 		MinWidth:  960,
