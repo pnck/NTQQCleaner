@@ -45,6 +45,16 @@ type Request struct {
 	Now    time.Time // zero = time.Now()
 }
 
+// CleanItem is one file's outcome in a cleanup run (清理结果对话框逐行
+// 展示；审计日志仍是权威记录，这里只做 UI 回显）。
+type CleanItem struct {
+	Path       string `json:"path"`
+	Action     string `json:"action"` // move | remove | skip | fail
+	BackupPath string `json:"backupPath,omitempty"`
+	Reason     string `json:"reason,omitempty"` // skip/fail 的原因
+	Size       int64  `json:"size"`
+}
+
 // Result summarizes a run. Errors are collected per-file so one failure
 // never aborts the rest (docs/04 §4.4).
 type Result struct {
@@ -54,6 +64,7 @@ type Result struct {
 	Skipped    int // failed whitelist/blacklist verification
 	Failed     int
 	BytesFreed int64
+	Items      []CleanItem
 	Errors     []string
 }
 
@@ -90,7 +101,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 
 	// Errors 初始化为空切片（JSON 序列化为 [] 而非 null）：前端契约
 	// 是数组，nil 切片经 Wails 传到 JS 会变成 null 引发 TypeError。
-	res := Result{Errors: []string{}}
+	res := Result{Errors: []string{}, Items: []CleanItem{}}
 	lastQQCheck := time.Now()
 	for _, f := range req.Files {
 		if ctx.Err() != nil {
@@ -111,6 +122,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		if err := VerifyPath(req.K, f.Path, req.AllowedRoots, req.Config); err != nil {
 			res.Skipped++
 			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", f.Path, err))
+			res.Items = append(res.Items, CleanItem{Path: f.Path, Action: "skip", Reason: err.Error(), Size: f.Size})
 			continue
 		}
 
@@ -119,17 +131,22 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		// 类别标签，不信任扫描期关联结果。
 		reason := rules.Reason(f, false, false, 0)
 
-		if err := deleteOne(audit, f, req.BackupDir, reason); err != nil {
+		backupPath, err := deleteOne(audit, f, req.BackupDir, reason)
+		if err != nil {
 			res.Failed++
 			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", f.Path, err))
+			res.Items = append(res.Items, CleanItem{Path: f.Path, Action: "fail", Reason: err.Error(), Size: f.Size})
 			continue
 		}
+		action := "remove"
 		if req.BackupDir != "" {
 			res.Moved++
+			action = "move"
 		} else {
 			res.Deleted++
 		}
 		res.BytesFreed += f.Size
+		res.Items = append(res.Items, CleanItem{Path: f.Path, Action: action, BackupPath: backupPath, Reason: reason, Size: f.Size})
 	}
 	return res, nil
 }
@@ -183,7 +200,9 @@ func VerifyPath(k rules.Knowledge, abs string, allowedRoots []string, cfg rules.
 // deleteOne moves the file to the backup dir (recoverable) or removes it.
 // 删除/移动的 OS 语义由 platform 适配层提供（POSIX unlink 与 Windows
 // DeleteFile 不同）。Every outcome is audited (docs/06 §3).
-func deleteOne(audit *auditLogger, f classify.FileEntry, backupDir, reason string) error {
+// deleteOne 执行单文件删除/移动并写审计；返回备份路径（move 时非空，
+// remove 时为 ""）。
+func deleteOne(audit *auditLogger, f classify.FileEntry, backupDir, reason string) (string, error) {
 	entry := auditEntry{
 		Path:   f.Path,
 		Size:   f.Size,
@@ -195,19 +214,19 @@ func deleteOne(audit *auditLogger, f classify.FileEntry, backupDir, reason strin
 			dst = uniquePath(dst) // avoid clobbering an existing backup
 		}
 		if err := platform.Current().MoveFile(f.Path, dst); err != nil {
-			return err
+			return "", err
 		}
 		entry.Action, entry.BackupPath = "move", dst
-	} else {
-		// 产品决策：删除前不再计算 SHA-256（对已删文件无恢复价值，
-		// 且大文件全量哈希拖慢清理）；审计日志记录路径/大小/时间/分级。
-		// 需要可恢复性请配置备份目录（移动而非删除）。
-		if err := platform.Current().DeleteFile(f.Path); err != nil {
-			return err
-		}
-		entry.Action = "remove"
+		return dst, audit.Log(entry)
 	}
-	return audit.Log(entry)
+	// 产品决策：删除前不再计算 SHA-256（对已删文件无恢复价值，
+	// 且大文件全量哈希拖慢清理）；审计日志记录路径/大小/时间/分级。
+	// 需要可恢复性请配置备份目录（移动而非删除）。
+	if err := platform.Current().DeleteFile(f.Path); err != nil {
+		return "", err
+	}
+	entry.Action = "remove"
+	return "", audit.Log(entry)
 }
 
 func uniquePath(p string) string {

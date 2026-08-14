@@ -126,13 +126,24 @@ type CleanRequest struct {
 	IgnoreRunning bool   `json:"ignoreRunning"` // QQ 运行中仍清理（需二次确认）
 }
 
+// CleanItem is one file's outcome in a cleanup run (清理结果对话框逐行
+// 展示；审计日志仍是权威记录）。
+type CleanItem struct {
+	Path       string `json:"path"`
+	Action     string `json:"action"` // move | remove | skip | fail
+	BackupPath string `json:"backupPath,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+	Size       int64  `json:"size"`
+}
+
 // CleanResult summarizes a cleanup run.
 type CleanResult struct {
-	Processed  int      `json:"processed"`
-	Moved      int      `json:"moved"`
-	Deleted    int      `json:"deleted"`
-	Skipped    int      `json:"skipped"`
-	Failed     int      `json:"failed"`
-	BytesFreed int64    `json:"bytesFreed"`
-	Errors     []string `json:"errors"`
+	Processed  int         `json:"processed"`
+	Moved      int         `json:"moved"`
+	Deleted    int         `json:"deleted"`
+	Skipped    int         `json:"skipped"`
+	Failed     int         `json:"failed"`
+	BytesFreed int64       `json:"bytesFreed"`
+	Items      []CleanItem `json:"items"`
+	Errors     []string    `json:"errors"`
 }

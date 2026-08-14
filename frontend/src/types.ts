@@ -115,6 +115,15 @@ export interface CleanRequest {
   ignoreRunning?: boolean; // QQ 运行中仍清理（需二次确认）
 }
 
+// CleanItem：清理结果对话框中逐文件回显（审计日志仍是权威记录）。
+export interface CleanItem {
+  path: string;
+  action: "move" | "remove" | "skip" | "fail";
+  backupPath?: string;
+  reason?: string; // skip/fail 的原因
+  size: number;
+}
+
 export interface CleanResult {
   processed: number;
   moved: number;
@@ -122,6 +131,7 @@ export interface CleanResult {
   skipped: number;
   failed: number;
   bytesFreed: number;
+  items: CleanItem[];
   errors: string[];
 }
 

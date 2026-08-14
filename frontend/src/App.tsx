@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { QQRunningError, api, events } from "./api";
 import { BottomBar } from "./components/BottomBar";
+import { CleanReportDialog } from "./components/CleanReportDialog";
 import { DupesDialog } from "./components/DupesDialog";
 import { FilterEditor } from "./components/FilterEditor";
 import { LeftTree } from "./components/LeftTree";
@@ -73,6 +74,8 @@ export default function App() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [dupesOpen, setDupesOpen] = useState(false);
   const [dupes, setDupes] = useState<DupGroup[]>([]);
+  // 清理结果对话框（清理完成后自动弹出，逐文件回显）
+  const [cleanReport, setCleanReport] = useState<CleanResult | null>(null);
   const [theme, setTheme] = useState<Theme>(getTheme());
   // 后端 config（设置对话框的高级门控/备份策略；普通门控 GUI 恒全开）
   const [cfg, setCfg] = useState<Config | null>(null);
@@ -318,6 +321,8 @@ export default function App() {
         (errs.length > 0 ? `；${errs.length} 个文件被跳过` : "") +
         "；正在重新扫描…",
     );
+    // 逐文件结果自动弹出（清理结果对话框）。
+    setCleanReport(res);
   }, [checked, checkedBytes, checkedCount, startScan]);
 
   const openDupes = useCallback(async () => {
@@ -625,6 +630,9 @@ export default function App() {
         onSelectAll={(ids) => setChecked(new Set(ids))}
         onClose={() => setDupesOpen(false)}
       />
+      {cleanReport && (
+        <CleanReportDialog res={cleanReport} onClose={() => setCleanReport(null)} />
+      )}
       <SettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}

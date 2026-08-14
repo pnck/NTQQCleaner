@@ -753,6 +753,60 @@ button.chip {
   padding-left: 22px; /* 与复选框+标签列对齐（分栏） */
 }
 
+/* 清理结果对话框：逐文件回显列表 */
+.clean-report {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 50vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px;
+  background: var(--panel-2);
+}
+
+.clean-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  padding: 3px 4px;
+  flex-wrap: wrap;
+}
+
+.clean-badge {
+  flex: none;
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 8px;
+}
+
+.clean-badge.ok { background: rgba(22, 163, 74, 0.15); color: #16a34a; }
+.clean-badge.warn { background: rgba(202, 138, 4, 0.2); color: #ca8a04; }
+.clean-badge.dim { background: var(--panel); color: var(--text-dim); }
+.clean-badge.err { background: rgba(220, 38, 38, 0.15); color: #dc2626; }
+
+.clean-path {
+  flex: 1;
+  min-width: 200px;
+  word-break: break-all;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+}
+
+.clean-size {
+  flex: none;
+  color: var(--text-dim);
+}
+
+.clean-reason {
+  flex-basis: 100%;
+  color: var(--text-dim);
+  font-size: 11px;
+  padding-left: 4px;
+}
+
 .parse-ok {
   color: #16a34a;
   font-size: 12px;

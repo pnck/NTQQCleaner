@@ -632,6 +632,16 @@ func (b *Backend) Clean(req CleanRequest) (CleanResult, error) {
 	b.mu.Lock()
 	b.outcome = nil
 	b.mu.Unlock()
+	items := make([]CleanItem, 0, len(res.Items))
+	for _, it := range res.Items {
+		items = append(items, CleanItem{
+			Path:       it.Path,
+			Action:     it.Action,
+			BackupPath: it.BackupPath,
+			Reason:     it.Reason,
+			Size:       it.Size,
+		})
+	}
 	return CleanResult{
 		Processed:  res.Processed,
 		Moved:      res.Moved,
@@ -639,6 +649,7 @@ func (b *Backend) Clean(req CleanRequest) (CleanResult, error) {
 		Skipped:    res.Skipped,
 		Failed:     res.Failed,
 		BytesFreed: res.BytesFreed,
+		Items:      items,
 		Errors:     res.Errors,
 	}, nil
 }
