@@ -996,3 +996,14 @@ button.chip {
   align-items: center;
   gap: 8px;
 }
+
+/* 提示文字允许换行占满剩余宽度；按钮绝不收缩挤压（min-width 兜底） */
+.confirm-warn-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.confirm-warn .mini {
+  flex: none;
+  min-width: 72px;
+}

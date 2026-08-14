@@ -54,7 +54,7 @@ export function CleanConfirmDialog({
         </label>
         {blocked && (
           <div className="confirm-warn">
-            尚未设置备份目录：请先在设置中指定备份目录，才能以移动代替删除。
+            <span className="confirm-warn-text">尚未设置备份目录，请先到设置中指定。</span>
             <button className="mini" onClick={onOpenSettings}>
               去设置
             </button>
