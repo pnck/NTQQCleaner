@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { explainReason } from "../reasons";
 import type { FileRow } from "../types";
@@ -56,6 +56,33 @@ export function PreviewPanel({ row, rows, dupMode, onNavigate, onToast, onSelect
   // 状态按 row.id 记录，切行时自动回到初始态。
   const [played, setPlayed] = useState<number | null>(null);
   const [forceBig, setForceBig] = useState<number | null>(null);
+  const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
+
+  // 空格 = 播放/暂停当前媒体（键盘操作无说明文案）；焦点在输入控件时
+  // 不接管。媒体尚未切换（仍是缩略图叠层）时直接开始播放。
+  useEffect(() => {
+    if (!row) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== "Space") return;
+      const t = e.target as HTMLElement;
+      if (t.closest("input, textarea, select") || t.isContentEditable) return;
+      e.preventDefault();
+      const el = mediaRef.current;
+      if (el && "paused" in el) {
+        if (el.paused) void el.play();
+        else el.pause();
+        return;
+      }
+      // 尚未切换到播放器（缩略图 + 叠层状态）：空格直接开始播放
+      const hasThumb = row.thumbUrl !== "";
+      const full = !hasThumb || played === row.id;
+      if (hasThumb && row.oriUrl !== "" && !full && playable(row)) {
+        setPlayed(row.id);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [row, played]);
 
   if (!row) {
     return (
@@ -110,9 +137,25 @@ export function PreviewPanel({ row, rows, dupMode, onNavigate, onToast, onSelect
             <button onClick={() => setForceBig(row.id)}>仍然加载</button>
           </div>
         ) : kind === "video" ? (
-          <video key={src} src={src} controls autoPlay />
+          <video
+            key={src}
+            ref={(el) => {
+              mediaRef.current = el;
+            }}
+            src={src}
+            controls
+            autoPlay
+          />
         ) : kind === "audio" ? (
-          <audio key={src} src={src} controls autoPlay />
+          <audio
+            key={src}
+            ref={(el) => {
+              mediaRef.current = el;
+            }}
+            src={src}
+            controls
+            autoPlay
+          />
         ) : kind === "card" ? (
           <div className="big-warn">
             此类型不支持内嵌预览

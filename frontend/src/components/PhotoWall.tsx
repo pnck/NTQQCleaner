@@ -1,6 +1,8 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { api } from "../api";
+import { setFocusArea } from "../focus";
 import { explainReason } from "../reasons";
 import type { FileRow, PageQuery } from "../types";
 import { fmtSize } from "../types";
@@ -20,23 +22,29 @@ interface Props {
   onSelect: (id: number | null) => void;
   onToggle: (id: number, size: number) => void;
   onRowsChange: (rows: FileRow[]) => void; // App mirrors the loaded rows for preview
+  onToggleRange: (from: number, to: number, want: boolean) => void; // Shift 点击/划选范围
 }
 
 interface CellProps {
   row: FileRow;
+  dataIdx: number;
   selected: boolean;
   checked: boolean;
-  onSelect: () => void;
+  onSelect: (shift: boolean) => void;
   onToggle: () => void; // Cell 内部闭包：onToggle(row.id, row.size)
 }
 
 // One wall cell: lazy <img> (only virtualized rows exist in the DOM, so
 // images are naturally loaded on demand — docs/07 §4.3 #2).
 // 角标 = 文件扩展名；reason 短标签悬浮显示含义解释。
-const Cell = memo(function Cell({ row, selected, checked, onSelect, onToggle }: CellProps) {
+const Cell = memo(function Cell({ row, dataIdx, selected, checked, onSelect, onToggle }: CellProps) {
   const reasons = explainReason(row.reason);
   return (
-    <div className={`cell${selected ? " selected" : ""}`} onClick={onSelect}>
+    <div
+      className={`cell${selected ? " selected" : ""}`}
+      data-idx={dataIdx}
+      onClick={(e) => onSelect(e.shiftKey)}
+    >
       <input
         className="cell-check"
         type="checkbox"
@@ -75,7 +83,7 @@ const Cell = memo(function Cell({ row, selected, checked, onSelect, onToggle }: 
   );
 });
 
-export function PhotoWall({ query, queryKey, selected, checked, onSelect, onToggle, onRowsChange }: Props) {
+export function PhotoWall({ query, queryKey, selected, checked, onSelect, onToggle, onRowsChange, onToggleRange }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [rows, setRows] = useState<FileRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -152,6 +160,57 @@ export function PhotoWall({ query, queryKey, selected, checked, onSelect, onTogg
   const items = virtualizer.getVirtualItems();
   const lastIndex = rows.length - 1;
 
+  // 键盘/Shift 的锚点：最近一次单击或方向键导航到的行下标。
+  const anchorRef = useRef<number>(-1);
+
+  // 单击 = 聚焦预览；Shift+单击 = 从锚点连续勾选到当前行。
+  const handleCellSelect = useCallback(
+    (i: number, id: number, shift: boolean) => {
+      if (shift && anchorRef.current >= 0) {
+        onToggleRange(anchorRef.current, i, true);
+        anchorRef.current = i;
+        onSelect(id);
+        return;
+      }
+      anchorRef.current = i;
+      onSelect(selected === id ? null : id);
+    },
+    [onToggleRange, onSelect, selected],
+  );
+
+  // 方向键在照片墙内移动聚焦（键盘操作无说明文案）；未聚焦时从第一项
+  // 开始。移动后滚动到可视区。
+  const onKeyDown = useCallback(
+    (e: ReactKeyboardEvent<HTMLDivElement>) => {
+      const t = e.target as HTMLElement;
+      // 文本输入控件照常；单元格勾选框上没有方向键语义，继续接管。
+      if (t.closest("input, textarea, select") && !t.closest(".cell-check")) return;
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
+      if (rows.length === 0) return;
+      e.preventDefault();
+      let idx = selected != null ? rows.findIndex((r) => r.id === selected) : -1;
+      if (idx < 0) idx = 0;
+      switch (e.key) {
+        case "ArrowRight":
+          idx = Math.min(idx + 1, lastIndex);
+          break;
+        case "ArrowLeft":
+          idx = Math.max(idx - 1, 0);
+          break;
+        case "ArrowDown":
+          idx = Math.min(idx + cols, lastIndex);
+          break;
+        case "ArrowUp":
+          idx = Math.max(idx - cols, 0);
+          break;
+      }
+      anchorRef.current = idx;
+      onSelect(rows[idx].id);
+      virtualizer.scrollToIndex(Math.floor(idx / cols), { align: "auto" });
+    },
+    [rows, selected, cols, lastIndex, onSelect, virtualizer],
+  );
+
   // When the virtualizer catches up to the loaded rows (e.g. after a
   // resize), fetch the next page the same way onScroll does.
   useEffect(() => {
@@ -162,7 +221,14 @@ export function PhotoWall({ query, queryKey, selected, checked, onSelect, onTogg
   }, [items, rowCount, loading, rows.length, total, loadPage]);
 
   return (
-    <div className="wall-scroll" ref={scrollRef} onScroll={onScroll}>
+    <div
+      className="wall-scroll"
+      ref={scrollRef}
+      onScroll={onScroll}
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      onMouseDownCapture={() => setFocusArea("wall")}
+    >
       {rows.length === 0 && !loading && (
         <div className="wall-empty">
           还没有扫描结果 —— 选择数据根和账号后点击「扫描」。
@@ -185,9 +251,10 @@ export function PhotoWall({ query, queryKey, selected, checked, onSelect, onTogg
                   <Cell
                     key={row.id}
                     row={row}
+                    dataIdx={i}
                     selected={selected === row.id}
                     checked={checked.has(row.id)}
-                    onSelect={() => onSelect(selected === row.id ? null : row.id)}
+                    onSelect={(shift) => handleCellSelect(i, row.id, shift)}
                     onToggle={() => onToggle(row.id, row.size)}
                   />
                 );

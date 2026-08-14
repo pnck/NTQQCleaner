@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QQRunningError, api, events } from "./api";
 import { BottomBar } from "./components/BottomBar";
 import { CleanConfirmDialog } from "./components/CleanConfirmDialog";
@@ -20,6 +20,7 @@ import {
   toggleInExpr,
 } from "./expression";
 import { DEFAULT_SORT, loadFilters, saveFilters, type NamedFilter } from "./filters";
+import { lastFocusArea } from "./focus";
 import { applyTheme, getTheme, nextTheme, type Theme } from "./theme";
 import type {
   AccountReport,
@@ -222,8 +223,17 @@ export default function App() {
   }, []);
 
   // ---- 左栏与快捷控件 ----
-  const toggleBiz = (biz: string) => editExprFn((e) => toggleInExpr(e, "biz", biz));
-  const toggleMonth = (month: string) => editExprFn((e) => toggleInExpr(e, "month", month));
+  // Shift 连续选中的锚点：每个分区记录最近一次点击的条目下标。
+  const bizAnchor = useRef(-1);
+  const monthAnchor = useRef(-1);
+  const toggleBiz = (biz: string, idx: number) => {
+    bizAnchor.current = idx;
+    editExprFn((e) => toggleInExpr(e, "biz", biz));
+  };
+  const toggleMonth = (month: string, idx: number) => {
+    monthAnchor.current = idx;
+    editExprFn((e) => toggleInExpr(e, "month", month));
+  };
   const setBizs = useCallback(
     (bizs: string[]) => editExprFn((e) => setInExpr(e, "biz", bizs)),
     [editExprFn],
@@ -231,6 +241,32 @@ export default function App() {
   const setMonths = useCallback(
     (months: string[]) => editExprFn((e) => setInExpr(e, "month", months)),
     [editExprFn],
+  );
+  // Shift+点击树节点 = 锚点到目标的连续区间**并入**当前选择（只做并集，
+  // 不做 Shift 取消一批选中）。
+  const shiftBiz = useCallback(
+    (idx: number) => {
+      if (bizAnchor.current < 0) return;
+      const lo = Math.min(bizAnchor.current, idx);
+      const hi = Math.max(bizAnchor.current, idx);
+      const cur = getInExpr(expr, "biz");
+      const add = bizGroups.slice(lo, hi + 1).map((g) => g.key);
+      setBizs([...new Set([...cur, ...add])]);
+      bizAnchor.current = idx;
+    },
+    [bizGroups, expr, setBizs],
+  );
+  const shiftMonth = useCallback(
+    (idx: number) => {
+      if (monthAnchor.current < 0) return;
+      const lo = Math.min(monthAnchor.current, idx);
+      const hi = Math.max(monthAnchor.current, idx);
+      const cur = getInExpr(expr, "month");
+      const add = monthGroups.slice(lo, hi + 1).map((g) => g.key);
+      setMonths([...new Set([...cur, ...add])]);
+      monthAnchor.current = idx;
+    },
+    [monthGroups, expr, setMonths],
   );
   const onlyThumb = getSimpleExpr(expr, "thumb") === "true";
   const setOnlyThumb = (v: boolean) =>
@@ -268,6 +304,90 @@ export default function App() {
   }, [filter]);
 
   const checkedCount = checked.size;
+
+  // 范围置位（Shift 点击/划选共用）：按已加载行下标区间幂等地设为勾选
+  // 或取消勾选，字节增量只在状态翻转的行上结算。
+  const setRangeChecked = useCallback(
+    (from: number, to: number, want: boolean) => {
+      const lo = Math.max(0, Math.min(from, to));
+      const hi = Math.min(rows.length - 1, Math.max(from, to));
+      const next = new Set(checked);
+      let bytes = checkedBytes;
+      for (let i = lo; i <= hi; i++) {
+        const r = rows[i];
+        if (!r) continue;
+        const has = next.has(r.id);
+        if (want && !has) {
+          next.add(r.id);
+          bytes += r.size;
+        } else if (!want && has) {
+          next.delete(r.id);
+          bytes -= r.size;
+        }
+      }
+      setChecked(next);
+      setCheckedBytes(bytes);
+    },
+    [checked, checkedBytes, rows],
+  );
+
+  // 全局键盘（操作无说明文案）：⌘/Ctrl+A = 选中「最后一次鼠标聚焦」区域
+  // 内的全部对象（左栏分区各自全选 / 照片墙 = 当前筛选全部）——不探测
+  // document.activeElement（点击详情区的可选中文字会让焦点落在文字上，
+  // 导致全选变成选中文字，见 focus.ts）；双击 Esc = 取消所有勾选
+  // （对话框打开时让位给对话框自己的 Esc 处理）。
+  const lastEsc = useRef(0);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+        switch (lastFocusArea.cur) {
+          case "tree-biz":
+            e.preventDefault();
+            setBizs(bizGroups.map((g) => g.key));
+            break;
+          case "tree-month":
+            e.preventDefault();
+            setMonths(monthGroups.map((g) => g.key));
+            break;
+          case "wall":
+            e.preventDefault();
+            void selectAll();
+            break;
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        // 吞掉默认行为：WKWebView 对无人处理的 Escape 会响系统提示音。
+        // 文本输入控件内保持原生行为（不响应也不计数）。
+        const inField = t.closest?.("input, textarea, select") && !t.closest?.(".cell-check");
+        if (!inField) e.preventDefault();
+        const now = Date.now();
+        if (now - lastEsc.current < 400) {
+          lastEsc.current = 0;
+          if (!filterOpen && !dupesOpen && !settingsOpen && !confirmOpen && cleanReport === null) {
+            setChecked(new Set());
+            setCheckedBytes(0);
+          }
+        } else {
+          lastEsc.current = now;
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [
+    filterOpen,
+    dupesOpen,
+    settingsOpen,
+    confirmOpen,
+    cleanReport,
+    bizGroups,
+    monthGroups,
+    selectAll,
+    setBizs,
+    setMonths,
+  ]);
 
   const handleRowsChange = useCallback((rs: FileRow[]) => setRows(rs), []);
 
@@ -482,6 +602,8 @@ export default function App() {
           activeMonths={getInExpr(expr, "month")}
           onToggleBiz={toggleBiz}
           onToggleMonth={toggleMonth}
+          onShiftBiz={shiftBiz}
+          onShiftMonth={shiftMonth}
           onSetBizs={setBizs}
           onSetMonths={setMonths}
         />
@@ -606,6 +728,7 @@ export default function App() {
               onSelect={setSelected}
               onToggle={toggleChecked}
               onRowsChange={handleRowsChange}
+              onToggleRange={setRangeChecked}
             />
           ) : (
             <div className="wall-scroll">

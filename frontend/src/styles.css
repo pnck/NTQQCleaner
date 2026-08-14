@@ -323,6 +323,11 @@ button.chip {
   position: relative;
 }
 
+/* 照片墙是方向键导航的焦点容器：聚焦时不画浏览器默认轮廓 */
+.wall-scroll:focus {
+  outline: none;
+}
+
 .wall-inner {
   position: relative;
   width: 100%;
