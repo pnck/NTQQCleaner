@@ -39,7 +39,7 @@
 | `07_ui_design.md` | GUI 界面框架：功能区划分、交互逻辑、**媒体快速预览 + 大数据流畅性**（硬性要求） | 界面实现参考 |
 | `08_windows_legacy_compat.md` | Windows NTQQ 布局（`<QQ号>/nt_qq/`）、旧版 QQ 兼容层、旧库残留报告的设计与安全红线 | Windows/旧版兼容层实现的依据 |
 
-> **开发者总纲**：上手路径、代码地图、开发流程约定见
+> **总纲（交给 LLM agent 阅读）**：上手路径、代码地图、开发流程约定见
 > [`CONTRIBUTING.md`](CONTRIBUTING.md)（本包所有文档的导航入口）。
 
 ---
