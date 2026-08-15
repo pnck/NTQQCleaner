@@ -440,6 +440,36 @@ func (o *Outcome) matchOne(id int, c Condition) bool {
 			return boolVal() != want
 		}
 		return boolVal() == want
+	case "reason":
+		// 枚举标签匹配（docs/03 §4）：一条 reason 是多个标签的「；」连接。
+		// eq/in 任一标签命中即匹配；ne = 全部标签都不等于；contains 保留在
+		// 整个字符串上的子串匹配（旧存储筛选器的向后兼容）。
+		labels := strings.Split(o.Reasons[id], "；")
+		val := strings.TrimSpace(c.Value)
+		hit := func(label string) bool {
+			for _, l := range labels {
+				if strings.EqualFold(strings.TrimSpace(l), label) {
+					return true
+				}
+			}
+			return false
+		}
+		switch c.Op {
+		case "in":
+			for _, item := range strings.Split(val, ",") {
+				if hit(item) {
+					return true
+				}
+			}
+			return false
+		case "eq":
+			return hit(val)
+		case "ne":
+			return !hit(val)
+		case "contains":
+			return strings.Contains(strings.ToLower(o.Reasons[id]), strings.ToLower(val))
+		}
+		return false
 	case "month":
 		// 月份操作数按可计算时间比较：YYYY-MM 解析为当月起始时间戳
 		// （实现细节不对用户暴露）。字符串序在跨年/缺位写法下不可靠，

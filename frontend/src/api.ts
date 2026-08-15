@@ -101,8 +101,10 @@ export const api = {
   reveal: (id: number) => call<void>("Reveal", id),
   pickDirectory: (title: string) => callDialogs<string>("PickDirectory", title),
   confirmClean: (msg: string) => callDialogs<string>("ConfirmClean", msg),
-  confirm: (title: string, msg: string, buttons: string[], def: string) =>
-    callDialogs<string>("Confirm", title, msg, buttons, def),
+  // 原生 YES/NO 确认（QQ 运行守卫覆盖确认）：Go 侧统一 Yes/No 契约——
+  // Windows 的 MessageDialog 忽略自定义按钮文案（MessageBoxW 无自定义
+  // 按钮），自定义文案方案在 Windows 上点确认不生效。
+  confirmYesNo: (title: string, msg: string) => callDialogs<string>("ConfirmYesNo", title, msg),
 };
 
 export const events = {

@@ -44,22 +44,78 @@ func (d *Dialogs) PickDirectory(title string) (string, error) {
 	return runtime.OpenDirectoryDialog(d.ctx, runtime.OpenDialogOptions{Title: title})
 }
 
-// ConfirmClean shows the pre-cleanup confirmation dialog and returns the
-// chosen button label ("清理" or "取消").
+// ConfirmClean shows the pre-cleanup final confirmation dialog. Contract:
+// returns "Yes" or "No" on every OS (frontend compares against "Yes").
 func (d *Dialogs) ConfirmClean(msg string) (string, error) {
-	return d.Confirm("确认清理", msg, []string{"清理", "取消"}, "取消")
+	return d.confirmYesNo("确认清理", msg)
 }
 
-// Confirm 通用确认对话框（危险操作二次确认用）；返回选中的按钮文案。
-func (d *Dialogs) Confirm(title, msg string, buttons []string, def string) (string, error) {
+// ConfirmYesNo 通用 YES/NO 确认对话框（危险操作二次确认，如 QQ 运行守卫
+// 的覆盖确认）；返回 "Yes" / "No"。
+func (d *Dialogs) ConfirmYesNo(title, msg string) (string, error) {
+	return d.confirmYesNo(title, msg)
+}
+
+// confirmYesNo 统一为系统标准 YES/NO（OK/CANCEL）形态。关键点（wails
+// v2.14 实测源码）：Windows 的 MessageDialog **完全忽略** Buttons 自定义
+// 文案（MessageBoxW 不支持自定义按钮）——WarningDialog 只会渲染单 OK 按钮，
+// 点击返回 "Ok"，此前与前端「清理」文案比较永远不相等，表现为「点了确认
+// 没反应」。QuestionDialog 映射为 MB_YESNO，返回 "Yes"/"No"。macOS 的
+// NSAlert 按 Buttons 文案显示并返回所选文案——两边都以 "Yes"/"No" 为契约。
+// DefaultButton "No"：Windows 侧落 MB_DEFBUTTON2，回车不会误触发危险动作。
+func (d *Dialogs) confirmYesNo(title, msg string) (string, error) {
 	return runtime.MessageDialog(d.ctx, runtime.MessageDialogOptions{
-		Type:          runtime.WarningDialog,
+		Type:          runtime.QuestionDialog,
 		Title:         title,
 		Message:       msg,
-		Buttons:       buttons,
-		DefaultButton: def, // 安全默认：回车不触发危险动作
-		CancelButton:  def,
+		Buttons:       []string{"Yes", "No"},
+		DefaultButton: "No", // 安全默认：回车不触发危险动作
+		CancelButton:  "No",
 	})
+}
+
+// fitWindowToScreen 启动时按主屏分辨率自适应窗口尺寸：约 85%×84% 的
+// 屏幕（上限 1600×1000、下限与 MinWidth/MinHeight 一致），设置后居中。
+// ScreenGetAll 需要 runtime ctx（OnStartup 之后才可用），窗口先以默认
+// 尺寸创建、随即调整一次。Size 是逻辑像素（Windows 侧已按 DPI 折算），
+// 与 WindowSetSize 同一坐标系。
+func fitWindowToScreen(ctx context.Context) {
+	screens, err := runtime.ScreenGetAll(ctx)
+	if err != nil || len(screens) == 0 {
+		return
+	}
+	sc := screens[0]
+	for _, s := range screens {
+		if s.IsPrimary {
+			sc = s
+			break
+		}
+	}
+	if sc.Size.Width <= 0 || sc.Size.Height <= 0 {
+		return
+	}
+	w := int(float64(sc.Size.Width) * 0.85)
+	h := int(float64(sc.Size.Height) * 0.84)
+	if w > 1600 {
+		w = 1600
+	}
+	if h > 1000 {
+		h = 1000
+	}
+	if w < 960 {
+		w = 960
+	}
+	if h < 600 {
+		h = 600
+	}
+	if w > sc.Size.Width {
+		w = sc.Size.Width
+	}
+	if h > sc.Size.Height {
+		h = sc.Size.Height
+	}
+	runtime.WindowSetSize(ctx, w, h)
+	runtime.WindowCenter(ctx)
 }
 
 // runGUI starts the embedded web UI. Only the backend is bound — the
@@ -83,6 +139,7 @@ func runGUI() error {
 			emitter.ctx = ctx
 			dlgs.ctx = ctx
 			backend.SetEmitter(emitter)
+			fitWindowToScreen(ctx)
 		},
 		// 开发构建自动打开 inspector（需 -tags debug + ldflags -X 注入）
 		Debug: options.Debug{OpenInspectorOnStartup: openInspectorOnStartup == "1"},

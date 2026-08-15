@@ -5,14 +5,15 @@
 ## 常用命令（Task，https://taskfile.dev）
 
 ```sh
-task build-cli         # 纯 CLI 二进制（无需 GUI 依赖，任何环境可构建）
-task build             # 当前主机原生 GUI 二进制
-task build-windows     # 交叉编译 windows/amd64 exe（任意主机）
-task build-darwin-*    # macOS GUI —— 只能在 macOS 主机上跑
-task dev / bundle      # 需 wails CLI（热重载 / .app 打包）
-task test / smoke      # go test / CLI 端到端冒烟
-task frontend          # 重建 frontend/dist（存在即跳过；源码变更后 --force）
-pnpm --dir frontend typecheck
+task build-cli                    # 纯 CLI 二进制（无需 GUI 依赖，任何环境可构建）
+task build                        # 宿主原生 GUI 二进制（go build 层）
+task build:<os>-<arch>            # 交叉二进制：windows-amd64 / darwin-arm64 /
+                                  # darwin-amd64 / linux-amd64
+task dev / bundle / bundle:release  # 热重载 / dev .app（带 inspector）/ release .app
+task bundle:<os>-<arch>           # 平台 release 包（CI matrix 单元直接调用）
+task verify                       # CI 门禁（test + smoke + vet）
+task frontend                     # 重建 frontend/dist（存在即跳过；源码变更后 --force）
+task frontend:typecheck
 ```
 
 - `GO`/`PNPM` 变量自动探测 PATH（可 `GO=/opt/go/bin/go task ...` 覆盖）
@@ -35,10 +36,10 @@ pnpm --dir frontend typecheck
 - darwin 构建需要 `CGO_LDFLAGS=-framework UniformTypeIdentifiers`（wails 2.14 的 WailsContext.m 用 UTType 但未链接该 framework）
 - 交叉编译（实测 + 官方文档）：
   - **裸 `go build` 必须带 `production` 标签**（wails build 自动加）：缺了会编进 app_default_*.go stub，运行时报 "Wails applications will not build without the correct build tags"
-  - **Windows exe**：后端纯 Go（WebView2 经 syscall）→ 容器内可交叉产出**真实可用** exe（`make build-windows`）
+  - **Windows exe**：后端纯 Go（WebView2 经 syscall）→ 容器内可交叉产出**真实可用** exe（`task build:windows-amd64`）；`-H windowsgui` 已内置（PE GUI 子系统，无启动控制台黑框）
   - **macOS**：WKWebView 后端为 ObjC/cgo → 容器无 C 编译器，编译期即报 `clang not found` → 必须在 macOS 主机或 macos CI 上构建（官方 crossplatform 文档也是每平台原生 runner 构建）
   - **Linux**：需 webkit2gtk（编译+运行），容器两者皆无
-  - Task CLI 已装在 `/opt/bin/task`、pnpm 在 `/opt/bin/pnpm`（持久化）；构建目标见 `Taskfile.yml`（容器内直接 `task build-cli` / `task test` 可用）
+  - Task CLI 已装在 `/opt/bin/task`、pnpm 在 `/opt/bin/pnpm`（持久化）；构建目标见 `Taskfile.yml`（容器内直接 `task build-cli` / `task verify` 可用）
   - pnpm 配置（版本方言多，勿动）：根 `pnpm-workspace.yaml`（packages + allowBuilds 映射，供根目录 install）；所有 pnpm 命令带 `--config.verify-deps-before-run=warn`（pnpm 11 从 workspace 成员目录跑命令时不读根 workspace 文件的 allowBuilds，会误报 ERR_PNPM_IGNORED_BUILDS；esbuild 经 optionalDependencies 无需 postinstall）
   - pnpm 的 content-addressable store 落在 `/workspace/.pnpm-store`（已 gitignore）
 - 出站网络经 proxy 容器透明代理，npm/go 下载可用

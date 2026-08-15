@@ -1,5 +1,6 @@
 import type { Condition, Expr, Sort, Stage } from "./types";
 import { group, leaf } from "./exprbase";
+import { REASON_GLOSSARY } from "./reasons";
 
 // 筛选器领域：字段定义 + 命名筛选（= 名称 + 表达式 + 排序 + 是否置顶工具栏）。
 
@@ -97,8 +98,12 @@ export const FILTER_FIELDS: FilterFieldDef[] = [
   {
     field: "reason",
     label: "说明",
-    kind: "text",
-    ops: ["contains", "eq"],
+    // 枚举标签匹配（不再是字符串模糊匹配）：一行可带多个标签（；分隔），
+    // in/eq 任一标签命中即匹配（后端 matchOne reason 分支）。候选值与
+    // rules.Reason 生成的标签词典（reasons.ts）保持一致。
+    kind: "enum",
+    ops: ["in", "ne", "eq"],
+    options: Object.keys(REASON_GLOSSARY).map((k) => ({ value: k, label: k })),
   },
   { field: "thumb", label: "是缩略图", kind: "bool", ops: ["eq", "ne"] },
   { field: "temp", label: "是 *Temp 残留", kind: "bool", ops: ["eq", "ne"] },

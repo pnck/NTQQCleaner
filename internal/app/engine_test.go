@@ -494,7 +494,17 @@ func TestMatchOne(t *testing.T) {
 		{Condition{"size", "in", "70000,80000"}, false},
 		{Condition{"fileId", "contains", "aaaa"}, true},
 		{Condition{"fileId", "eq", "nope"}, false},
-		{Condition{"nonsense", "eq", "x"}, false}, // unknown field fails closed
+		// reason 枚举标签匹配：目标行 reason = 缩略图；原图仍在；重复出现
+		// （多标签行，eq/in 任一标签命中即匹配；ne = 全部不命中）。
+		{Condition{"reason", "eq", "缩略图"}, true},
+		{Condition{"reason", "eq", "原图仍在"}, true},
+		{Condition{"reason", "eq", "表情包"}, false},
+		{Condition{"reason", "ne", "表情包"}, true},
+		{Condition{"reason", "ne", "缩略图"}, false},
+		{Condition{"reason", "in", "表情包,缩略图"}, true},
+		{Condition{"reason", "in", "表情包,运行日志"}, false},
+		{Condition{"reason", "contains", "重复出现"}, true}, // 旧存储 contains 向后兼容
+		{Condition{"nonsense", "eq", "x"}, false},           // unknown field fails closed
 	}
 	for _, c := range cases {
 		if got := out.matchOne(target, c.cond); got != c.want {

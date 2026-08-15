@@ -6,6 +6,7 @@ import { BIZ_LABEL, fmtSize } from "../types";
 // 勾选状态即当前筛选条件；中栏照片墙按勾选过滤。
 
 interface Props {
+  width: number; // 拖拽分隔条调整的栏宽（App 持有并记忆）
   bizGroups: GroupStat[];
   monthGroups: GroupStat[];
   activeBizs: string[];
@@ -83,6 +84,7 @@ function Section({
 }
 
 export function LeftTree({
+  width,
   bizGroups,
   monthGroups,
   activeBizs,
@@ -95,7 +97,7 @@ export function LeftTree({
   onSetMonths,
 }: Props) {
   return (
-    <aside className="lefttree">
+    <aside className="lefttree" style={{ width }}>
       <Section
         sid="biz"
         title="业务类型"

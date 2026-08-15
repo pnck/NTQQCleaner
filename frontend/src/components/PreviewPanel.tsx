@@ -7,6 +7,7 @@ import { BIZ_LABEL, SUB_LABEL, fmtSize, fmtTime } from "../types";
 import { Tooltip } from "./Tooltip";
 
 interface Props {
+  width: number; // 拖拽分隔条调整的栏宽（App 持有并记忆）
   row: FileRow | null;
   rows: FileRow[];
   // 勾选模式：dups = 只勾副本（保留 keeper）；all = 勾选全部（含 keeper）。
@@ -110,7 +111,7 @@ function MediaEl({
   return kind === "video" ? <video {...elProps} /> : <audio {...elProps} />;
 }
 
-export function PreviewPanel({ row, rows, dupMode, onNavigate, onToast, onSelectDups }: Props) {
+export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, onSelectDups }: Props) {
   // 初始态 = 缩略图 + 叠层图标；点击后切换为播放器/原文件（视频/音频即自动播放）。
   // 状态按 row.id 记录，切行时自动回到初始态。
   const [played, setPlayed] = useState<number | null>(null);
@@ -146,7 +147,7 @@ export function PreviewPanel({ row, rows, dupMode, onNavigate, onToast, onSelect
 
   if (!row) {
     return (
-      <aside className="preview">
+      <aside className="preview" style={{ width }}>
         <div className="wall-empty">点选照片墙中的缩略图，在这里预览媒体内容。</div>
       </aside>
     );
@@ -167,7 +168,7 @@ export function PreviewPanel({ row, rows, dupMode, onNavigate, onToast, onSelect
     void api.reveal(row.id).catch((e) => onToast(`无法在文件夹中显示：${e}`));
 
   return (
-    <aside className="preview">
+    <aside className="preview" style={{ width }}>
       <div className="nav">
         <button disabled={!prev} onClick={() => prev && onNavigate(prev)}>
           ←

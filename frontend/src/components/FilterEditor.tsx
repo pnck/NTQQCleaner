@@ -12,6 +12,7 @@ interface Props {
   onStagesChange: (s: Stage[]) => void;
   sort: Sort;
   onSortChange: (s: Sort) => void;
+  monthOptions: string[]; // 扫描出的月份（in 列表候选值）
   filters: NamedFilter[];
   onSaveFilters: (list: NamedFilter[]) => void;
   onApply: (f: NamedFilter) => void;
@@ -36,7 +37,7 @@ const HELP_FIELDS: { field: string; note: string }[] = [
   { field: "size", note: "字节，可带单位 k/m/g/t（如 1g = 1024³）；编辑器中按 MB 输入" },
   { field: "fileId", note: "文件ID：QQ 取自原文件名的 md5（标识文件，与内容无关）；~ 可按前缀匹配" },
   { field: "contentHash", note: "SHA-256 内容哈希（仅同大小冲突组计算）；~ 可按前缀匹配" },
-  { field: "reason", note: "说明标签（缩略图/原图仍在/有缩略图/重复出现…）" },
+  { field: "reason", note: "说明标签（枚举）：缩略图 / 原图仍在 / 有缩略图 / 重复出现 / 下载中断残留 / 表情包…；一行可多标签，in 任一命中即匹配" },
   { field: "thumb", note: "是否缩略图：true / false" },
   { field: "temp", note: "是否 *Temp 下载残留：true / false" },
 ];
@@ -47,10 +48,12 @@ function ConditionRow({
   cond,
   onChange,
   onRemove,
+  monthOptions,
 }: {
   cond: Condition;
   onChange: (c: Condition) => void;
   onRemove: () => void;
+  monthOptions: string[];
 }) {
   const def = fieldDef(cond.field) ?? FILTER_FIELDS[0];
   const displayValue =
@@ -67,6 +70,13 @@ function ConditionRow({
     }
     onChange({ ...cond, value: v });
   };
+
+  // 候选值：枚举字段（biz/sub/reason）用 def.options；month 用扫描出的
+  // 月份列表——in 列表在简易编辑模式下直接勾选候选，无需手输逗号列表。
+  const options =
+    def.options ??
+    (cond.field === "month" ? monthOptions.map((m) => ({ value: m, label: m })) : undefined);
+  const inVals = cond.value.split(",").map((s) => s.trim()).filter(Boolean);
 
   return (
     <div className="cond-row">
@@ -99,6 +109,44 @@ function ConditionRow({
           <option value="true">是</option>
           <option value="false">否</option>
         </select>
+      ) : cond.op === "in" && options ? (
+        <div className="cond-chips">
+          {options.map((o) => {
+            const on = inVals.includes(o.value);
+            return (
+              <label key={o.value} className={`cond-chip${on ? " on" : ""}`} title={o.label}>
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={() =>
+                    onChange({
+                      ...cond,
+                      value: (on
+                        ? inVals.filter((v) => v !== o.value)
+                        : [...inVals, o.value]
+                      ).join(","),
+                    })
+                  }
+                />
+                {o.label}
+              </label>
+            );
+          })}
+          {options.length === 0 && (
+            <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
+              暂无候选（扫描后出现）
+            </span>
+          )}
+        </div>
+      ) : def.kind === "enum" ? (
+        <select value={cond.value} onChange={(e) => onChange({ ...cond, value: e.target.value })}>
+          <option value="">（选择）</option>
+          {(def.options ?? []).map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
       ) : (
         <input
           type={def.kind === "number" ? "number" : "text"}
@@ -122,11 +170,13 @@ function GroupBlock({
   path,
   depth,
   onChangeRoot,
+  monthOptions,
 }: {
   root: Expr; // 整棵树根（updateTree 需要）
   path: number[]; // 本组在树中的位置
   depth: number;
   onChangeRoot: (e: Expr | null) => void;
+  monthOptions: string[];
 }) {
   let node = root;
   for (const i of path) node = node.or?.[i] ?? node.and?.[i] ?? group("and", []);
@@ -177,6 +227,7 @@ function GroupBlock({
             <ConditionRow
               key={i}
               cond={child.c}
+              monthOptions={monthOptions}
               onChange={(nc) => onChangeRoot(updateTree(root, childPath, () => ({ c: nc })))}
               onRemove={() => onChangeRoot(updateTree(root, childPath, () => null))}
             />
@@ -189,6 +240,7 @@ function GroupBlock({
             path={childPath}
             depth={depth + 1}
             onChangeRoot={onChangeRoot}
+            monthOptions={monthOptions}
           />
         );
       })}
@@ -206,6 +258,7 @@ export function FilterEditor({
   onStagesChange,
   sort,
   onSortChange,
+  monthOptions,
   filters,
   onSaveFilters,
   onApply,
@@ -398,7 +451,13 @@ export function FilterEditor({
               className="cond-list"
               style={advanced ? { opacity: 0.5, pointerEvents: "none" } : undefined}
             >
-              <GroupBlock root={root} path={[]} depth={0} onChangeRoot={onChangeExpr} />
+              <GroupBlock
+                root={root}
+                path={[]}
+                depth={0}
+                onChangeRoot={onChangeExpr}
+                monthOptions={monthOptions}
+              />
               {expr === null && <div className="cond-empty">无条件 = 显示全部</div>}
               <div className="row">
                 <label>排序</label>

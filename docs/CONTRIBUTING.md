@@ -22,14 +22,16 @@ Go + Wails v2（内嵌 Web UI）+ React 19 / TanStack Virtual 虚拟化照片墙
 构建统一走 [Task](https://taskfile.dev)（`Taskfile.yml`）：
 
 ```sh
-task build-cli         # 纯 CLI 二进制（任何环境可构建）
-task build             # 当前主机原生 GUI 二进制
-task build-windows     # 交叉编译 windows/amd64 exe（任意主机；-H windowsgui 已内置）
-task build-darwin-*    # macOS GUI —— 只能在 macOS 主机上跑（ObjC/cgo）
-task dev / bundle      # 热重载 / .app 打包（需 wails CLI）
-task test / smoke      # go test / CLI 端到端冒烟
-task frontend          # 重建 frontend/dist（存在即跳过；源码变更后 --force）
-pnpm --dir frontend typecheck
+task build-cli              # 纯 CLI 二进制（任何环境可构建）
+task build                  # 宿主原生 GUI 二进制（go build 层）
+task build:<os>-<arch>      # 交叉二进制：windows-amd64 / darwin-arm64 /
+                            # darwin-amd64 / linux-amd64
+task dev / bundle           # 热重载 / dev .app 打包（需 wails CLI）
+task bundle:release         # 宿主 release 包
+task bundle:<os>-<arch>     # 平台 release 包（CI matrix 单元直接调用）
+task verify                 # CI 门禁（test + smoke + vet）
+task frontend               # 重建 frontend/dist（存在即跳过；源码变更后 --force）
+task frontend:typecheck
 ```
 
 要点（详见 CLAUDE.md 与 Taskfile.yml 注释）：
@@ -123,8 +125,8 @@ tests/cli_smoke.sh   CLI 端到端冒烟
 
 | 任务 | 做法 |
 |---|---|
-| 改前端后重建产物 | `pnpm --config.verify-deps-before-run=warn --dir frontend build`（或 `task frontend --force`），再 `task build-windows` 等重新 embed |
-| 交叉编译 Windows exe | `task build-windows`（容器内即可，`-H windowsgui` 已内置）；产物 `build/bin/ntqq-cleaner-windows-amd64.exe` 含 CLI 子命令 |
+| 改前端后重建产物 | `pnpm --config.verify-deps-before-run=warn --dir frontend build`（或 `task frontend --force`），再 `task build:windows-amd64` 等重新 embed |
+| 交叉编译 Windows exe | `task build:windows-amd64`（容器内即可，`-H windowsgui` 已内置）；产物 `build/bin/ntqq-cleaner-windows-amd64.exe` 含 CLI 子命令 |
 | 新增 OS 平台适配 | 新增 `internal/platform/adapter_<os>.go` 实现 Adapter（进程名/删除移动语义/Reveal/OpenFile），上层零改动 |
 | 新增 QQ 平台/版本族 | 新增 `internal/qq/impl/<x>` 实现 Knowledge（capable 才可扫描）+ probe，`internal/qqimpl` 加一行导入；根候选经 `RegisterRoots` |
 | 在 linux 上测 Windows 行为 | nt 包测试直接替换 `currentSpec = windowsSpec`（docs/08 §5） |

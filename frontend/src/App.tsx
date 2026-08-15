@@ -9,6 +9,7 @@ import { LeftTree } from "./components/LeftTree";
 import { PhotoWall } from "./components/PhotoWall";
 import { PreviewPanel } from "./components/PreviewPanel";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { Splitter } from "./components/Splitter";
 import { TopBar } from "./components/TopBar";
 import {
   getInExpr,
@@ -47,6 +48,12 @@ const SORT_FIELDS = [
   { field: "mtime", label: "时间", descDefault: true },
   { field: "month", label: "月份", descDefault: true },
 ] as const;
+
+// 侧栏拖拽宽度限制（左栏/右栏各自的合理区间）。
+function clampSideW(w: number, side: "left" | "right"): number {
+  const [lo, hi] = side === "left" ? [150, 420] : [240, 560];
+  return Math.min(hi, Math.max(lo, w));
+}
 
 export default function App() {
   const [phase, setPhase] = useState<Phase>("idle");
@@ -89,6 +96,23 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(getTheme());
   // 后端 config（设置对话框的高级门控/备份策略；普通门控 GUI 恒全开）
   const [cfg, setCfg] = useState<Config | null>(null);
+  // 左右侧栏宽度（可拖拽调整，localStorage 记忆；上下限在 clamp 处）。
+  const [sideW, setSideW] = useState<{ left: number; right: number }>(() => {
+    try {
+      const raw = localStorage.getItem("ntqq-cleaner-side-w");
+      if (raw) {
+        const p = JSON.parse(raw) as { left?: number; right?: number };
+        return { left: clampSideW(p.left ?? 210, "left"), right: clampSideW(p.right ?? 320, "right") };
+      }
+    } catch {
+      // 存储损坏时回退默认
+    }
+    return { left: 210, right: 320 };
+  });
+  // 拖拽结束即已生效；宽度变化后写回记忆（纯 effect，无 StrictMode 顾虑）。
+  useEffect(() => {
+    localStorage.setItem("ntqq-cleaner-side-w", JSON.stringify(sideW));
+  }, [sideW]);
 
   const filter = useMemo(() => ({ account, expr, stages }), [account, expr, stages]);
   const queryKey = useMemo(
@@ -349,6 +373,10 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+        // 焦点在文本输入控件（筛选器编辑器的表达式框、搜索框等）时让位
+        // 给控件原生全选——此前按 lastFocusArea 劫持，在编辑器里按
+        // Ctrl+A 会变成全选照片墙/左栏。
+        if (t.closest?.("input, textarea") || t.isContentEditable) return;
         switch (lastFocusArea.cur) {
           case "tree-biz":
             e.preventDefault();
@@ -412,7 +440,7 @@ export default function App() {
         `处理方式：${move ? `移动到备份目录：${backup}` : "直接删除"}。\n` +
         `审计记录：${audit ? "生成（完成后自动打开）" : "不生成"}。\n\n确定继续？`;
       const answer = await api.confirmClean(msg);
-      if (answer !== "清理") return;
+      if (answer !== "Yes") return;
       setPhase("cleaning");
       const runClean = (ignoreRunning: boolean) =>
         api.clean({
@@ -432,13 +460,13 @@ export default function App() {
       // POSIX 下 unlink 不被写锁阻塞，但 QQ 正在写的缓存条目可能失效
       // （重新下载即恢复）—— 二次确认后可覆盖。
       if (e instanceof QQRunningError) {
-        const again = await api.confirm(
+        // 原生 YES/NO 确认（与最终确认同一形态，见 main_wails.go
+        // confirmYesNo——Windows 自定义按钮文案无效，统一 Yes/No）。
+        const again = await api.confirmYesNo(
           "QQ 正在运行",
           "检测到 QQ 进程正在运行。\n\n删除本身不会被写入锁阻塞，但 QQ 正在写入的缓存条目可能失效（重新下载即可恢复）。\n\n仍要继续清理吗？",
-          ["仍要清理", "取消"],
-          "取消",
         );
-        if (again !== "仍要清理") {
+        if (again !== "Yes") {
           setPhase("ready");
           return;
         }
@@ -579,6 +607,22 @@ export default function App() {
   // 一个列表：工具栏 = 置顶的，更多 = 未置顶的。
   const quickFilters = filters.filter((f) => f.pinned);
 
+  // 快速筛选区横向滚动：垂直滚轮映射为横向（按钮多时不换行、不溢出）。
+  // React 17+ 的 onWheel 是 passive 监听，preventDefault 无效——改用原生
+  // 非 passive 监听（防止滚动链）。
+  const chipsRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = chipsRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY === 0) return;
+      e.preventDefault();
+      el.scrollLeft += e.deltaY;
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
   return (
     <div className="app">
       <TopBar
@@ -604,6 +648,7 @@ export default function App() {
       )}
       <div className="main">
         <LeftTree
+          width={sideW.left}
           bizGroups={bizGroups}
           monthGroups={monthGroups}
           activeBizs={getInExpr(expr, "biz")}
@@ -615,72 +660,80 @@ export default function App() {
           onSetBizs={setBizs}
           onSetMonths={setMonths}
         />
+        <Splitter
+          onDrag={(dx) => setSideW((s) => ({ ...s, left: clampSideW(s.left + dx, "left") }))}
+        />
         <div className="center">
           <div className="toolbar">
-            {quickFilters.map((f) => {
-              const active = appliedFilter === f.name;
-              return (
+            {/* 快速筛选按钮区（可横向滚动）：置顶筛选器 + 更多 + 编辑。
+                去重建议不在此区——它是常驻功能按钮（分隔线后）。 */}
+            <div className="toolbar-chips" ref={chipsRef}>
+              {quickFilters.map((f) => {
+                const active = appliedFilter === f.name;
+                return (
+                  <button
+                    key={f.name}
+                    className={`chip${active ? " on" : ""}`}
+                    onClick={() => (active ? resetFilter() : applyFilter(f))}
+                    title={active ? "点击清空筛选" : "应用此筛选器"}
+                  >
+                    {f.name}
+                  </button>
+                );
+              })}
+              <div className="dropdown-wrap">
                 <button
-                  key={f.name}
-                  className={`chip${active ? " on" : ""}`}
-                  onClick={() => (active ? resetFilter() : applyFilter(f))}
-                  title={active ? "点击清空筛选" : "应用此筛选器"}
+                  className="chip"
+                  onClick={() => setMoreOpen((o) => !o)}
+                  title="全部筛选器（可置顶到工具栏）"
                 >
-                  {f.name}
+                  更多 ▾
                 </button>
-              );
-            })}
-            <div className="dropdown-wrap">
-              <button
-                className="chip"
-                onClick={() => setMoreOpen((o) => !o)}
-                title="全部筛选器（可置顶到工具栏）"
-              >
-                更多 ▾
-              </button>
-              {moreOpen && (
-                <div className="dropdown">
-                  {/* 更多 = 工具栏（置顶）以外的筛选器 */}
-                  {filters.filter((f) => !f.pinned).length === 0 && (
-                    <div className="dropdown-item" style={{ color: "var(--text-dim)", cursor: "default" }}>
-                      暂无更多筛选器（未置顶的筛选器会出现在这里）
-                    </div>
-                  )}
-                  {filters
-                    .filter((f) => !f.pinned)
-                    .map((f) => (
-                      <div key={f.name} className="dropdown-item">
-                        <span style={{ flex: 1 }} onClick={() => applyFilter(f)}>
-                          {f.name}
-                        </span>
-                        <button
-                          className="mini"
-                          onClick={() => {
-                            const next = filters.map((x) =>
-                              x.name === f.name ? { ...x, pinned: true } : x,
-                            );
-                            setFilters(next);
-                            saveFilters(next);
-                          }}
-                          title="固定到工具栏直选"
-                        >
-                          置顶
-                        </button>
+                {moreOpen && (
+                  <div className="dropdown">
+                    {/* 更多 = 工具栏（置顶）以外的筛选器 */}
+                    {filters.filter((f) => !f.pinned).length === 0 && (
+                      <div className="dropdown-item" style={{ color: "var(--text-dim)", cursor: "default" }}>
+                        暂无更多筛选器（未置顶的筛选器会出现在这里）
                       </div>
-                    ))}
-                </div>
-              )}
+                    )}
+                    {filters
+                      .filter((f) => !f.pinned)
+                      .map((f) => (
+                        <div key={f.name} className="dropdown-item">
+                          <span style={{ flex: 1 }} onClick={() => applyFilter(f)}>
+                            {f.name}
+                          </span>
+                          <button
+                            className="mini"
+                            onClick={() => {
+                              const next = filters.map((x) =>
+                                x.name === f.name ? { ...x, pinned: true } : x,
+                              );
+                              setFilters(next);
+                              saveFilters(next);
+                            }}
+                            title="固定到工具栏直选"
+                          >
+                            置顶
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+              <button
+                className={`chip${appliedFilter === "" && expr !== null ? " on" : ""}`}
+                onClick={() => {
+                  setFilterOpen(true);
+                  setMoreOpen(false);
+                }}
+                title="编辑筛选表达式（列表/表达式双视图）"
+              >
+                ⚙ 编辑
+              </button>
             </div>
-            <button
-              className={`chip${appliedFilter === "" && expr !== null ? " on" : ""}`}
-              onClick={() => {
-                setFilterOpen(true);
-                setMoreOpen(false);
-              }}
-              title="编辑筛选表达式（列表/表达式双视图）"
-            >
-              ⚙ 编辑
-            </button>
+            <span className="toolbar-sep" />
             <button
               className="chip"
               onClick={() => void openDupes()}
@@ -688,7 +741,6 @@ export default function App() {
             >
               去重建议
             </button>
-            <span className="toolbar-sep" />
             {SORT_FIELDS.map((sf) => {
               const active = sort.field === sf.field;
               const dimmed = stages.some((s) => s.kind === "order");
@@ -750,8 +802,12 @@ export default function App() {
             </div>
           )}
         </div>
+        <Splitter
+          onDrag={(dx) => setSideW((s) => ({ ...s, right: clampSideW(s.right + dx, "right") }))}
+        />
         <PreviewPanel
           key={selected ?? -1}
+          width={sideW.right}
           row={rows.find((r) => r.id === selected) ?? null}
           rows={rows}
           dupMode={selected !== null ? (dupModes.get(selected) ?? "dups") : "dups"}
@@ -780,6 +836,7 @@ export default function App() {
         onStagesChange={editStages}
         sort={sort}
         onSortChange={setSort}
+        monthOptions={monthGroups.map((g) => g.key)}
         filters={filters}
         onSaveFilters={(list) => {
           setFilters(list);

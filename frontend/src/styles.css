@@ -316,6 +316,48 @@ button.chip {
   margin: 0 2px;
 }
 
+/* 快速筛选按钮区：横向滚动（垂直滚轮映射为横向，见 App.tsx），按钮多时
+   不换行、不把后续控件挤出工具栏 */
+.toolbar-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+  scrollbar-width: thin;
+}
+
+.toolbar-chips > * {
+  flex: none;
+}
+
+.toolbar-chips::-webkit-scrollbar {
+  height: 5px;
+}
+
+.toolbar-chips::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+/* 侧栏拖拽分隔条（左右各一）：悬停/拖动时高亮 */
+.splitter {
+  flex: none;
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.splitter:hover,
+.splitter:active {
+  background: var(--accent);
+  opacity: 0.4;
+}
+
 .wall-scroll {
   flex: 1;
   overflow-y: auto;
@@ -587,6 +629,35 @@ button.chip {
   color: var(--text-dim);
   font-size: 11px;
   white-space: nowrap;
+}
+
+/* in 列表候选勾选（简易编辑模式）：枚举字段/月份的可选值排成 chip */
+.cond-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  max-height: 88px;
+  overflow-y: auto;
+  align-content: flex-start;
+}
+
+.cond-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cond-chip.on {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.12);
 }
 
 /* 设置对话框 */
