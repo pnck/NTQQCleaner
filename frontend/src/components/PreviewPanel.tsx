@@ -4,6 +4,7 @@ import { api } from "../api";
 import { explainReason } from "../reasons";
 import type { FileRow } from "../types";
 import { BIZ_LABEL, SUB_LABEL, fmtSize, fmtTime } from "../types";
+import { Splitter } from "./Splitter";
 import { Tooltip } from "./Tooltip";
 
 interface Props {
@@ -22,6 +23,10 @@ interface Props {
 // 大文件门限只针对「原文件」中的图片：图片无法流式，>50MB 需显式确认；
 // 视频/音频可流式，点击播放即切换播放器。
 const BIG_IMAGE = 50 << 20;
+
+// 媒体/详情上下分栏的持久化键与默认高度。
+const MEDIA_H_KEY = "preview-media-h";
+const DEFAULT_MEDIA_H = 340;
 
 // ScrollEnd：可选中值（右对齐 + 溢出滚动）。内容变化时自动滚到行尾，
 // 保证右对齐下可见的是值的尾部（文件名/哈希后缀）；用户可自由往回
@@ -208,6 +213,16 @@ export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, o
   // Player 的 autoStart。切行时复位——无缩略图的行直接进入播放器视图
   // 不得自动起播（Windows WebView2 自动播放策略宽松，装 src 即播）。
   const playIntentRef = useRef(false);
+  // 媒体/详情上下分栏：媒体区高度由分隔条拖动调整（localStorage 记忆，
+  // 与左右栏宽同一模式），详情区占剩余高度并内部滚动。
+  const panelRef = useRef<HTMLElement | null>(null);
+  const [mediaH, setMediaH] = useState(() => {
+    const v = Number(localStorage.getItem(MEDIA_H_KEY));
+    return Number.isFinite(v) && v > 0 ? v : DEFAULT_MEDIA_H;
+  });
+  useEffect(() => {
+    localStorage.setItem(MEDIA_H_KEY, String(mediaH));
+  }, [mediaH]);
 
   // 活动媒体元素回写（空格播放/暂停用；Player 在 kind 变化时回调）。
   const setMediaRef = useCallback(
@@ -307,7 +322,7 @@ export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, o
     void api.reveal(row.id).catch((e) => onToast(`无法在文件夹中显示：${e}`));
 
   return (
-    <aside className="preview" style={{ width }}>
+    <aside className="preview" style={{ width }} ref={panelRef}>
       <div className="nav">
         <button disabled={!prev} onClick={() => prev && onNavigate(prev)}>
           ←
@@ -334,7 +349,7 @@ export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, o
         </span>
       </div>
 
-      <div className="media">
+      <div className="media" style={{ height: mediaH }}>
         {showOverlay && (
           <button
             className="media-overlay"
@@ -372,6 +387,14 @@ export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, o
           onActiveEl={setMediaRef}
         />
       </div>
+
+      <Splitter
+        axis="y"
+        onDrag={(dy) => {
+          const max = (panelRef.current?.clientHeight ?? 600) - 160;
+          setMediaH((h) => Math.min(max, Math.max(160, h + dy)));
+        }}
+      />
 
       <div className="detail">
         <div className="kv">

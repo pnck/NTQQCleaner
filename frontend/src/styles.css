@@ -226,8 +226,24 @@ input[type="checkbox"] {
   flex: none;
   background: var(--panel);
   border-right: 1px solid var(--border);
-  overflow-y: auto;
+  /* biz/月份上下分栏（Splitter axis="y" 拖动）：面板自身不滚动，
+     两个分区各自内部滚动 */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 8px;
+}
+
+/* 左栏分区的滚动容器：biz 分区高度由分隔条持有（localStorage），
+   月份分区占剩余高度 */
+.tree-section-scroll {
+  flex: none;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.tree-section-scroll.fill {
+  flex: 1;
 }
 
 .tree-header {
@@ -387,6 +403,35 @@ button.chip {
   width: 3px;
 }
 
+/* 纵向分隔条（左栏 biz/月份、预览媒体/详情上下分栏拖动）：与横向
+   分隔条同一视觉语言，转 90° */
+.splitter-v {
+  flex: none;
+  height: 7px;
+  cursor: row-resize;
+  position: relative;
+  background: transparent;
+}
+
+.splitter-v::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 2px;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background 0.15s, height 0.15s;
+}
+
+.splitter-v:hover::after,
+.splitter-v:active::after {
+  background: var(--accent);
+  height: 3px;
+}
+
 .wall-scroll {
   flex: 1;
   overflow-y: auto;
@@ -485,7 +530,9 @@ button.chip {
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  /* 媒体/详情上下分栏（Splitter axis="y" 拖动）：面板自身不滚动，
+     详情区占剩余高度并内部滚动 */
+  overflow: hidden;
 }
 
 .preview .nav {
@@ -584,6 +631,10 @@ button.chip {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* 上下分栏的剩余区域：内部滚动 */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .preview .detail .k {

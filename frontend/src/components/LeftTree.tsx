@@ -1,6 +1,8 @@
+import { useEffect, useRef, useState } from "react";
 import { setFocusArea } from "../focus";
 import type { GroupStat } from "../types";
 import { BIZ_LABEL, fmtSize } from "../types";
+import { Splitter } from "./Splitter";
 
 // 左栏 = 多选筛选器（不是目录浏览器）：所有条目始终可见，
 // 勾选状态即当前筛选条件；中栏照片墙按勾选过滤。
@@ -83,6 +85,11 @@ function Section({
   );
 }
 
+// biz/月份上下分栏：biz 分区高度由分隔条拖动调整（localStorage 记忆，
+// 与左右栏宽同一模式），月份分区占剩余高度。
+const BIZ_H_KEY = "lefttree-biz-h";
+const DEFAULT_BIZ_H = 220;
+
 export function LeftTree({
   width,
   bizGroups,
@@ -96,28 +103,48 @@ export function LeftTree({
   onSetBizs,
   onSetMonths,
 }: Props) {
+  const boxRef = useRef<HTMLElement | null>(null);
+  const [bizH, setBizH] = useState(() => {
+    const v = Number(localStorage.getItem(BIZ_H_KEY));
+    return Number.isFinite(v) && v > 0 ? v : DEFAULT_BIZ_H;
+  });
+  useEffect(() => {
+    localStorage.setItem(BIZ_H_KEY, String(bizH));
+  }, [bizH]);
+
   return (
-    <aside className="lefttree" style={{ width }}>
-      <Section
-        sid="biz"
-        title="业务类型"
-        groups={bizGroups}
-        active={activeBizs}
-        onToggle={onToggleBiz}
-        onShift={onShiftBiz}
-        onSet={onSetBizs}
-        labelOf={(k) => BIZ_LABEL[k] ?? k}
+    <aside className="lefttree" style={{ width }} ref={boxRef}>
+      <div className="tree-section-scroll" style={{ height: bizH }}>
+        <Section
+          sid="biz"
+          title="业务类型"
+          groups={bizGroups}
+          active={activeBizs}
+          onToggle={onToggleBiz}
+          onShift={onShiftBiz}
+          onSet={onSetBizs}
+          labelOf={(k) => BIZ_LABEL[k] ?? k}
+        />
+      </div>
+      <Splitter
+        axis="y"
+        onDrag={(dy) => {
+          const max = (boxRef.current?.clientHeight ?? 600) - 120;
+          setBizH((h) => Math.min(max, Math.max(80, h + dy)));
+        }}
       />
-      <Section
-        sid="month"
-        title="月份"
-        groups={monthGroups}
-        active={activeMonths}
-        onToggle={onToggleMonth}
-        onShift={onShiftMonth}
-        onSet={onSetMonths}
-        labelOf={(k) => k}
-      />
+      <div className="tree-section-scroll fill">
+        <Section
+          sid="month"
+          title="月份"
+          groups={monthGroups}
+          active={activeMonths}
+          onToggle={onToggleMonth}
+          onShift={onShiftMonth}
+          onSet={onSetMonths}
+          labelOf={(k) => k}
+        />
+      </div>
     </aside>
   );
 }
