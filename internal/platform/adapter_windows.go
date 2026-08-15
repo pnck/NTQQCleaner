@@ -64,3 +64,9 @@ func (windowsAdapter) Reveal(path string) error {
 func (windowsAdapter) OpenFile(path string) error {
 	return exec.Command("cmd", "/c", "start", "", path).Start()
 }
+
+// FreezeAnimatedThumbs：Windows 专有显示政策——WebView2 没有关闭图片
+// 动画的设置项（CoreWebView2Settings 全表无此类能力，实测确认），
+// 照片墙里几十个动图同时解码会持续占满 CPU（gif 每帧解码为整幅位图）。
+// 缩略图一律取首帧静态变体（?static=1，后端解码首帧输出 PNG）。
+func (windowsAdapter) FreezeAnimatedThumbs() bool { return true }

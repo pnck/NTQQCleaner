@@ -64,10 +64,12 @@ task frontend:typecheck
 ```
 main.go / main_wails.go / main_manifest.go   入口：scan/clean/gui 子命令
 internal/platform    OS 适配层：Adapter 接口（QQProcesses / DeleteFile /
-                     MoveFile / Reveal），darwin/windows/linux 各一个
-                     build-tagged 实现。删除/移动语义入本层（POSIX unlink
-                     与 Windows DeleteFile 不同：只读属性/共享模式/跨卷）。
-                     新增平台 = 新增一个适配器文件，上层零改动
+                     MoveFile / Reveal / FreezeAnimatedThumbs），darwin/
+                     windows/linux 各一个 build-tagged 实现。删除/移动语义
+                     入本层（POSIX unlink 与 Windows DeleteFile 不同：
+                     只读属性/共享模式/跨卷）；平台显示政策也入本层
+                     （Windows 专有：动图缩略图首帧静态化）。新增平台 =
+                     新增一个适配器文件，上层零改动
 internal/qq          QQ 知识层抽象 + 版本 dispatcher：
                      Knowledge 接口 + probe 链注册表（Detect 从磁盘布局
                      识别平台×版本族）。上层（discovery/classify/rules/

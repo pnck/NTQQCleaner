@@ -3,6 +3,9 @@ package app
 import (
 	"context"
 	"fmt"
+	"image"
+	"image/gif"
+	"image/png"
 	"net"
 	"net/http"
 	"os"
@@ -12,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/image/webp"
 
 	"qqcleaner/internal/classify"
 	"qqcleaner/internal/clean"
@@ -317,7 +322,6 @@ func (b *Backend) fileRowLocked(out *Outcome, id int) report.FileRow {
 		ContentHash:     e.ContentHash,
 		ContentDupCount: len(out.ContentIndex[e.ContentHash]),
 	}
-	row.ThumbURL = b.previewURL(id)
 	if e.IsThumb {
 		// 缩略图行：OriURL 指向同 md5 的原文件，OriExt 取其扩展名
 		// （缩略图行自身 ext 是缩略图扩展名，不能用于分派原文件的播放器）
@@ -329,9 +333,20 @@ func (b *Backend) fileRowLocked(out *Outcome, id int) report.FileRow {
 		// 原文件行：OriURL 就是它自己（视频/动图/原图的直接预览入口）
 		row.OriURL = b.previewURL(id)
 		row.OriExt = e.Ext
-		if thumbID, ok := out.ThumbID[e.MD5]; ok {
-			row.ThumbURL = b.previewURL(thumbID)
+	}
+	// ThumbURL = 单元格缩略图条目（Ori 行取配对 Thumb，其余取自身）。
+	// 动图静态化是平台政策（platform 适配层 FreezeAnimatedThumbs，
+	// Windows=true / darwin/linux=false）：政策在 Go 侧直接落到 URL
+	// （?static=1），前端对平台差异零感知、公共管线不破坏。
+	thumbID := id
+	if e.Sub == "Ori" {
+		if t, ok := out.ThumbID[e.MD5]; ok {
+			thumbID = t
 		}
+	}
+	row.ThumbURL = b.previewURL(thumbID)
+	if platform.Current().FreezeAnimatedThumbs() && out.Entries[thumbID].Animated {
+		row.ThumbURL += "?static=1"
 	}
 	return row
 }
@@ -588,6 +603,12 @@ func (b *Backend) Reveal(id int) error {
 
 // PreviewHandler serves /preview/{id} as the file's content (Wails
 // AssetsHandler). Range requests (video seeking) are handled by ServeFile.
+// ?static=1 serves the first frame of an animated image as PNG. The
+// parameter is attached to ThumbURL only when the platform policy asks for
+// it (platform.FreezeAnimatedThumbs, Windows-only — WebView2 has no
+// image-animation setting and wall-wide gif decoding burns CPU); the
+// preview panel still shows the animated original once the user explicitly
+// enters the player view.
 func (b *Backend) PreviewHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(strings.TrimPrefix(r.URL.Path, "/preview/"))
 	if err != nil {
@@ -599,7 +620,41 @@ func (b *Backend) PreviewHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if r.URL.Query().Get("static") == "1" {
+		b.serveFirstFrame(w, r, p)
+		return
+	}
 	http.ServeFile(w, r, p)
+}
+
+// serveFirstFrame decodes the first frame of a gif/webp and re-encodes it
+// as PNG. Falls back to serving the original file on any failure.
+func (b *Backend) serveFirstFrame(w http.ResponseWriter, r *http.Request, p string) {
+	ext := strings.ToLower(filepath.Ext(p))
+	if ext != ".gif" && ext != ".webp" {
+		http.ServeFile(w, r, p)
+		return
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		http.ServeFile(w, r, p)
+		return
+	}
+	defer f.Close()
+	var img image.Image
+	switch ext {
+	case ".gif":
+		img, err = gif.Decode(f) // 只解第一帧
+	case ".webp":
+		img, err = webp.Decode(f)
+	}
+	if err != nil || img == nil {
+		http.ServeFile(w, r, p)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = png.Encode(w, img)
 }
 
 // ---- cleanup ----

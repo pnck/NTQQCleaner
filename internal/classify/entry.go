@@ -27,6 +27,10 @@ type FileEntry struct {
 	Ext      string `json:"ext"`     // extension without dot, lowercased
 	IsThumb  bool   `json:"isThumb"`
 	IsTemp   bool   `json:"isTemp"`
+	// Animated = 动图（多帧 gif / 动画 webp，扫描时嗅探）。前端照片墙
+	// 据此给缩略图 URL 加 ?static=1 取首帧静态变体——墙内任何动图都不
+	// 自动播放（几十个动图同时解码极耗 CPU，Windows 尤甚）。
+	Animated bool `json:"animated"`
 	// ContentHash 是文件字节的 SHA-256（二次扫描填充）。仅当该文件与
 	// 其它文件字节数相同才会计算（同内容 ⇒ 同大小）；大小唯一的文件
 	// 不可能有内容孪生，保持空串跳过 I/O。
@@ -68,5 +72,8 @@ func newEntry(k Classifier, ntData, abs string, size int64, mtime int64) FileEnt
 	subLower := strings.ToLower(e.Sub)
 	e.IsThumb = subLower == "thumb"
 	e.IsTemp = subLower == "oritemp" || subLower == "thumbtemp"
+	if e.Ext == "gif" || e.Ext == "webp" {
+		e.Animated = sniffAnimated(abs)
+	}
 	return e
 }

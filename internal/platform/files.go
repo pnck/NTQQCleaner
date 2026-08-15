@@ -48,3 +48,7 @@ type unixBase struct{}
 func (unixBase) DeleteFile(path string) error { return os.Remove(path) }
 
 func (unixBase) MoveFile(src, dst string) error { return RenameOrCopy(src, dst) }
+
+// FreezeAnimatedThumbs：darwin/linux 不静态化——WKWebView/webkit2gtk
+// 对动图解码的 CPU 开销可接受，动图在照片墙正常播放。
+func (unixBase) FreezeAnimatedThumbs() bool { return false }

@@ -15,10 +15,10 @@ var Now = time.Date(2026, 8, 10, 12, 0, 0, 0, time.Local)
 
 // Synthetic test values; structure mirrors the docs/05 samples.
 const (
-	HashA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1" // 32 hex，格式同 nt_qq_<hash>
-	HashB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2"
-	QQA   = "10001"
-	QQB   = "10002"
+	HashA   = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1" // 32 hex，格式同 nt_qq_<hash>
+	HashB   = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2"
+	QQA     = "10001"
+	QQB     = "10002"
 	MD5A    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01"
 	MD5B    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa02"
 	MD5C    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa03"

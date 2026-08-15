@@ -504,7 +504,7 @@ func TestMatchOne(t *testing.T) {
 		{Condition{"reason", "in", "表情包,缩略图"}, true},
 		{Condition{"reason", "in", "表情包,运行日志"}, false},
 		{Condition{"reason", "contains", "重复出现"}, true}, // 旧存储 contains 向后兼容
-		{Condition{"nonsense", "eq", "x"}, false},           // unknown field fails closed
+		{Condition{"nonsense", "eq", "x"}, false},       // unknown field fails closed
 	}
 	for _, c := range cases {
 		if got := out.matchOne(target, c.cond); got != c.want {

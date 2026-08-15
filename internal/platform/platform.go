@@ -23,6 +23,13 @@ type Adapter interface {
 
 	// OpenFile 用系统默认程序打开文件（审计报告等）。
 	OpenFile(path string) error
+
+	// FreezeAnimatedThumbs 报告本平台是否必须把动图缩略图静态化
+	// （照片墙/预览缩略图只显示首帧静态变体，点 ▶ / 自动播放后仍是
+	// 动画原图）。Windows 专有政策：WebView2 没有任何关闭图片动画的
+	// 设置（CoreWebView2Settings 无此项），墙内几十个动图同时解码
+	// 极耗 CPU；darwin/linux 保持动图正常播放。
+	FreezeAnimatedThumbs() bool
 }
 
 // impl 由各平台 build-tagged 文件的 defaultAdapter() 初始化。

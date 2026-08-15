@@ -116,9 +116,19 @@ func previewHandler(rw http.ResponseWriter, req *http.Request) {
 | 图片·缩略图（Thumb） | 直接显示（`_720` 等 <100KB） | <50ms |
 | 图片·原图（Ori） | **优先显示同 md5 的 Thumb**；无则加载 Ori（>50MB 提示不自动加载） | <100ms / 按需 |
 | 视频 | `<video preload="metadata">` 只拉头部；封面用同目录 Thumb；点击才加载数据 | <200ms 出封面 |
-| GIF/表情 | 直接显示（小文件） | <50ms |
+| GIF/表情 | 直接显示（小文件）；Windows 下动图取首帧静态变体，点 ▶ / 自动播放后显示动画原图 | <50ms |
 | 语音（Ptt） | 元数据卡片 + 播放按钮（`<audio preload="metadata">`） | 即时 |
 | 文件（File） | 元数据卡片（不预览内容） | 即时 |
+
+- **动图不自动播放 = Windows 专有平台政策**（platform 适配层表达：
+  `Adapter.FreezeAnimatedThumbs()`，windows=true / darwin、linux=false）：
+  WebView2 没有任何关闭图片动画的设置（CoreWebView2Settings 全表无此类
+  能力），墙内几十个动图同时解码极耗 CPU（gif 每帧解码为整幅位图）。
+  动图标记本身是文件事实（扫描时对 gif 帧数 / webp VP8X ANIM 位嗅探，
+  各平台一致）；政策在 Go 侧落到 URL——Windows 上后端给动图缩略图的
+  ThumbURL 附加 `?static=1`，预览 handler 解码首帧输出 PNG。前端对平台
+  差异零感知，公共管线不变。静态首帧把动画纳入「自动播放开关」语义：
+  只有显式进入播放器视图（点 ▶ / 开自动播放）才播放动画。
 
 - **同名 md5 关联**：Ori 与 Thumb 共享 `{md5}`，后端索引预计算 `md5 → {hasThumb, thumbPath, oriPath}`，前端请求直接拿缩略图路径
 
