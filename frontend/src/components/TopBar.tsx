@@ -1,4 +1,5 @@
 import type { AccountReport, Progress } from "../types";
+import { fmtSize } from "../types";
 import type { Theme } from "../theme";
 import { THEME_LABEL } from "../theme";
 
@@ -94,7 +95,8 @@ export function TopBar({
           <option value="">全部账号</option>
           {accounts.map((a) => (
             <option key={a.hash} value={a.hash}>
-              QQ {a.qqNum || "unknown"}（{a.latestMonth || "无活动"}）
+              QQ {a.qqNum || "unknown"}（{a.latestMonth || "无活动"}
+              {a.legacyResidueSize > 0 ? `，旧版残留 ${fmtSize(a.legacyResidueSize)}` : ""}）
             </option>
           ))}
         </select>

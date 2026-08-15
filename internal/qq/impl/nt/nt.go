@@ -1,8 +1,9 @@
-// Package nt 是 NT 架构 QQ（nt_qq_<32hex> 布局）的逆向结论实现。
+// Package nt 是 NT 架构 QQ 的逆向结论实现。
 //
-// 知识来源：macOS QQ 6.9.99 的逆向结论（docs/01-03、05）。
-// NT 是跨平台架构，缓存布局（nt_qq_*/nt_data 下的 Pic/Video/...）
-// 各平台共享；仅根路径随 OS 不同（见 roots_*.go）。
+// 知识来源：macOS QQ 6.9.99 与 Windows NTQQ 9.9.32 的逆向结论
+// （docs/01-03、05、08）。NT 是跨平台架构，缓存布局（nt_data 下的
+// Pic/Video/...）各平台共享；实例目录与全局目录的位置随 OS 不同
+// （layoutSpec，见 layout.go；根路径见 roots_*.go）。
 package nt
 
 import (
@@ -19,13 +20,12 @@ import (
 type NT struct{}
 
 var _ qq.Knowledge = &NT{}
+var _ qq.ResidueReporter = &NT{}
 
 func (*NT) Name() string      { return "nt" }
 func (*NT) ScanCapable() bool { return true }
 
-// ---- 实例目录 ----
-
-var instanceRe = regexp.MustCompile(`^nt_qq_([0-9a-f]{32})$`)
+// ---- 实例目录（layoutSpec，docs/08 §3.2-3.3）----
 
 func (*NT) InstanceDirs(root string) ([]qq.Instance, error) {
 	entries, err := os.ReadDir(root)
@@ -34,20 +34,49 @@ func (*NT) InstanceDirs(root string) ([]qq.Instance, error) {
 	}
 	var out []qq.Instance
 	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		if m := instanceRe.FindStringSubmatch(e.Name()); m != nil {
-			out = append(out, qq.Instance{DirName: e.Name(), Hash: m[1]})
+		if hash, ok := currentSpec.instance(root, e.Name(), e.IsDir()); ok {
+			out = append(out, qq.Instance{DirName: e.Name(), Hash: hash, NtRel: currentSpec.ntRel})
 		}
 	}
 	return out, nil
 }
 
-// ---- 账号识别三源（docs/02）----
+// Residues 报告实例目录里的旧版数据残留（docs/08 §3.5）：
+// NT macOS 实例目录顶层只有 nt_* 组，无残留 → nil；
+// NT Windows 顶层除 nt_qq/ 外的旧库（Msg3.0.db 等）→ 逐条只统计。
+func (*NT) Residues(root string, inst qq.Instance) ([]qq.LegacyResidue, error) {
+	if currentSpec.ntRel == "" {
+		return nil, nil
+	}
+	instDir := filepath.Join(root, inst.DirName)
+	entries, err := os.ReadDir(instDir)
+	if err != nil {
+		return nil, err
+	}
+	var out []qq.LegacyResidue
+	for _, e := range entries {
+		if e.Name() == currentSpec.ntRel {
+			continue // nt_* 子目录组本身不是残留
+		}
+		p := filepath.Join(instDir, e.Name())
+		size, count, err := qq.StatTree(p)
+		if err != nil {
+			continue // 不可读的残留项跳过：报告宁缺毋假
+		}
+		out = append(out, qq.LegacyResidue{Path: p, Size: size, Count: count})
+	}
+	return out, nil
+}
+
+// ---- 账号识别（docs/02、08 §3.4）----
 
 func (k *NT) Identify(root string, inst qq.Instance) string {
-	ntData := filepath.Join(root, inst.DirName, "nt_data")
+	// Windows：实例目录名即 QQ 号（明文目录，真机实测）。
+	// mac：三源识别（mmkv → UnitedConfig）。
+	if currentSpec.dirIsQQNum {
+		return inst.DirName
+	}
+	ntData := filepath.Join(root, inst.DirName, inst.NtRel, "nt_data")
 	if qqNum, err := identifyFromMmkv(root, inst.Hash); err == nil && qqNum != "" {
 		return qqNum
 	}
@@ -58,7 +87,10 @@ func (k *NT) Identify(root string, inst qq.Instance) string {
 }
 
 func identifyFromMmkv(qqRoot, instanceHash string) (string, error) {
-	p := filepath.Join(qqRoot, "global", "nt_data", "mmkv", "mmkv.default")
+	// 路径随 OS 不同：mac <根>/global/…，Windows <根>/nt_qq/global/…
+	// （Windows 的 mmkv key 是明文路径形态，与 mac 的 hash 形态不同，
+	// 但 Windows 识别走目录名，本正则只服务 mac 布局）。
+	p := filepath.Join(qqRoot, currentSpec.globalRel, "nt_data", "mmkv", "mmkv.default")
 	data, err := os.ReadFile(p)
 	if err != nil {
 		return "", err
@@ -94,7 +126,7 @@ var (
 	skipDirs = map[string]bool{
 		"mmkv": true, "msf": true, "OnlineStatus": true, "UnitedConfig": true,
 		"config": true,
-		"nt_db": true,
+		"nt_db":  true,
 	}
 	monthRe = regexp.MustCompile(`^\d{4}-\d{2}$`)
 	nameRe  = regexp.MustCompile(`^([0-9a-f]{32})(?:_(\d+))?\.([A-Za-z0-9]+)$`)

@@ -177,6 +177,11 @@ func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []
 			NtData:      s.acc.NtData,
 			LatestMonth: s.acc.LatestMonth,
 		}
+		// 旧版残留（只统计，docs/08 §3.5）：汇总该账号的残留条目。
+		for _, r := range s.acc.LegacyResidues {
+			rep.LegacyResidueSize += r.Size
+			rep.LegacyResidueCount += r.Count
+		}
 		for _, f := range s.kept {
 			id := len(out.Entries)
 			out.Entries = append(out.Entries, f)

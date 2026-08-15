@@ -74,7 +74,7 @@ Usage:
 
 scan flags:
   --root PATH          QQ data root (default: auto-detect)
-  --account HASH       only this account instance (nt_qq_<hash>)
+  --account HASH       only this account instance (macOS: nt_qq_<hash>; Windows: QQ number)
   --only-biz NAME      only this biz dir (repeatable: Pic Video Ptt File dataline Emoji)
   --min-age-days N     skip files newer than N days (default 3)
   --min-size BYTES     skip files smaller than this (default 0)
@@ -137,6 +137,13 @@ func scanCmd(args []string) error {
 	if *account != "" {
 		accounts = []string{*account}
 	}
+	// 旧版布局（docs/08 §3.5）：报告占用后 fail-closed——旧版 QQ 只统计
+	// 不扫描不清理（QQ 官方清理器同样只统计旧库）。scan 必须先于
+	// Engine.ScanAll 单独处理：ScanAll 对不可扫描布局直接报错。
+	if k := qq.Detect(*root); !k.ScanCapable() && k.Name() == "legacy" {
+		printLegacyReport(k, *root)
+		return fmt.Errorf("unsupported QQ data layout (detected: legacy): old-version QQ data is reported above but cannot be scanned or cleaned")
+	}
 	out, err := (&app.Engine{Cfg: cfg}).ScanAll(context.Background(), *root, accounts, onlyBizs.list, *minAgeDays, *minSize, qq.AllGates())
 	if err != nil {
 		return err
@@ -146,6 +153,35 @@ func scanCmd(args []string) error {
 	}
 	printScanReport(out)
 	return nil
+}
+
+// printLegacyReport 打印旧版布局的账号与占用（只读统计，docs/08 §3.5）。
+// 输出逐条旧库/缓存目录大小，帮助用户理解旧版数据占了多少空间。
+func printLegacyReport(k qq.Knowledge, root string) {
+	insts, err := k.InstanceDirs(root)
+	if err != nil {
+		return
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(w, "检测到旧版 QQ 布局（不支持扫描/清理，仅统计）:")
+	for _, inst := range insts {
+		fmt.Fprintf(w, "\n账号 %s\t→ QQ %s\n", inst.DirName, k.Identify(root, inst))
+		rep, ok := k.(qq.ResidueReporter)
+		if !ok {
+			continue
+		}
+		res, err := rep.Residues(root, inst)
+		if err != nil {
+			continue
+		}
+		var total int64
+		for _, r := range res {
+			total += r.Size
+			fmt.Fprintf(w, "  %s\t%s\n", filepath.Base(r.Path), humanSize(r.Size))
+		}
+		fmt.Fprintf(w, "  合计\t%s\n", humanSize(total))
+	}
+	w.Flush()
 }
 
 func autoDetectRoot() (string, error) {
@@ -166,6 +202,9 @@ func printScanReport(out *app.Outcome) {
 		fmt.Fprintf(w, "  文件数\t%d\n", a.TotalFiles)
 		fmt.Fprintf(w, "  总大小\t%s\n", humanSize(a.TotalSize))
 		fmt.Fprintf(w, "  内容哈希\t%d\n", a.HashedFiles)
+		if a.LegacyResidueSize > 0 || a.LegacyResidueCount > 0 {
+			fmt.Fprintf(w, "  旧版残留\t%d 项 · %s（只统计不清理）\n", a.LegacyResidueCount, humanSize(a.LegacyResidueSize))
+		}
 	}
 	w.Flush()
 }

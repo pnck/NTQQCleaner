@@ -20,6 +20,9 @@ type Account struct {
 	NtTemp      string `json:"ntTemp"`
 	NtDb        string `json:"ntDb"` // never read, never cleaned
 	LatestMonth string `json:"latestMonth"`
+	// LegacyResidues 是实例里的旧版数据残留（docs/08 §3.5）：Windows NT
+	// 账号的旧库（Msg3.0.db 等）、旧版账号的整目录。只统计，绝不清理。
+	LegacyResidues []qq.LegacyResidue `json:"legacyResidues,omitempty"`
 }
 
 // IsInstanceRoot reports whether root looks like a QQ data root
@@ -45,15 +48,24 @@ func Discover(root string) ([]Account, error) {
 	}
 	accounts := make([]Account, 0, len(insts))
 	for _, inst := range insts {
-		ntData := filepath.Join(root, inst.DirName, "nt_data")
-		accounts = append(accounts, Account{
+		// nt_* 子目录组的位置随布局不同（docs/08 §3.2）：
+		// mac <inst>/nt_data；Windows <inst>/nt_qq/nt_data。
+		ntData := filepath.Join(root, inst.DirName, inst.NtRel, "nt_data")
+		acc := Account{
 			Hash:        inst.Hash,
 			QQNum:       k.Identify(root, inst),
 			NtData:      ntData,
-			NtTemp:      filepath.Join(root, inst.DirName, "nt_temp"),
-			NtDb:        filepath.Join(root, inst.DirName, "nt_db"),
+			NtTemp:      filepath.Join(root, inst.DirName, inst.NtRel, "nt_temp"),
+			NtDb:        filepath.Join(root, inst.DirName, inst.NtRel, "nt_db"),
 			LatestMonth: latestPicMonth(k, ntData),
-		})
+		}
+		// 旧版残留（只统计）：仅当知识实现支持时填充（docs/08 §3.5）。
+		if rep, ok := k.(qq.ResidueReporter); ok {
+			if res, err := rep.Residues(root, inst); err == nil {
+				acc.LegacyResidues = res
+			}
+		}
+		accounts = append(accounts, acc)
 	}
 	sort.Slice(accounts, func(i, j int) bool {
 		a, b := accounts[i].LatestMonth, accounts[j].LatestMonth

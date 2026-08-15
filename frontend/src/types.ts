@@ -9,6 +9,8 @@ export interface AccountReport {
   totalFiles: number;
   totalSize: number;
   hashedFiles: number; // 参与内容哈希的文件数（二次扫描生效的直接证据）
+  legacyResidueSize: number; // 旧版残留占用（只统计不清理，docs/08）
+  legacyResidueCount: number; // 旧版残留文件数
 }
 
 export interface FileRow {

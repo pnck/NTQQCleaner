@@ -29,26 +29,28 @@ func (windowsAdapter) QQProcesses() []string {
 }
 
 // DeleteFile 的 Windows 语义：只读属性的文件 DeleteFile 会失败
-// （POSIX unlink 不会）——先清只读属性再重试。
+// （POSIX unlink 不会）——先清只读属性再重试；仍失败则返回最初的错误。
 func (windowsAdapter) DeleteFile(path string) error {
-	if err := os.Remove(path); err == nil {
+	err := os.Remove(path)
+	if err == nil {
 		return nil
 	}
 	// 常见于「只读属性」：清除后重试
-	if err := os.Chmod(path, 0o666); err == nil {
-		return os.Remove(path)
+	if cerr := os.Chmod(path, 0o666); cerr == nil {
+		err = os.Remove(path)
 	}
 	return err
 }
 
-// MoveFile 的 Windows 语义：同卷 rename，跨卷复制后删除。
+// MoveFile 的 Windows 语义：同卷 rename，跨卷复制后删除；
+// 只读属性同样会阻止移动，清除后重试。
 func (windowsAdapter) MoveFile(src, dst string) error {
-	if err := RenameOrCopy(src, dst); err == nil {
+	err := RenameOrCopy(src, dst)
+	if err == nil {
 		return nil
 	}
-	// 只读属性同样会阻止移动，清除后重试
-	if err := os.Chmod(src, 0o666); err == nil {
-		return RenameOrCopy(src, dst)
+	if cerr := os.Chmod(src, 0o666); cerr == nil {
+		err = RenameOrCopy(src, dst)
 	}
 	return err
 }

@@ -14,6 +14,10 @@ type AccountReport struct {
 	// HashedFiles = 参与内容哈希（大小冲突候选）的文件数：二次扫描是否
 	// 生效的直接证据（0 表示本账号没有任何同大小文件对）。
 	HashedFiles int `json:"hashedFiles"`
+	// 旧版残留（docs/08 §3.5）：只统计、永不清理。Windows NT 账号的旧库
+	// （Msg3.0.db 等）或旧版账号的整目录占用。
+	LegacyResidueSize  int64 `json:"legacyResidueSize"`
+	LegacyResidueCount int   `json:"legacyResidueCount"`
 }
 
 // FileRow is one row in the UI's file browser (docs/07 §6). ThumbURL/OriURL

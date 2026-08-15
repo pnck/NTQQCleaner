@@ -52,8 +52,9 @@ func TestDetectPrefersCapable(t *testing.T) {
 	}
 }
 
-// TestDetectLegacyOnly：旧版布局（数字目录+msg3.0.db）无实现——
-// NTQQ Cleaner 仅支持 NT 架构，旧版 fail-closed（回退 generic 未知布局）。
+// TestDetectLegacyOnly：旧版布局（数字目录+msg3.0.db）被 legacy 兼容层
+// 识别（docs/08 §3.3）：可报告占用，但 ScanCapable=false——扫描/清理
+// fail-closed。未知布局仍回退 generic。
 func TestDetectLegacyOnly(t *testing.T) {
 	root := t.TempDir()
 	legacyDir := filepath.Join(root, "10003")
@@ -64,7 +65,14 @@ func TestDetectLegacyOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	k := qq.Detect(root)
-	if k.Name() != "generic" || k.ScanCapable() {
-		t.Fatalf("got %s (capable=%v), want generic incapable (legacy unsupported, fail-closed)", k.Name(), k.ScanCapable())
+	if k.Name() != "legacy" || k.ScanCapable() {
+		t.Fatalf("got %s (capable=%v), want legacy incapable (recognized but fail-closed)", k.Name(), k.ScanCapable())
+	}
+	// legacy 白名单全拒绝，黑名单底线仍在
+	if k.Whitelisted("Pic/2024-09/Thumb/x.png", qq.Gates{}) {
+		t.Error("legacy should whitelist nothing")
+	}
+	if len(k.DBSuffixes()) == 0 {
+		t.Error("legacy should keep db-suffix blacklist")
 	}
 }
