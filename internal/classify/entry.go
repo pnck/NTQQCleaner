@@ -72,8 +72,7 @@ func newEntry(k Classifier, ntData, abs string, size int64, mtime int64) FileEnt
 	subLower := strings.ToLower(e.Sub)
 	e.IsThumb = subLower == "thumb"
 	e.IsTemp = subLower == "oritemp" || subLower == "thumbtemp"
-	if e.Ext == "gif" || e.Ext == "webp" {
-		e.Animated = sniffAnimated(abs)
-	}
+	// Animated 由 walkRoot 在 Options.DetectAnimated 开启时填充
+	// （media 层按内容判定，不在此处——newEntry 保持纯构造）。
 	return e
 }

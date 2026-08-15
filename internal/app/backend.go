@@ -3,8 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"image"
-	"image/gif"
 	"image/png"
 	"net"
 	"net/http"
@@ -16,11 +14,10 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/image/webp"
-
 	"qqcleaner/internal/classify"
 	"qqcleaner/internal/clean"
 	"qqcleaner/internal/discovery"
+	"qqcleaner/internal/media"
 	"qqcleaner/internal/platform"
 	"qqcleaner/internal/qq"
 	"qqcleaner/internal/report"
@@ -627,34 +624,26 @@ func (b *Backend) PreviewHandler(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, p)
 }
 
-// serveFirstFrame decodes the first frame of a gif/webp and re-encodes it
-// as PNG. Falls back to serving the original file on any failure.
+// serveFirstFrame decodes the first frame of an animated image and
+// re-encodes it as PNG. Detection and decoding live in internal/media
+// (content-based — QQ cache files often lie about their type, e.g. gifs
+// in personal_emoji named .jpg). Decode failure serves a neutral
+// placeholder instead of falling back to the original: ?static=1 is only
+// attached to files already flagged animated, and the animated original
+// is exactly what the wall must not render.
 func (b *Backend) serveFirstFrame(w http.ResponseWriter, r *http.Request, p string) {
-	ext := strings.ToLower(filepath.Ext(p))
-	if ext != ".gif" && ext != ".webp" {
-		http.ServeFile(w, r, p)
-		return
-	}
-	f, err := os.Open(p)
+	img, err := media.FirstFrame(p)
 	if err != nil {
-		http.ServeFile(w, r, p)
-		return
-	}
-	defer f.Close()
-	var img image.Image
-	switch ext {
-	case ".gif":
-		img, err = gif.Decode(f) // 只解第一帧
-	case ".webp":
-		img, err = webp.Decode(f)
-	}
-	if err != nil || img == nil {
-		http.ServeFile(w, r, p)
-		return
+		img = nil
+		logring.Logf("static first frame failed (%s): %v — placeholder served", p, err)
 	}
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = png.Encode(w, img)
+	if img != nil {
+		_ = png.Encode(w, img)
+		return
+	}
+	_, _ = w.Write(media.PlaceholderPNG)
 }
 
 // ---- cleanup ----

@@ -128,7 +128,10 @@ Emoji/
 `displaySub`，docs/07 §4.4）。
 - `emoji-recv` = 收到的表情，按年月超龄清理（同 Pic 规则）
 - `marketface` = 表情包，QQ 按"最近使用"保留 → 工具默认只报告（clean_marketface=false）
-- `personal_emoji` = 个人表情，**用户主动制作，默认不清除**
+- `personal_emoji` = 个人表情，**用户主动制作，默认不清除**。其 Ori 目录内
+  文件的扩展名与内容常不符（gif 动图存为 `.jpg` 等，实测样本
+  `{md5}.jpg`）——内容判定必须按 MIME 魔数而非扩展名
+  （internal/media，标准库 http.DetectContentType 判定；docs/07 §4.2）
 
 ---
 

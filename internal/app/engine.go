@@ -11,6 +11,7 @@ import (
 
 	"qqcleaner/internal/classify"
 	"qqcleaner/internal/discovery"
+	"qqcleaner/internal/platform"
 	"qqcleaner/internal/qq"
 	_ "qqcleaner/internal/qqimpl" // 注册 probe（QQ 平台×版本 dispatcher）
 	"qqcleaner/internal/report"
@@ -130,6 +131,9 @@ func (e *Engine) ScanAll(ctx context.Context, root string, accounts, onlyBizs []
 			OnlyBizs: onlyBizs,
 			SkipDirs: e.Cfg.SkipDirSet(),
 			MinSize:  minSize,
+			// 动图嗅探按平台政策开启（Windows 照片墙静态化动图需要；
+			// macOS/CLI 关闭，免掉扫描期额外 I/O）。
+			DetectAnimated: platform.Current().FreezeAnimatedThumbs(),
 			Progress: func(stage string, done, total uint64) {
 				atomic.AddUint64(&doneFiles, 1)
 				throttled(acc.Hash+"/"+filepath.Base(stage), base+done, total)

@@ -45,10 +45,15 @@ func TestServeFirstFrame(t *testing.T) {
 		t.Fatal("response is not a PNG")
 	}
 
-	// 非动图扩展名：按原文件回退（gif 字节原样）。
+	// 不可解码文件：回退占位 PNG（200）——?static=1 只挂在已判定的动图
+	// 上，解码失败绝不回退动画原图（那会让照片墙重新开始播放）。
 	rec2 := httptest.NewRecorder()
 	b.serveFirstFrame(rec2, req, filepath.Join(dir, "b.txt"))
-	if rec2.Code != http.StatusNotFound {
-		t.Fatalf("fallback for unknown file = %d, want 404", rec2.Code)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("fallback for undecodable file = %d, want 200 placeholder", rec2.Code)
+	}
+	body2 := rec2.Body.Bytes()
+	if len(body2) < 4 || !bytes.Equal(body2[:4], []byte{0x89, 'P', 'N', 'G'}) {
+		t.Fatal("placeholder fallback is not a PNG")
 	}
 }

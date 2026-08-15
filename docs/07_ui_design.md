@@ -124,8 +124,12 @@ func previewHandler(rw http.ResponseWriter, req *http.Request) {
   `Adapter.FreezeAnimatedThumbs()`，windows=true / darwin、linux=false）：
   WebView2 没有任何关闭图片动画的设置（CoreWebView2Settings 全表无此类
   能力），墙内几十个动图同时解码极耗 CPU（gif 每帧解码为整幅位图）。
-  动图标记本身是文件事实（扫描时对 gif 帧数 / webp VP8X ANIM 位嗅探，
-  各平台一致）；政策在 Go 侧落到 URL——Windows 上后端给动图缩略图的
+  动图标记是文件事实，扫描时**按内容魔数**嗅探 gif 帧数 / webp VP8X
+  ANIM 位 / PNG acTL——QQ 缓存扩展名与内容常不符（personal_emoji 的
+  gif 存为 `.jpg`，docs/01 §3），扩展名门控会漏。嗅探仅在平台政策需要
+  时开启（classify `DetectAnimated` 选项，由上层按平台能力注入，macOS/
+  CLI 关闭免扫描期额外 I/O）；预览 handler 同样按魔数解码首帧（不信任
+  扩展名）。政策在 Go 侧落到 URL——Windows 上后端给动图缩略图的
   ThumbURL 附加 `?static=1`，预览 handler 解码首帧输出 PNG。前端对平台
   差异零感知，公共管线不变。静态首帧把动画纳入「自动播放开关」语义：
   只有显式进入播放器视图（点 ▶ / 开自动播放）才播放动画。

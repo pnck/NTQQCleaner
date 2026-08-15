@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+
+	"qqcleaner/internal/media"
 )
 
 // Options controls a Scan. Progress is invoked from worker goroutines once
@@ -22,6 +24,11 @@ type Options struct {
 	MinSize  int64           // ignore files smaller than this
 	Workers  int             // 0 = NumCPU, capped at len(BizDirs)
 	Progress func(stage string, done, total uint64)
+	// DetectAnimated 开启动图嗅探（对图片类文件按内容魔数判定 gif/
+	// webp/APNG 动画，每次多一次 open+读头）。显示层才需要：由上层按
+	// 平台政策决定（Windows 照片墙静态化动图）；CLI manifest 不需要，
+	// 关闭可免掉扫描期额外 I/O。
+	DetectAnimated bool
 }
 
 // Scan walks the whitelisted biz directories under ntData and returns every
@@ -76,7 +83,7 @@ func Scan(ctx context.Context, ntData string, opts Options) ([]FileEntry, error)
 		go func() {
 			defer wg.Done()
 			for root := range jobs {
-				found, err := walkRoot(ctx, opts.K, root, skip, opts.MinSize, func() {
+				found, err := walkRoot(ctx, opts.K, root, skip, opts.MinSize, opts.DetectAnimated, func() {
 					atomic.AddUint64(&done, 1)
 					if opts.Progress != nil {
 						opts.Progress(root, atomic.LoadUint64(&done), total)
@@ -106,6 +113,19 @@ func Scan(ctx context.Context, ntData string, opts Options) ([]FileEntry, error)
 		return entries, ctx.Err()
 	}
 	return entries, nil
+}
+
+// isImageExt 判定扩展名是否属于图片类（动图嗅探的粗筛门：QQ 缓存里
+// 扩展名与实际内容常不一致——personal_emoji 的 gif 存成 .jpg、jpg 实
+// 为 webp——所以门控只按「看起来是图片」粗筛省 I/O，真伪由内容魔数
+// 决定）。含手机互传常见格式（avif/heic——探测覆盖到，动画解码能力
+// 以 media 包为准）。
+func isImageExt(ext string) bool {
+	switch ext {
+	case "jpg", "jpeg", "png", "gif", "webp", "bmp", "avif", "heic":
+		return true
+	}
+	return false
 }
 
 // walkRoots resolves the whitelisted biz dirs that exist under ntData.
@@ -147,7 +167,7 @@ func countFiles(ctx context.Context, root string, skip map[string]bool) (uint64,
 	return n, err
 }
 
-func walkRoot(ctx context.Context, k Classifier, root string, skip map[string]bool, minSize int64, onFile func()) ([]FileEntry, error) {
+func walkRoot(ctx context.Context, k Classifier, root string, skip map[string]bool, minSize int64, detectAnimated bool, onFile func()) ([]FileEntry, error) {
 	var out []FileEntry
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -174,7 +194,13 @@ func walkRoot(ctx context.Context, k Classifier, root string, skip map[string]bo
 		if info.Size() < minSize {
 			return nil
 		}
-		out = append(out, newEntry(k, filepath.Dir(root), path, info.Size(), info.ModTime().Unix()))
+		e := newEntry(k, filepath.Dir(root), path, info.Size(), info.ModTime().Unix())
+		// 动图标记（media 层按内容判定，不信任扩展名）：isImageExt 只做
+		// 粗筛省 I/O（跳过视频/数据库等），真伪由内容魔数决定。
+		if detectAnimated && isImageExt(e.Ext) {
+			e.Animated = media.IsAnimated(path)
+		}
+		out = append(out, e)
 		if onFile != nil {
 			onFile()
 		}
