@@ -79,10 +79,10 @@
 | 4 | `Ptt` | 语音 |
 | 5 | `File` | 文件（无年月） |
 | 6 | `Emoji` | 表情 |
-| 12 | `dataline` | 数据线 |
+| 12 | `dataline` + `Feed` | 数据线 / 看点动态缓存——**两个目录共用 biz 码 12**（IDB 原始指令铁证：`0Ch+"dataline"` 与 `0Ch+"Feed"` 两条注册，非笔误） |
 | 29 | `flashfransfer` | 闪传中转：`upload_temp`/`download_temp`/`thumb`（官方「缓存文件」集合，docs/03 §1） |
 | 31 | `FilterVideo` | 过滤视频 |
-| 其他 | `7=GroupAnnouncement 8=avatar 9=Log 10=msf 16=OnlineStatus 17=PrivilegeIcon 18=PhotoWall 19=Qzone 20=msgbackup 22=VasUpdateSystem 25=config 26=wifiphoto 30=mmkv 34=wmpf 35=guildFileTransfer 36=tracing 37=ams 38=qtransfer`（12 疑另有 `Feed`，原始表重复待核实） | 见下 |
+| 其他 | `7=GroupAnnouncement 8=avatar 9=Log 10=msf 16=OnlineStatus 17=PrivilegeIcon 18=PhotoWall 19=Qzone 20=msgbackup 22=VasUpdateSystem 25=config 26=wifiphoto 30=mmkv 34=wmpf 35=guildFileTransfer 36=tracing 37=ams 38=qtransfer` | 见下 |
 
 elem_type → biz 映射（IDB `sub_186D4C2`）：图片 elem 2→biz2（sub_type
 位图门控，否则 biz6 Emoji）、文件 elem 3→biz5、语音 elem 4→biz4、
