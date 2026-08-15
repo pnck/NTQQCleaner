@@ -45,7 +45,7 @@ func (*NT) InstanceDirs(root string) ([]qq.Instance, error) {
 // NT macOS 实例目录顶层只有 nt_* 组，无残留 → nil；
 // NT Windows 顶层除 nt_qq/ 外的旧库（Msg3.0.db 等）→ 逐条只统计。
 func (*NT) Residues(root string, inst qq.Instance) ([]qq.LegacyResidue, error) {
-	if currentSpec.ntRel == "" {
+	if !currentSpec.hasLegacyResidue {
 		return nil, nil
 	}
 	instDir := filepath.Join(root, inst.DirName)

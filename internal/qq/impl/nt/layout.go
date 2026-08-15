@@ -21,6 +21,10 @@ type layoutSpec struct {
 	// dirIsQQNum：实例目录名本身就是 QQ 号（windows 明文目录），
 	// Identify 直接返回目录名，无需 mmkv/UnitedConfig 三源。
 	dirIsQQNum bool
+	// hasLegacyResidue：实例目录顶层除了 nt_* 子目录组之外还有旧版
+	// 数据残留（windows：Msg3.0.db 等旧库；mac：无）。Residues 据此
+	// 决定是否统计——显式字段而非「ntRel == ""」的隐式推断。
+	hasLegacyResidue bool
 }
 
 var (
@@ -55,8 +59,8 @@ func winInstance(root, name string, isDir bool) (string, bool) {
 }
 
 var (
-	darwinSpec  = layoutSpec{instance: macInstance, ntRel: "", globalRel: "global", dirIsQQNum: false}
-	windowsSpec = layoutSpec{instance: winInstance, ntRel: "nt_qq", globalRel: filepath.Join("nt_qq", "global"), dirIsQQNum: true}
+	darwinSpec  = layoutSpec{instance: macInstance, ntRel: "", globalRel: "global", dirIsQQNum: false, hasLegacyResidue: false}
+	windowsSpec = layoutSpec{instance: winInstance, ntRel: "nt_qq", globalRel: filepath.Join("nt_qq", "global"), dirIsQQNum: true, hasLegacyResidue: true}
 	// linuxSpec：Linux 无 NT QQ 默认根，用户指定 --root 时按 mac 风格
 	// 枚举（nt_qq_<32hex>）。
 	linuxSpec = darwinSpec
