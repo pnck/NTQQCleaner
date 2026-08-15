@@ -120,7 +120,10 @@ func (b *Backend) SetConfig(c rules.Config) error {
 // actually exists, existing ones first.
 func (b *Backend) DiscoverRoots() []string {
 	cands := qq.RootCandidates()
-	var existing, missing []string
+	// 非 nil 返回：nil slice → JSON null，前端 rs.length 崩溃
+	// （append(nil, nil...) 本身就是 nil）。
+	existing := make([]string, 0, len(cands))
+	missing := make([]string, 0, len(cands))
 	for _, c := range cands {
 		if discovery.IsInstanceRoot(c) {
 			existing = append(existing, c)
@@ -372,7 +375,13 @@ func (b *Backend) GetIDs(f Filter) ([]int, error) {
 	if b.outcome == nil {
 		return nil, fmt.Errorf("no scan results yet")
 	}
-	return b.outcome.applyStages(b.outcome.matchedIDs(f), f), nil
+	// applyStages 可能返回 nil（drop 越过结果集 / select 展开为空）——
+	// nil 序列化为 JSON null，前端 ids.length 崩溃。与 GetDupes 同坑。
+	ids := b.outcome.applyStages(b.outcome.matchedIDs(f), f)
+	if ids == nil {
+		ids = []int{}
+	}
+	return ids, nil
 }
 
 // GetDupes finds byte-identical groups (SHA-256 content hash) across the
@@ -397,7 +406,9 @@ func (b *Backend) GetDupes(f Filter) ([]DupGroup, error) {
 	for _, id := range out.applyStages(out.matchedIDs(f), f) {
 		inFilter[id] = true
 	}
-	var groups []DupGroup
+	// 必须非 nil：Go nil slice 序列化为 JSON null，前端 groups.reduce
+	// 直接崩（「去重建议」在无交集筛选下白屏的根因）。
+	groups := make([]DupGroup, 0)
 	for hash, ids := range out.ContentIndex {
 		if len(ids) < 2 {
 			continue

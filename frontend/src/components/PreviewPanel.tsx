@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { SyntheticEvent } from "react";
 import { api } from "../api";
 import { explainReason } from "../reasons";
@@ -53,34 +53,61 @@ function playable(row: FileRow): boolean {
   );
 }
 
-// 音量/静音与自动播放是**全局单例**（模块级）：切换媒体文件（视频/音频
-// 元素按 src 重挂载）或切换行后状态保留；原生控件的改动经 volumechange
-// 回流到单例。
+// 音量/静音与自动播放是**全局单例**（模块级）：切换行/切换媒体后状态
+// 保留；原生控件的改动经 volumechange 回流到单例。
 const volumeState = { v: 1, muted: false };
 const autoLoopState = { on: false };
 
-// MediaEl：视频/音频元素。挂载回调里**先于播放**套用音量/静音/循环
-// （autoPlay 属性会立即起播，放 effect 里会在播放后跳变）；自动循环的
-// 起播在 effect 里做——WebKit 自动播放策略下非用户手势只允许静音起播，
-// 'playing' 后恢复单例的静音状态（切换媒体文件时也能自动续播）。
-function MediaEl({
-  src,
+// Player：**常驻播放器单例**。视频/音频两个元素各一个、跨行保活
+// （display 切换，绝不重挂载），切换媒体只改 src——音量/静音/循环参数
+// 随元素自持，原生音量滑块不会每次切换后「先出现再移动」（此前
+// key={src} 每次切 src 都新建元素，原生控件从默认值重新初始化）。
+// 挂载时在 ref 回调里（先于首次绘制）套用单例音量/静音；src 变化即起播
+// ——效果期不在用户手势上下文，WebKit 自动播放策略下先静音起播、
+// 'playing' 后恢复元素既有静音态。
+function Player({
   kind,
+  src,
   autoLoop,
-  onEl,
+  onActiveEl,
 }: {
+  kind: "video" | "audio" | null; // null = 隐藏待命（当前行非媒体/未进入播放器）
   src: string;
-  kind: "video" | "audio";
   autoLoop: boolean;
-  onEl: (el: HTMLVideoElement | HTMLAudioElement | null) => void;
+  onActiveEl: (el: HTMLVideoElement | HTMLAudioElement | null) => void;
 }) {
-  const ref = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const prev = useRef<{ kind: string; src: string }>({ kind: "", src: "" });
+
+  // 循环开关：两个元素同步（自动循环 = 常驻元素 loop 属性）。
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.loop = autoLoop;
-    if (!autoLoop) return;
-    const wasMuted = volumeState.muted;
+    if (videoRef.current) videoRef.current.loop = autoLoop;
+    if (audioRef.current) audioRef.current.loop = autoLoop;
+  }, [autoLoop]);
+
+  // 活动元素切换时套用单例音量/静音（元素隐藏时设置无可见跳变），并向
+  // 父级暴露活动元素（空格播放/暂停用）。
+  useEffect(() => {
+    const el =
+      kind === "video" ? videoRef.current : kind === "audio" ? audioRef.current : null;
+    if (el) {
+      el.volume = volumeState.v;
+      el.muted = volumeState.muted;
+    }
+    onActiveEl(el);
+  }, [kind, onActiveEl]);
+
+  // src 装载与起播。prev 守卫：StrictMode 下 effect 双跑时第二次直接
+  // 返回——否则两轮 muted 恢复监听叠加，静音态会被还原错。
+  useEffect(() => {
+    if (kind !== "video" && kind !== "audio") return;
+    const el = kind === "video" ? videoRef.current : audioRef.current;
+    if (!el || !src) return;
+    if (prev.current.kind === kind && prev.current.src === src) return;
+    prev.current = { kind, src };
+    el.src = src;
+    const wasMuted = el.muted;
     el.muted = true;
     const restore = () => {
       el.removeEventListener("playing", restore);
@@ -88,36 +115,91 @@ function MediaEl({
     };
     el.addEventListener("playing", restore);
     void el.play().catch(() => {});
-  }, [src, autoLoop]);
-  const elProps = {
-    key: src,
-    src,
-    controls: true,
-    autoPlay: true,
-    ref: (el: HTMLVideoElement | HTMLAudioElement | null) => {
-      ref.current = el;
-      onEl(el);
-      if (el) {
-        el.volume = volumeState.v;
-        el.muted = volumeState.muted;
-        el.loop = autoLoop;
-      }
-    },
-    onVolumeChange: (e: SyntheticEvent<HTMLVideoElement | HTMLAudioElement>) => {
-      volumeState.v = e.currentTarget.volume;
-      volumeState.muted = e.currentTarget.muted;
-    },
+  }, [kind, src]);
+
+  const applySingleton = (el: HTMLVideoElement | HTMLAudioElement | null) => {
+    if (!el) return;
+    el.volume = volumeState.v;
+    el.muted = volumeState.muted;
   };
-  return kind === "video" ? <video {...elProps} /> : <audio {...elProps} />;
+  const volumeSync = (e: SyntheticEvent<HTMLVideoElement | HTMLAudioElement>) => {
+    volumeState.v = e.currentTarget.volume;
+    volumeState.muted = e.currentTarget.muted;
+  };
+
+  return (
+    <div className="player-host" style={{ display: kind ? "flex" : "none" }}>
+      <video
+        ref={(el) => {
+          videoRef.current = el;
+          applySingleton(el);
+        }}
+        controls
+        style={{ display: kind === "video" ? "" : "none", width: "100%", height: "100%", objectFit: "contain" }}
+        onVolumeChange={volumeSync}
+      />
+      <audio
+        ref={(el) => {
+          audioRef.current = el;
+          applySingleton(el);
+        }}
+        controls
+        style={{ display: kind === "audio" ? "" : "none", width: "100%" }}
+        onVolumeChange={volumeSync}
+      />
+    </div>
+  );
 }
 
 export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, onSelectDups }: Props) {
   // 初始态 = 缩略图 + 叠层图标；点击后切换为播放器/原文件（视频/音频即自动播放）。
-  // 状态按 row.id 记录，切行时自动回到初始态。
+  // 状态按 row.id 记录——切行后旧行的 played 自然失效（full 按当前行判定），
+  // 无需随行重置。播放器元素常驻（Player），不随行重挂载。
   const [played, setPlayed] = useState<number | null>(null);
   const [forceBig, setForceBig] = useState<number | null>(null);
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
   const [autoLoop, setAutoLoop] = useState(autoLoopState.on);
+
+  // 活动媒体元素回写（空格播放/暂停用；Player 在 kind 变化时回调）。
+  const setMediaRef = useCallback(
+    (el: HTMLVideoElement | HTMLAudioElement | null) => {
+      mediaRef.current = el;
+    },
+    [],
+  );
+
+  // 切行回到初始态（缩略图叠层）：面板不再随行重挂载（播放器常驻），
+  // played/forceBig 按 row.id 记录——重扫后行 id 会复用，行变化时必须
+  // 清掉旧行状态。ref 守卫只在行 id 真正变化时执行（autoLoop 开关翻转
+  // 不打断正在播放的媒体）；自动播放开时让位给下方 effect 直接进播放器。
+  const lastRowId = useRef<number | null>(null);
+  useEffect(() => {
+    if (!row) {
+      lastRowId.current = null;
+      return;
+    }
+    if (lastRowId.current === row.id) return;
+    lastRowId.current = row.id;
+    if (autoLoop) return;
+    setPlayed(null);
+    setForceBig(null);
+  }, [row, autoLoop]);
+
+  // 自动播放开：聚焦行变化/勾选时自动进入播放器并起播（常驻播放器只换
+  // src）。勾选语义 = 「循环自动播放当前聚焦的媒体」——切换到下一个媒体
+  // 同样自动开始。无缩略图的行本就直接原文件（full 恒真）。**不做
+  // playable 预判**：扩展名与 MIME 常不一致（jpg 实为 webp 等），WebView
+  // 按内容嗅探可以播放/渲染的文件会被 playable() 误拒——有原文件就进
+  // 播放器视图，交给元素自身尽力渲染/播放。
+  useEffect(() => {
+    if (!autoLoop || !row) return;
+    const hasThumb = row.thumbUrl !== "";
+    const fullNow = !hasThumb || played === row.id;
+    if (hasThumb && row.oriUrl !== "" && !fullNow) {
+      setPlayed(row.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [row, autoLoop]);
 
   // 空格 = 播放/暂停当前媒体（键盘操作无说明文案）；焦点在输入控件时
   // 不接管。媒体尚未切换（仍是缩略图叠层）时直接开始播放。
@@ -162,7 +244,10 @@ export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, o
   const kind = kindOf(row, full);
   const src = full ? row.oriUrl : row.thumbUrl;
   const bigImageGate = kind === "img" && full && row.size > BIG_IMAGE && forceBig !== row.id;
-  const showOverlay = hasThumb && hasOri && !full;
+  // 缩略图叠层（播放/查看切换控件）只在**未启用自动播放**时存在：
+  // 自动播放开 = 直接进入原文件视图（叠层完全消失），交给元素按内容
+  // 嗅探尽力播放/渲染（扩展名搞错的可播放媒体不再被 playable 误拒）。
+  const showOverlay = hasThumb && hasOri && !full && !autoLoop;
 
   const reveal = () =>
     void api.reveal(row.id).catch((e) => onToast(`无法在文件夹中显示：${e}`));
@@ -176,18 +261,16 @@ export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, o
         <button disabled={!next} onClick={() => next && onNavigate(next)}>
           →
         </button>
-        <label className="autoplay-toggle" title="勾选后循环自动播放当前媒体">
+        <label className="autoplay-toggle" title="勾选后循环自动播放：当前媒体立即开始，切换到下一个媒体同样自动开始">
           <input
             type="checkbox"
             checked={autoLoop}
             onChange={(e) => {
-              const on = e.target.checked;
-              autoLoopState.on = on;
-              setAutoLoop(on);
-              // 勾选 = 直接尝试开始循环播放：尚未切换到播放器时先切换。
-              // 不做「可播放性」预判——扩展名与 MIME 常不一致（如 jpg
-              // 实为 webp），交给元素自身尽力播放即可。
-              if (on && !full) setPlayed(row.id);
+              // 只切开关：起播由自动播放 effect 统一驱动（勾选/切行同一
+              // 条路径）。不做「可播放性」预判——扩展名与 MIME 常不一致
+              // （如 jpg 实为 webp），交给元素自身尽力播放即可。
+              autoLoopState.on = e.target.checked;
+              setAutoLoop(e.target.checked);
             }}
           />
           自动播放
@@ -213,24 +296,23 @@ export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, o
             <br />
             <button onClick={() => setForceBig(row.id)}>仍然加载</button>
           </div>
-        ) : kind === "video" || kind === "audio" ? (
-          <MediaEl
-            src={src}
-            kind={kind}
-            autoLoop={autoLoop}
-            onEl={(el) => {
-              mediaRef.current = el;
-            }}
-          />
         ) : kind === "card" ? (
           <div className="big-warn">
             此类型不支持内嵌预览
             <br />
             <button onClick={reveal}>在文件夹中显示</button>
           </div>
-        ) : (
+        ) : kind === "img" ? (
           <img src={src} draggable={false} alt={row.md5} />
-        )}
+        ) : null}
+        {/* 常驻播放器：媒体行以外/未进入播放器时隐藏待命（元素不卸载，
+            音量等参数保留）；src 只在进入播放器后装载 */}
+        <Player
+          kind={kind === "video" || kind === "audio" ? kind : null}
+          src={full ? row.oriUrl : ""}
+          autoLoop={autoLoop}
+          onActiveEl={setMediaRef}
+        />
       </div>
 
       <div className="detail">

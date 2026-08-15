@@ -343,19 +343,33 @@ button.chip {
   border-radius: 3px;
 }
 
-/* 侧栏拖拽分隔条（左右各一）：悬停/拖动时高亮 */
+/* 侧栏拖拽分隔条（左右各一）：常驻细线作视觉引导，悬停/拖动时高亮
+   为强调色并加宽；7px 命中区比可见线宽，便于抓取 */
 .splitter {
   flex: none;
-  width: 5px;
+  width: 7px;
   cursor: col-resize;
+  position: relative;
   background: transparent;
-  transition: background 0.15s;
 }
 
-.splitter:hover,
-.splitter:active {
+.splitter::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background 0.15s, width 0.15s;
+}
+
+.splitter:hover::after,
+.splitter:active::after {
   background: var(--accent);
-  opacity: 0.4;
+  width: 3px;
 }
 
 .wall-scroll {
@@ -506,6 +520,18 @@ button.chip {
   padding: 0 12px;
 }
 
+/* 常驻播放器容器（Player）：隐藏时元素不卸载（音量/静音随元素保留） */
+.preview .media .player-host {
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview .media .player-host video {
+  background: transparent;
+}
+
 /* 缩略图上的播放/查看叠层：点击即切换原文件（视频/音频即播放） */
 .media-overlay {
   position: absolute;
@@ -629,35 +655,6 @@ button.chip {
   color: var(--text-dim);
   font-size: 11px;
   white-space: nowrap;
-}
-
-/* in 列表候选勾选（简易编辑模式）：枚举字段/月份的可选值排成 chip */
-.cond-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  flex: 1;
-  min-width: 0;
-  max-height: 88px;
-  overflow-y: auto;
-  align-content: flex-start;
-}
-
-.cond-chip {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1px 8px;
-  font-size: 11px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.cond-chip.on {
-  border-color: var(--accent);
-  background: rgba(59, 130, 246, 0.12);
 }
 
 /* 设置对话框 */
@@ -1066,6 +1063,41 @@ button.chip {
   font-size: 12px;
 }
 
+/* ErrorBoundary 兜底红条：渲染异常时替代整棵 DOM（信息可选中复制） */
+.fatal-bar {
+  min-height: 100vh;
+  background: #7f1d1d;
+  color: #fff;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font: 13px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+}
+
+.fatal-bar button {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.4);
+  color: #fff;
+}
+
+.fatal-bar button:hover:not(:disabled) {
+  border-color: #fff;
+}
+
+.fatal-msg {
+  font: 12px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+  cursor: text;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+  padding: 12px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
 /* 清理确认对话框：审计/移动两个显式 opt-in（docs/07 §5） */
 .confirm-opt {
   display: flex;
@@ -1114,4 +1146,164 @@ button.chip {
 .confirm-warn .mini {
   flex: none;
   min-width: 72px;
+}
+
+/* MultiSelect：tag + 下拉多选控件（自研，不引组件库——项目约束手写语义
+   CSS）。结构与交互参考 CoreUI MultiSelect（下拉头部固定区 = 搜索 + 全选/
+   清空，全选作用于过滤结果）、antd Select mode="multiple"（tag 移除不开关
+   下拉、搜索框在下拉顶部）与 react-select（菜单全宽、列表溢出滚动）。
+   条件行的 in 值编辑用。 */
+.mselect {
+  position: relative; /* 下拉 absolute 的定位锚点 */
+  flex: 1; /* 条件行（display:flex）内占满剩余宽度 */
+  min-width: 0;
+}
+
+/* 框体：tag 容器，点击切换下拉 */
+.mselect-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  max-height: 76px; /* tag 多时框内滚动 */
+  overflow-y: auto;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+  cursor: pointer;
+}
+
+.mselect-box.open {
+  border-color: var(--accent);
+}
+
+.mselect-placeholder {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.mselect-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 0 6px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.mselect-x {
+  border: none;
+  background: transparent;
+  padding: 0 2px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.mselect-x:hover {
+  color: var(--text);
+}
+
+/* caret 右缘是 select 控件惯例（react-select dropdown-indicator / antd
+   arrow 同构）：margin-left:auto 只推这个指示器到行尾，不做内容两端
+   对齐；flex-wrap 下换行时随行流是这些库的同样行为 */
+.mselect-caret {
+  margin-left: auto;
+  padding-left: 4px;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+/* 下拉：全宽（与框体等宽，CoreUI min-width:100% 同义），z-index 高于
+   对话框（dialog-mask 为 10） */
+.mselect-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 固定区：搜索框 + 全选/清空（不随选项滚动，CoreUI 下拉头部） */
+.mselect-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* 按钮靠左紧凑排布：下拉宽达数百 px，短内容两端对齐会成两座孤岛；
+   左对齐 + 小间距（CoreUI 头部 select-all 同为左排文字按钮） */
+.mselect-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* 滚动区：选项列表溢出滚动（CoreUI optionsMaxHeight / react-select
+   .select__menu-list 同义） */
+.mselect-list {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 2px 4px;
+}
+
+.mselect-empty {
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 6px;
+}
+
+/* 选项行（CoreUI 视觉）：块级布局，checkbox 内联紧贴文字、统一左对齐
+   ——不用 flex 拉伸，文字紧跟勾选框，间隔仅来自 checkbox 的 4px margin */
+.mselect-opt {
+  display: block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* checkbox 与文字紧贴：视觉间隔 = margin-right 4px（全局 *reset 已清 UA
+   默认 margin，无叠加，几 px 属表单控件惯例区间 4–8px 的收紧端）。
+   vertical-align 用数值偏移而非关键字——WebKit 对 middle/baseline
+   处理不一致（Safari 偏移 1–2px），数值偏移跨浏览器稳定。
+   **min-width/flex 必须显式声明**：选项行位于 .cond-row 内，宿主规则
+   `.cond-row input { flex:1; min-width:90px }` 会泄漏进来把 checkbox
+   元素盒撑到 90px 宽（实测 computed width=90px）——勾选框视觉正常但
+   文字被推远 ~80px，这才是「间距过宽」的真正来源（margin 调多少都
+   只影响几 px）。flex:none 防宿主 flex 拉伸。 */
+.mselect-opt input[type="checkbox"] {
+  flex: none;
+  width: 13px;
+  min-width: 13px;
+  height: 13px;
+  margin: 0 4px 0 0;
+  vertical-align: -2px;
+}
+
+.mselect-opt:hover {
+  background: var(--panel-2);
+}
+
+.mselect-opt.on {
+  background: rgba(59, 130, 246, 0.12);
 }

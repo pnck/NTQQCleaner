@@ -3,6 +3,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { filterToText, group, leaf, parseExpr, updateTree } from "../expression";
 import type { Condition, Expr, Sort, Stage } from "../types";
 import { FILTER_FIELDS, OPS_LABEL, fieldDef, type NamedFilter } from "../filters";
+import { MultiSelect } from "./MultiSelect";
 
 interface Props {
   open: boolean;
@@ -110,34 +111,13 @@ function ConditionRow({
           <option value="false">否</option>
         </select>
       ) : cond.op === "in" && options ? (
-        <div className="cond-chips">
-          {options.map((o) => {
-            const on = inVals.includes(o.value);
-            return (
-              <label key={o.value} className={`cond-chip${on ? " on" : ""}`} title={o.label}>
-                <input
-                  type="checkbox"
-                  checked={on}
-                  onChange={() =>
-                    onChange({
-                      ...cond,
-                      value: (on
-                        ? inVals.filter((v) => v !== o.value)
-                        : [...inVals, o.value]
-                      ).join(","),
-                    })
-                  }
-                />
-                {o.label}
-              </label>
-            );
-          })}
-          {options.length === 0 && (
-            <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
-              暂无候选（扫描后出现）
-            </span>
-          )}
-        </div>
+        <MultiSelect
+          options={options}
+          values={inVals}
+          onChange={(vals) => onChange({ ...cond, value: vals.join(",") })}
+          placeholder="勾选候选值…"
+          emptyHint="暂无候选（扫描后出现）"
+        />
       ) : def.kind === "enum" ? (
         <select value={cond.value} onChange={(e) => onChange({ ...cond, value: e.target.value })}>
           <option value="">（选择）</option>

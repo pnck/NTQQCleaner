@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { applyTheme, getTheme } from "./theme";
 import "./styles.css";
 
@@ -7,12 +8,15 @@ import "./styles.css";
 applyTheme(getTheme());
 
 // 把未捕获的运行时错误直接显示在屏幕上：黑屏排查神器，
-// 生产环境同样保留（用户遇到问题时可拍照反馈）。
+// 生产环境同样保留（用户遇到问题时可拍照反馈）。渲染期异常由
+// ErrorBoundary 兜底（红条 + 可选中复制 + 重新加载），这里是异步
+// 错误（事件/promise）的补充通道。
 function showOverlay(msg: string) {
   const el = document.createElement("div");
   el.style.cssText =
     "position:fixed;left:0;right:0;bottom:0;background:#7f1d1d;color:#fff;" +
-    "font:12px monospace;padding:10px;z-index:99999;white-space:pre-wrap;";
+    "font:12px monospace;padding:10px;z-index:99999;white-space:pre-wrap;" +
+    "user-select:text;";
   el.textContent = msg;
   document.body.appendChild(el);
 }
@@ -23,4 +27,8 @@ window.addEventListener("unhandledrejection", (e) => {
   showOverlay(`未处理的 Promise 拒绝: ${String(e.reason)}`);
 });
 
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>,
+);

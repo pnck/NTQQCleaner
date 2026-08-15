@@ -508,7 +508,8 @@ export default function App() {
   // 去重建议：可去重项 = 组内副本 ∩ 当前筛选（单一交集语义）。
   const openDupes = useCallback(async () => {
     try {
-      const groups = await api.getDupes(filter);
+      // ?? []：后端 nil slice 会序列化为 null（Go 侧已修，双保险）
+      const groups = (await api.getDupes(filter)) ?? [];
       setDupes(groups);
       setDupesOpen(true);
     } catch (e) {
@@ -525,7 +526,7 @@ export default function App() {
   const selectContentDups = useCallback(
     async (row: FileRow) => {
       try {
-        const groups = await api.getDupes(filter);
+        const groups = (await api.getDupes(filter)) ?? [];
         const g = groups.find((x) => x.hash === row.contentHash);
         if (!g || g.dupIds.length === 0) {
           setToast("当前筛选内没有该内容的可去重副本");
@@ -665,8 +666,9 @@ export default function App() {
         />
         <div className="center">
           <div className="toolbar">
-            {/* 快速筛选按钮区（可横向滚动）：置顶筛选器 + 更多 + 编辑。
-                去重建议不在此区——它是常驻功能按钮（分隔线后）。 */}
+            {/* 快速筛选按钮区（可横向滚动）：只有置顶筛选器参与滚动。
+                「更多」「编辑」是固定锚点（不随滚动消失），去重建议在
+                分隔线后常驻。 */}
             <div className="toolbar-chips" ref={chipsRef}>
               {quickFilters.map((f) => {
                 const active = appliedFilter === f.name;
@@ -681,58 +683,58 @@ export default function App() {
                   </button>
                 );
               })}
-              <div className="dropdown-wrap">
-                <button
-                  className="chip"
-                  onClick={() => setMoreOpen((o) => !o)}
-                  title="全部筛选器（可置顶到工具栏）"
-                >
-                  更多 ▾
-                </button>
-                {moreOpen && (
-                  <div className="dropdown">
-                    {/* 更多 = 工具栏（置顶）以外的筛选器 */}
-                    {filters.filter((f) => !f.pinned).length === 0 && (
-                      <div className="dropdown-item" style={{ color: "var(--text-dim)", cursor: "default" }}>
-                        暂无更多筛选器（未置顶的筛选器会出现在这里）
-                      </div>
-                    )}
-                    {filters
-                      .filter((f) => !f.pinned)
-                      .map((f) => (
-                        <div key={f.name} className="dropdown-item">
-                          <span style={{ flex: 1 }} onClick={() => applyFilter(f)}>
-                            {f.name}
-                          </span>
-                          <button
-                            className="mini"
-                            onClick={() => {
-                              const next = filters.map((x) =>
-                                x.name === f.name ? { ...x, pinned: true } : x,
-                              );
-                              setFilters(next);
-                              saveFilters(next);
-                            }}
-                            title="固定到工具栏直选"
-                          >
-                            置顶
-                          </button>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </div>
-              <button
-                className={`chip${appliedFilter === "" && expr !== null ? " on" : ""}`}
-                onClick={() => {
-                  setFilterOpen(true);
-                  setMoreOpen(false);
-                }}
-                title="编辑筛选表达式（列表/表达式双视图）"
-              >
-                ⚙ 编辑
-              </button>
             </div>
+            <div className="dropdown-wrap">
+              <button
+                className="chip"
+                onClick={() => setMoreOpen((o) => !o)}
+                title="全部筛选器（可置顶到工具栏）"
+              >
+                更多 ▾
+              </button>
+              {moreOpen && (
+                <div className="dropdown">
+                  {/* 更多 = 工具栏（置顶）以外的筛选器 */}
+                  {filters.filter((f) => !f.pinned).length === 0 && (
+                    <div className="dropdown-item" style={{ color: "var(--text-dim)", cursor: "default" }}>
+                      暂无更多筛选器（未置顶的筛选器会出现在这里）
+                    </div>
+                  )}
+                  {filters
+                    .filter((f) => !f.pinned)
+                    .map((f) => (
+                      <div key={f.name} className="dropdown-item">
+                        <span style={{ flex: 1 }} onClick={() => applyFilter(f)}>
+                          {f.name}
+                        </span>
+                        <button
+                          className="mini"
+                          onClick={() => {
+                            const next = filters.map((x) =>
+                              x.name === f.name ? { ...x, pinned: true } : x,
+                            );
+                            setFilters(next);
+                            saveFilters(next);
+                          }}
+                          title="固定到工具栏直选"
+                        >
+                          置顶
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+            <button
+              className={`chip${appliedFilter === "" && expr !== null ? " on" : ""}`}
+              onClick={() => {
+                setFilterOpen(true);
+                setMoreOpen(false);
+              }}
+              title="编辑筛选表达式（列表/表达式双视图）"
+            >
+              ⚙ 编辑
+            </button>
             <span className="toolbar-sep" />
             <button
               className="chip"
@@ -803,10 +805,11 @@ export default function App() {
           )}
         </div>
         <Splitter
-          onDrag={(dx) => setSideW((s) => ({ ...s, right: clampSideW(s.right + dx, "right") }))}
+          // 右分隔条在预览面板左侧：向左拖（dx<0）分隔线左移 = 预览变宽
+          // （宽度增量与鼠标位移方向相反）
+          onDrag={(dx) => setSideW((s) => ({ ...s, right: clampSideW(s.right - dx, "right") }))}
         />
         <PreviewPanel
-          key={selected ?? -1}
           width={sideW.right}
           row={rows.find((r) => r.id === selected) ?? null}
           rows={rows}
