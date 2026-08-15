@@ -528,17 +528,68 @@ export function filterToText(expr: Expr | null | undefined, stages?: Stage[]): s
 // ---- 树操作（顶层 AND 组快捷方式，供左栏/搜索等就地编辑）----
 
 export function getInExpr(root: Expr | null | undefined, field: string): string[] {
-  const leaves = (root?.and ?? []).filter((s) => s.c && s.c.field === field && s.c.op === "in");
-  const c = leaves[0]?.c;
-  if (!c) return [];
-  return c.value.split(",").map((s) => s.trim()).filter(Boolean);
+  // 全树搜索 in 叶子（in 列表可能落在嵌套 AND 组里；OR 分支取并集
+  // ——in 列表是「已点名」的语义，并集是切换行为的正确近似）。
+  const values: string[] = [];
+  const walk = (e: Expr) => {
+    if (e.c) {
+      if (e.c.field === field && e.c.op === "in") {
+        values.push(...e.c.value.split(",").map((s) => s.trim()).filter(Boolean));
+      }
+      return;
+    }
+    (e.and ?? e.or ?? []).forEach(walk);
+  };
+  if (root) walk(root);
+  return [...new Set(values)];
 }
 
+// setInExpr：把 field 的筛选条件**整体替换**为新的 in 列表。语法树
+// 顶层搜索含 field 条件的 AND 结构并替换成新的——顶层 field 叶子
+// （in 与 lte/before 等范围条件一视同仁）全部移除，嵌套在顶层 AND
+// 子组里的 field 条件同样剔除重建：「清空」不得残留范围条件继续收紧
+// 筛选（before/lte 月份预设曾导致左栏月份全选/清空失效）。非 AND 根
+// （OR 根/单叶子/空）以新条件整体接管（与旧行为一致）。
 export function setInExpr(root: Expr | null | undefined, field: string, values: string[]): Expr | null {
-  const children = (root?.and ?? []).filter((s) => !(s.c && s.c.field === field && s.c.op === "in"));
-  if (values.length > 0) children.push(leaf(field, "in", values.join(",")));
-  if (children.length === 0) return null;
-  return group("and", children);
+  const newLeaf = values.length > 0 ? leaf(field, "in", values.join(",")) : null;
+  if (!root?.and) {
+    return newLeaf;
+  }
+  const out: Expr[] = [];
+  for (const ch of root.and) {
+    if (ch.c && ch.c.field === field) continue; // 顶层 field 叶子：整体替换
+    if (ch.and && containsField(ch, field)) {
+      const rebuilt = rebuildWithoutField(ch.and, field);
+      if (rebuilt.length > 0) out.push(group("and", rebuilt));
+      continue;
+    }
+    out.push(ch);
+  }
+  if (newLeaf) out.push(newLeaf);
+  if (out.length === 0) return null;
+  return group("and", out);
+}
+
+// containsField：子树内是否含 field 条件（任意深度）。
+function containsField(e: Expr, field: string): boolean {
+  if (e.c) return e.c.field === field;
+  return (e.and ?? e.or ?? []).some((s) => containsField(s, field));
+}
+
+// rebuildWithoutField：AND 组内剔除 field 相关的全部子项（叶子与含
+// field 的嵌套 AND 组递归重建；OR 子组保守保留——不做跨分支语义推断）。
+function rebuildWithoutField(children: Expr[], field: string): Expr[] {
+  const out: Expr[] = [];
+  for (const s of children) {
+    if (s.c && s.c.field === field) continue;
+    if (s.and && containsField(s, field)) {
+      const rebuilt = rebuildWithoutField(s.and, field);
+      if (rebuilt.length > 0) out.push(group("and", rebuilt));
+      continue;
+    }
+    out.push(s);
+  }
+  return out;
 }
 
 export function toggleInExpr(root: Expr | null | undefined, field: string, value: string): Expr | null {
