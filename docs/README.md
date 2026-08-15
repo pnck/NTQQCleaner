@@ -37,6 +37,7 @@
 | `05_sample_data.md` | 开发机样例数据：目录清单、大小分布、文件命名、扩展名统计（非通用，仅验证参考） | 测试与验证用例 |
 | `06_safety_redlines.md` | 安全红线：工具必须内置的强制行为（来自原项目 CONSTRAINTS） | 不可省略的硬约束 |
 | `07_ui_design.md` | GUI 界面框架：功能区划分、交互逻辑、**媒体快速预览 + 大数据流畅性**（硬性要求） | 界面实现参考 |
+| `08_windows_legacy_compat.md` | Windows NTQQ 布局（`<QQ号>/nt_qq/`）、旧版 QQ 兼容层、旧库残留报告的设计与安全红线 | Windows/旧版兼容层实现的依据 |
 
 ---
 
@@ -49,7 +50,7 @@
 | 平台 | 默认位置 |
 |---|---|
 | macOS | `~/Library/Containers/com.tencent.qq/Data/Library/Application Support/QQ` |
-| Windows | `%APPDATA%\Tencent\QQ`（及 `Documents\Tencent Files` 等候选，需实现时探测） |
+| Windows | `Documents\Tencent Files`（真机实测主根；`%APPDATA%\Tencent\QQ` 为候选）——布局与探测见 `08_windows_legacy_compat.md` |
 
 ```
 <QQ>/
@@ -63,6 +64,10 @@
 │   └── nt_temp/                 # 临时文件，可安全清理
 └── <数字QQ号>/                   # 旧版明文目录（登录前旧格式，含 msg3.0.db）
 ```
+
+> **Windows NTQQ 布局不同**：实例目录是 `<QQ号>/`（明文），nt_* 组在
+> `<QQ号>/nt_qq/` 下，全局目录是 `<根>/nt_qq/global/`；实例目录顶层还
+> 残留旧版库（Msg3.0.db 等，只统计不清理）。详见 `08_windows_legacy_compat.md`。
 
 ### 3.2 账号识别（完全明文，无需解密）
 ```
