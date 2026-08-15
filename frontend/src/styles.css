@@ -601,9 +601,11 @@ button.chip {
 }
 
 /* 修改时间/md5 值：全局 user-select:none 之外单独放开选择。可选中值
-   一律单行 + 横向溢出滚动（路径/内容哈希/文件ID 很长，换行撑高详情区、
-   读起来费劲）：flex:1 + min-width:0 让值收缩到可用宽度，超出部分
-   滚动查看；拖选复制时随内容滚动 */
+   一律**右对齐** + 单行 + 横向溢出滚动（与类型/大小等不可选中项对齐
+   方式一致）：flex:1 + min-width:0 让值收缩到可用宽度，超出部分滚动
+   查看；右对齐下可见的是值的尾部（ScrollEnd 组件在内容变化时自动滚
+   到行尾），拖选复制时随内容滚动。滚动条**完全隐藏**——内容截断不
+   常驻滚动条（macOS 叠加滚动条同样不显示），滚轮/拖选仍可滚动 */
 .preview .detail .selectable {
   user-select: text;
   cursor: text;
@@ -611,21 +613,15 @@ button.chip {
   min-width: 0;
   white-space: nowrap;
   overflow-x: auto;
-  scrollbar-width: thin;
+  text-align: right;
+  scrollbar-width: none;
 }
 
 .preview .detail .selectable::-webkit-scrollbar {
-  height: 4px;
+  display: none;
 }
 
-.preview .detail .selectable::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 2px;
-}
-
-/* 内容哈希值：完整 64 位显示，等宽字体便于逐位比对与复制。左对齐——
-   滚动容器里右对齐初始视图是空的（内容盒起点在左），且前缀匹配
-   （contentHash ~）对照时前缀可见更有用 */
+/* 内容哈希值：完整 64 位显示，等宽字体便于逐位比对与复制 */
 .preview .detail .hash {
   font-family: var(--font-mono);
   font-size: 11px;

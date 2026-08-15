@@ -23,6 +23,26 @@ interface Props {
 // 视频/音频可流式，点击播放即切换播放器。
 const BIG_IMAGE = 50 << 20;
 
+// ScrollEnd：可选中值（右对齐 + 溢出滚动）。内容变化时自动滚到行尾，
+// 保证右对齐下可见的是值的尾部（文件名/哈希后缀）；用户可自由往回
+// 滚动查看前段。滚动条完全隐藏（styles.css）——截断不常驻滚动条，
+// 拖选/滚轮仍可滚动。
+function ScrollEnd({ text, className }: { text: string; className: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const prevText = useRef<string | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || prevText.current === text) return;
+    prevText.current = text;
+    el.scrollLeft = el.scrollWidth;
+  }, [text]);
+  return (
+    <span ref={ref} className={className}>
+      {text}
+    </span>
+  );
+}
+
 const IMG_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "avif", "ico"];
 const VIDEO_EXTS = ["mp4", "mov", "m4v", "webm", "mkv"];
 const AUDIO_EXTS = ["amr", "silk", "mp3", "wav", "m4a", "aac"];
@@ -114,20 +134,14 @@ function Player({
   // （重设会让播放中的媒体从头开始）。
   useEffect(() => {
     if (kind !== "video" && kind !== "audio") {
-      // 卸载（焦点离开媒体时立即释放，边缘在卸载路径而非下次加载）：
-      // display:none 不会暂停播放，而 pause 也不释放资源（解码帧与
-      // 缓冲仍占内存）——pause + 清空 src + load() 让元素回到空态，
-      // 音频立即停止、资源立即释放。常驻单例只保元素与音量/静音，
-      // 不保媒体本身（先自动播放 A、取消开关、切到 B 时 A 不再后台
-      // 出声）。prev 一并复位：重新进入同一媒体 = 全新加载。
-      for (const el of [videoRef.current, audioRef.current]) {
-        if (el && (el.getAttribute("src") || !el.paused)) {
-          el.pause();
-          el.removeAttribute("src");
-          el.load();
-        }
-      }
-      prev.current = { kind: "", src: "", autoStart: false };
+      // 隐藏待命：停掉仍在播放的旧媒体——display:none 不会暂停播放，
+      // 切行后旧视频在后台继续输出音频（严格单例的一致性缺口：先自动
+      // 播放 A、取消开关、切到 B，A 的音频仍在响）。
+      videoRef.current?.pause();
+      audioRef.current?.pause();
+      // 重新进入同一媒体时视为新的起播决策：否则 prev 守卫会把恢复
+      // 播放误判为「已处理」直接返回，▶ 点击后媒体停在暂停态。
+      prev.current.autoStart = false;
       return;
     }
     const el = kind === "video" ? videoRef.current : audioRef.current;
@@ -280,6 +294,9 @@ export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, o
   const full = !hasThumb || played === row.id; // 无缩略图时直接原文件
   const kind = kindOf(row, full);
   const src = full ? row.oriUrl : row.thumbUrl;
+  const hashText = row.contentHash
+    ? row.contentHash + (row.contentDupCount < 2 ? " · 无重复（同大小但内容不同）" : "")
+    : "未计算（大小唯一）";
   const bigImageGate = kind === "img" && full && row.size > BIG_IMAGE && forceBig !== row.id;
   // 缩略图叠层（播放/查看切换控件）只在**未启用自动播放**时存在：
   // 自动播放开 = 直接进入原文件视图（叠层完全消失），交给元素按内容
@@ -371,7 +388,7 @@ export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, o
           <span className="k">路径</span>
           {/* 绝对路径（docs/07 §4.4）：仅展示；预览/删除仍按 id 走 Go 侧
               白名单，路径字符串不给前端任何文件访问能力 */}
-          <span className="selectable path">{row.path}</span>
+          <ScrollEnd text={row.path} className="selectable path" />
         </div>
         <div className="kv">
           <span className="k">类型</span>
@@ -386,23 +403,18 @@ export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, o
         </div>
         <div className="kv">
           <span className="k">修改时间</span>
-          <span className="selectable">{fmtTime(row.mtime)}</span>
+          <ScrollEnd text={fmtTime(row.mtime)} className="selectable" />
         </div>
         <div className="kv">
           <Tooltip content="QQ 的文件识别方式：原文件名的 md5 用作文件 ID（标识文件，不代表内容；与下方内容哈希无关）">
             <span className="k">文件ID</span>
           </Tooltip>
-          <span className="selectable">{row.md5 || "—"}</span>
+          <ScrollEnd text={row.md5 || "—"} className="selectable" />
         </div>
         <div className="kv">
           <span className="k">内容哈希</span>
           {/* 完整 64 位哈希（可选中复制到筛选器，contentHash ~ 前缀 匹配）； */}
-          <span className="selectable hash">
-            {row.contentHash
-              ? row.contentHash +
-                (row.contentDupCount < 2 ? " · 无重复（同大小但内容不同）" : "")
-              : "未计算（大小唯一）"}
-          </span>
+          <ScrollEnd text={hashText} className="selectable hash" />
         </div>
         <div className="detail-actions">
           <button onClick={reveal}>在文件夹中显示</button>
