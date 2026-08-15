@@ -29,13 +29,16 @@ for each file in nt_data 扫描范围:
 
 | 入口 | 路径集合 |
 |---|---|
-| `StartScanCacheFiles`（UI「缓存文件」category；GetFileCacheInfo type==3） | 富媒体 biz {Pic,Video,Ptt,File,Emoji,dataline,FilterVideo} × `{OriTemp,ThumbTemp}` + biz29 × `{upload_temp,download_temp,thumb}` + SilentCache 类 |
+| `StartScanCacheFiles`（UI「缓存文件」category；GetFileCacheInfo type==3） | 富媒体 biz {Pic,Video,Ptt,File,Emoji,dataline,FilterVideo} × `{OriTemp,ThumbTemp}` + biz29 = `flashfransfer/{upload_temp,download_temp,thumb}` |
 | `StartScanNormalFiles`（普通缓存） | 同 biz 集合 × `{Ori,Thumb}`（dataline 用 `.thumb`） |
 
-⇒ 官方「缓存文件」的核心就是我们工具里的 **\*Temp 集合（clean_temp 首选
-清理）**，方向一致；biz29 目录名与 SilentCache 覆盖范围待逆向补充。
-注意命名碰撞：本工具给 BaseEmoji 资源的展示标签也叫「缓存文件」
-（自有分类），与官方同名 category（≈ 下载中断残留）不是一回事。
+- `SilentCache` 仅是**扫描标记**（路径名含 "SilentCache" 时打静默缓存
+  标志，sub_22A454E），不是独立的目录集合——无额外路径注册。
+- ⇒ 官方「缓存文件」的核心就是我们工具里的 **\*Temp 集合（clean_temp 首选
+  清理）+ flashfransfer 三个中转子目录**，方向一致（工具已把 flashfransfer
+  挂 clean_temp 门控，docs/01 §2.3）。
+- 注意命名碰撞：本工具给 BaseEmoji 资源的展示标签也叫「缓存文件」
+  （自有分类），与官方同名 category（≈ 下载中断残留）不是一回事。
 
 **工具对齐方式**：扫描默认跳过 mtime 距今 < 3 天的文件（`MinAgeDays` 默认 3，
 `internal/rules/config.go` 的 `DefaultMinAgeDays`）。更细的时间选择交给筛选器
