@@ -154,3 +154,31 @@ func IdentifyAccount(qqRoot, instanceHash, ntData string) string {
 
 - 账号新旧判定：用 `nt_data` 目录 mtime 或 Pic 月目录最新月份排序
 - 每个账号独立统计与清理，**禁止跨账号混淆**
+
+## 7. 已知但未采纳：login.db 固定密钥离线解密
+
+逆向实测结论（2026-08-15，双平台实测成功，完整记录在逆向侧 docs/10 §14）：
+
+- `nt_db/login.db` 可用**固定密钥**离线解密（`BD156D6710D54D8782F4`，
+  所有账号/设备相同，无需 hook）；平台差异：mac `hmac=HMAC_SHA512` /
+  Windows `hmac=HMAC_SHA1`（其余参数同：剥 1024 字节头、page=4096、
+  iter=4000、kdf=PBKDF2_HMAC_SHA512）。
+- `login_table` 直接存 uid ↔ QQ号 ↔ 账号目录绝对路径映射（并含昵称）。
+
+**本工具不采纳**，理由：
+
+1. **痛点不存在（常见情况）**：§2-§4 的三源明文识别已覆盖账号↔QQ号
+   映射，报告层已展示 QQ号；真正盲区是「三源全缺」的罕见账号，为
+   此引入 DB 解析不成比例。
+2. **架构成本**：SQLCipher 解析需 cgo（go-sqlcipher）→ 破坏「容器内
+   交叉编译 Windows exe（CGO_ENABLED=0）」的核心构建属性；捆绑
+   sqlcipher CLI 则引入运行时外部依赖，违反「仅标准库」红线
+   （docs/06 §7）。
+3. **红线与稳定性**：加密库读取不在本工具范围（docs/06 §6）；且该
+   密钥在逆向侧此前的结论中属「硬编码占位」性质——占位密钥随版本
+   更换会静默失效。
+4. **Windows 侧不需要**：目录名即 QQ号（docs/08 §3.4）。
+
+**何时重新评估**：若未来实现「消息记录解密按会话清理」（引用判定），
+需解析 `nt_msg.db` 等消息库——那依赖运行时 enc_key 方案（OIDB 0x3294
+下发），固定密钥只覆盖 login.db；届时一并评估 login.db 解析的收益。
