@@ -563,8 +563,8 @@ export default function App() {
         });
         setToast(
           mode === "dups"
-            ? `已勾选 ${g.dupIds.length} 个相同内容副本（保留 ${g.keepLabel}）`
-            : `已勾选全部 ${g.dupIds.length + 1} 份相同内容（含保留的 ${g.keepLabel}）`,
+            ? `已勾选 ${g.dupIds.length} 个副本`
+            : `已勾选全部 ${g.dupIds.length + 1} 份相同内容`,
         );
       } catch (e) {
         setToast(`去重分析失败：${e}`);
@@ -854,20 +854,32 @@ export default function App() {
         checked={checked}
         checkedCount={checked.size}
         onSelectGroup={(g) => {
+          const done = g.dupIds.every((id) => checked.has(id));
+          const next = new Set(checked);
+          let bytes = checkedBytes;
+          if (done) {
+            // 取消应用：仅取消勾选该组副本；保留份维持现状——对话框
+            // 不记忆应用前的勾选历史，被应用取消的保留份不回勾。
+            g.dupIds.forEach((id, i) => {
+              if (next.delete(id)) bytes -= g.dupSizes[i];
+            });
+            setChecked(next);
+            setCheckedBytes(bytes);
+            setToast(`已取消勾选 ${g.dupIds.length} 个副本`);
+            return;
+          }
           // 域内重置：去重建议是另一种筛选器，其作用域内（该内容组）
           // 的勾选状态以建议为准——副本勾上、保留份取消勾选；域外文件
           // 不受影响。字节增量按逐份大小精确换算（不依赖虚拟列表行）。
-          const next = new Set(checked);
           next.delete(g.keepId);
           g.dupIds.forEach((id) => next.add(id));
-          let bytes = checkedBytes;
           if (checked.has(g.keepId)) bytes -= g.keepSize;
           g.dupIds.forEach((id, i) => {
             if (!checked.has(id)) bytes += g.dupSizes[i];
           });
           setChecked(next);
           setCheckedBytes(bytes);
-          setToast(`已勾选 ${g.dupIds.length} 个副本（保留 ${g.keepLabel} 未勾选）`);
+          setToast(`已勾选 ${g.dupIds.length} 个副本`);
         }}
         onSelectAll={(groups) => {
           const next = new Set(checked);
@@ -883,7 +895,7 @@ export default function App() {
           setChecked(next);
           setCheckedBytes(bytes);
           const n = groups.reduce((a, g) => a + g.dupIds.length, 0);
-          setToast(`已勾选筛选内全部多余副本：${n} 个（保留份均已取消勾选）`);
+          setToast(`已勾选全部多余副本：${n} 个`);
         }}
         onClose={() => setDupesOpen(false)}
       />

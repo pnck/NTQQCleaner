@@ -983,6 +983,36 @@ button.chip {
   padding-top: 6px;
 }
 
+/* 去重建议对话框：标题 + 底部操作行固定，仅中间列表滚动。此前共用
+   .filter-list 的 max-height/overflow（筛选器编辑器改为「单一滚动
+   上下文」时被移除），整个对话框一起滚动、标题与按钮滚出视口——
+   恢复固定头/尾 + 内层滚动 */
+.dialog.dupes-dialog {
+  overflow: hidden; /* 覆盖 .dialog 的 overflow-y:auto：滚动只发生在列表内 */
+}
+
+.dupe-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+
+/* 筛选器编辑器对话框：与去重建议同模式——标题 + 底部操作行固定，中间
+   内容整体滚动。单一滚动上下文（帮助面板/条件列表/筛选器列表都在同一
+   区域内），不出现嵌套滚动吞滚轮（此前为单一滚动把整个对话框一起滚，
+   标题与按钮滚出视口） */
+.dialog.filter-dialog {
+  overflow: hidden; /* 覆盖 .dialog 的 overflow-y:auto */
+}
+
+.filter-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .filter-list h3 {
   font-size: 11px;
   color: var(--text-dim);

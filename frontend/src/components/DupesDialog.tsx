@@ -30,12 +30,15 @@ export function DupesDialog({
 
   return (
     <div className="dialog-mask" onClick={onClose}>
-      <div className="dialog dialog-wide" onClick={(e) => e.stopPropagation()}>
+      {/* dupes-dialog：标题与底部操作行固定，仅中间列表滚动（回归修复——
+          共用 .filter-list 的 max-height 在筛选器编辑器「单一滚动上下文」
+          改造中被移除，整个对话框一起滚、标题按钮滚出视口） */}
+      <div className="dialog dialog-wide dupes-dialog" onClick={(e) => e.stopPropagation()}>
         <h2>去重建议</h2>
         <div style={{ color: "var(--text-dim)", fontSize: 12 }}>
           当前筛选内 {allDupCount} 个多余副本 · 可释放 {fmtSize(totalBytes)}
         </div>
-        <div className="filter-list">
+        <div className="dupe-list">
           {groups.length === 0 && <div className="cond-empty">当前筛选内没有重复项。</div>}
           {groups.map((g) => {
             const done = g.dupIds.every((id) => checked.has(id));
@@ -54,8 +57,15 @@ export function DupesDialog({
                     可删 {g.dupIds.length} 份 · {fmtSize(g.dupBytes)}
                   </div>
                 </div>
-                <button className="mini" disabled={done} onClick={() => onSelectGroup(g)}>
-                  {done ? "已勾选 ✓" : "勾选此组副本"}
+                {/* 可逆开关：文案 = 本次点击执行的动作（与预览面板
+                    「勾选副本/勾选全部」同一交互模式）。已勾选组再次点击
+                    = 取消勾选该组副本——对话框内即可撤销建议应用 */}
+                <button
+                  className="mini"
+                  onClick={() => onSelectGroup(g)}
+                  title={done ? "取消勾选该组副本（保留份维持现状）" : "勾选该组全部副本（保留一份不勾）"}
+                >
+                  {done ? "取消勾选" : "勾选此组副本"}
                 </button>
               </div>
             );

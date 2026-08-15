@@ -405,8 +405,11 @@ export function FilterEditor({
 
   return (
     <div className="dialog-mask" onClick={onClose}>
-      <div className="dialog dialog-wide" onClick={(e) => e.stopPropagation()}>
+      {/* filter-dialog：标题与底部操作行固定，中间内容整体滚动（与去重
+          建议对话框同模式）——单一滚动上下文，不出现嵌套滚动吞滚轮 */}
+      <div className="dialog dialog-wide filter-dialog" onClick={(e) => e.stopPropagation()}>
         <h2>编辑筛选器</h2>
+        <div className="filter-scroll">
 
         <div className="row">
           <label>视图</label>
@@ -629,6 +632,7 @@ export function FilterEditor({
           ))}
         </div>
 
+        </div>
         <div className="actions">
           <button onClick={clearAll}>清空条件</button>
           <button onClick={onClose}>取消</button>
