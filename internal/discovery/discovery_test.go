@@ -3,6 +3,7 @@ package discovery
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "qqcleaner/internal/qqimpl" // 注册 probe（nt 布局探测）
@@ -54,5 +55,32 @@ func TestDiscoverIgnoresNonInstances(t *testing.T) {
 func TestDiscoverMissingRoot(t *testing.T) {
 	if _, err := Discover(filepath.Join(t.TempDir(), "nope")); err == nil {
 		t.Fatal("expected error for missing root")
+	}
+}
+
+// TestLegacySummary：旧版根生成占用报告（含逐条与合计）；NT 根与非
+// QQ 根返回空串（docs/08 §3.5，CLI/GUI 共用）。
+func TestLegacySummary(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "10003"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "10003", "msg3.0.db"), []byte("xy"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := LegacySummary(root)
+	if s == "" {
+		t.Fatal("legacy root should produce a summary")
+	}
+	if !strings.Contains(s, "10003") || !strings.Contains(s, "msg3.0.db") || !strings.Contains(s, "合计") {
+		t.Fatalf("summary missing parts: %q", s)
+	}
+	// NT 根与非 QQ 根不产生旧版摘要
+	f := testutil.BuildQQTree(t)
+	if LegacySummary(f.Root) != "" {
+		t.Fatal("NT root must not produce a legacy summary")
+	}
+	if LegacySummary(t.TempDir()) != "" {
+		t.Fatal("non-QQ root must not produce a legacy summary")
 	}
 }

@@ -180,8 +180,16 @@ func (b *Backend) Scan(opts ScanOptions) error {
 			b.mu.Unlock()
 			b.emit(EvState, map[string]bool{"scanning": false})
 		}()
-		eng := &Engine{Cfg: cfg, Emitter: b}
-		out, err := eng.ScanAll(ctx, root, nil, opts.OnlyBizs, opts.MinAgeDays, opts.MinSize, rules.GatesOf(cfg))
+		// 旧版布局（docs/08 §3.5）：不扫描，把占用报告拼进错误消息——
+		// 数据根是用户可自由选择的候选目录，选到旧版目录也应看到统计。
+		var out *Outcome
+		var err error
+		if summary := discovery.LegacySummary(root); summary != "" {
+			err = fmt.Errorf("unsupported QQ data layout (detected: legacy)\n%s", summary)
+		} else {
+			eng := &Engine{Cfg: cfg, Emitter: b}
+			out, err = eng.ScanAll(ctx, root, nil, opts.OnlyBizs, opts.MinAgeDays, opts.MinSize, rules.GatesOf(cfg))
+		}
 		b.mu.Lock()
 		b.lastErr = ""
 		if err != nil {

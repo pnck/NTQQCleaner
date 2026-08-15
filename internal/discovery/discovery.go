@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"qqcleaner/internal/qq"
 )
@@ -31,6 +32,55 @@ func IsInstanceRoot(root string) bool {
 	k := qq.Detect(root)
 	insts, err := k.InstanceDirs(root)
 	return err == nil && len(insts) > 0
+}
+
+// LegacySummary 检测根是否为旧版布局（docs/08 §3.5）：是则返回占用
+// 报告文本（只读统计，绝不清理），否则返回空串。CLI 打印后报错退出，
+// GUI 把文本拼进 scan 错误消息——数据根是用户可自由选择的候选目录，
+// 选到旧版目录时也应看到数据占用而不是干巴巴的报错。
+func LegacySummary(root string) string {
+	k := qq.Detect(root)
+	if k.ScanCapable() || k.Name() != "legacy" {
+		return ""
+	}
+	insts, err := k.InstanceDirs(root)
+	if err != nil {
+		return ""
+	}
+	rep, ok := k.(qq.ResidueReporter)
+	if !ok {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "检测到旧版 QQ 布局（不支持扫描/清理，仅统计）:")
+	for _, inst := range insts {
+		fmt.Fprintf(&b, "\n账号 %s → QQ %s", inst.DirName, k.Identify(root, inst))
+		res, err := rep.Residues(root, inst)
+		if err != nil {
+			continue
+		}
+		var total int64
+		for _, r := range res {
+			total += r.Size
+			fmt.Fprintf(&b, "\n  %s %s", filepath.Base(r.Path), formatSize(r.Size))
+		}
+		fmt.Fprintf(&b, "\n  合计 %s", formatSize(total))
+	}
+	return b.String()
+}
+
+// formatSize 人类可读字节数（报告展示用）。
+func formatSize(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1fG", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1fM", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1fK", float64(n)/(1<<10))
+	default:
+		return fmt.Sprintf("%dB", n)
+	}
 }
 
 // Discover detects the QQ layout, finds all account instances, identifies
