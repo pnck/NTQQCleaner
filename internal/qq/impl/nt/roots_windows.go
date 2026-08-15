@@ -11,14 +11,23 @@ import (
 	"qqcleaner/internal/qq"
 )
 
-// Windows 数据根只有一个候选：<Documents>\Tencent Files（真机实测，
-// docs/08 §2.1）。%APPDATA%\Tencent\QQ 实测不存在，已从候选删除。
+// Windows 数据根候选（docs/08 §2.1）：
+//  1. <Documents>\Tencent Files——真机实测主根；
+//  2. %APPDATA%\Tencent\QQ——次级回退：逆向真机实测该目录不存在，但
+//     单机观察不能覆盖所有机型/版本（测试机特调过，Documents 被重定向），
+//     已请逆向 agent 从 binary 侧复核（NTQQ 是否引用 Roaming\Tencent）。
+//     未拿到 binary 证据前保守保留：探测逻辑要求目录存在且含实例
+//     （IsInstanceRoot）才会被选中，无风险。
 func init() {
 	qq.RegisterRoots(func() []string {
+		var out []string
 		if tf := tencentFilesRoot(); tf != "" {
-			return []string{tf}
+			out = append(out, tf)
 		}
-		return nil
+		if appdata := os.Getenv("APPDATA"); appdata != "" {
+			out = append(out, filepath.Join(appdata, "Tencent", "QQ"))
+		}
+		return out
 	})
 }
 
