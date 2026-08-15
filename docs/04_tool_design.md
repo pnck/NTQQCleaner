@@ -130,6 +130,12 @@ runtime.EventsEmit(ctx, "scan:progress", map[string]any{"done": n, "total": tota
     缺位写法下不可靠；`in`/`after`/`before` 同样适用
   - `fileId` / `contentHash` 是普通字符串字段：`contentHash ~ <前缀>` 即可按
     哈希前缀/片段筛选（哈希在详情面板完整显示，可复制）
+  - `reason` 是**枚举标签匹配**（不是字符串模糊匹配）：一行可带多个标签
+    （`；` 分隔），`eq`/`in` **任一标签命中即匹配**、`ne` = 全部不命中；
+    标签集合 = rules.Reason 的标签词典（缩略图/原图仍在/有缩略图/重复出现/
+    下载中断残留/传输残留/运行日志/头像缓存/表情包/个人表情/原图/原文件/
+    缓存文件）。`~`（contains）仍保留在整个 reason 串上的子串匹配（旧存储
+    筛选器的向后兼容）
 - `select` 的三个维度**正交**，可多选取并集：`select(origin, thumb, dup)`：
   - `origin`：缩略图 → 其原文件（文件名 md5 配对）；原文件保留自身；无配对无贡献
   - `thumb`：原文件 → 其全部缩略图（多尺寸）；缩略图保留自身

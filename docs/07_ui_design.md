@@ -43,6 +43,16 @@
 **启发式指引**：浏览/清理应支持**按"缩略图维度"组织**（跨 biz 查看全部 Thumb）与按 biz 组织**平级**切换；
 具体交互设计由开发者定（现象依据：Thumb 可重建、占缓存大头）。
 
+**窗口与栏宽**：
+- 启动窗口按**主屏分辨率自适应**：约 85%×84% 的屏幕（上限 1600×1000、
+  下限与 MinWidth/MinHeight 960×600 一致），设置后居中。ScreenGetAll
+  需要 runtime ctx（OnStartup 之后），窗口先以默认尺寸创建、随即调整
+  （main_wails.go fitWindowToScreen；Size 为逻辑像素，Windows 侧已按
+  DPI 折算）
+- 左栏（类型树）与右栏（预览面板）宽度可**拖拽分隔条调整**（左 150–420px
+  / 右 240–560px），照片墙经 ResizeObserver 自动重排列数；宽度记忆在
+  localStorage，下次启动恢复
+
 ---
 
 ## 3. 主流程（交互逻辑）
@@ -201,6 +211,10 @@ func previewHandler(rw http.ResponseWriter, req *http.Request) {
   内置筛选器仅首次启动作为种子写入用户筛选器列表，此后与自定义筛选器
   **完全同权**（可重排/修改/置顶/删除；删除即永久删除，不再由内置代码
   恢复）。预设语义升级时重新种入并覆盖同名条目（版本标记递增）
+- **工具栏布局**：快速筛选区（置顶筛选器 + 更多 + 编辑）支持**横向滚动**
+  （鼠标滚轮垂直→横向映射，React onWheel 是 passive 监听故用原生
+  非 passive 监听）；「去重建议」是分隔线后的**常驻功能按钮**，不随快速
+  筛选器滚动/重排，始终可直达
 
 ### ③c 筛选器编辑器（「⚙ 编辑」对话框）
 - 双视图：**列表（简易）** = 条件行 + 嵌套且/或组；**表达式（高级）** =
@@ -209,6 +223,10 @@ func previewHandler(rw http.ResponseWriter, req *http.Request) {
   完整列出操作符语义（`~` = 子串包含 LIKE %值%；`in` 括号列表）、全部字段
   与取值（biz/sub 的枚举、month 格式、contentHash 前缀匹配等）、管道函数
   （select/order/take/drop，按书写顺序执行）与示例
+- 列表（简易）视图的 `in` 条件支持**候选值勾选**：枚举字段（biz/sub/reason）
+  用字段词典、month 用扫描出的月份列表——chip 勾选直接生成 in 列表，无需
+  手输逗号列表；枚举字段的 eq/ne 单值用下拉选择（reason 是枚举标签，见
+  docs/04 §3）
 - 表达式解析错误就地显示（红色），指向具体记号与修正方式；验证通过才可应用
 
 ### ④ 右栏（预览面板，见 §4.4）
@@ -221,7 +239,15 @@ func previewHandler(rw http.ResponseWriter, req *http.Request) {
 - [清理] 按钮：无勾选时 disabled → 点击弹出**清理确认对话框**（两个显式
   opt-in：☐ 生成审计记录（默认关）、☐ 以移动代替删除（默认关；未设备份
   目录时禁用确认并引导「去设置」））→ **Go 侧原生对话框最终确认**（列出
-  数量/大小/处理方式/审计选择）→ 执行
+  数量/大小/处理方式/审计选择；统一为系统标准 **YES/NO 形态**，返回契约
+  "Yes"/"No"，默认按钮 No——回车不触发危险动作）→ 执行
+  - **分 OS 注意**：wails v2.14 的 Windows MessageDialog **完全忽略自定义
+    按钮文案**（MessageBoxW 无自定义按钮）——自定义「清理/取消」文案在
+    Windows 上只会渲染单 OK 按钮、点击返回 "Ok"（表现为点了确认没反应）。
+    统一 QuestionDialog YES/NO 后：Windows = MB_YESNO（返回 "Yes"/"No"，
+    DefaultButton "No" 落 MB_DEFBUTTON2），macOS = NSAlert 按按钮文案
+    Yes/No 显示并返回所选文案。QQ 运行守卫的覆盖确认同形态
+    （ConfirmYesNo）
 - **清理结果对话框**：清理完成后自动弹出，统计（处理/移动/删除/跳过/失败/
   释放）+ **跳过/失败**逐文件明细（十万级文件的完整清单过长，不再全量
   回显），并自动重新扫描；审计报告（勾选后系统 tmp 下带时间戳的 JSONL，
