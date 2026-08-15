@@ -289,11 +289,17 @@ backend.go 现状逻辑不变）——加了 Windows 实例判定后，`Tencent 
 | # | 问题 | 阻塞 |
 |---|---|---|
 | 1 | Windows nt_data 头部截断未见的目录（emoji-recv/marketface/*Temp 等可能量小或不存在） | 低（白名单结构驱动、存在性无关，fail-closed 天然兜底） |
-| 2 | NTQQ 9.0.x 早期布局是否不同；根下是否可能混现 nt_qq_<hash> | 低（识别不依赖版本号；混现时 nt probe 两路都认） |
-| 3 | TIM 与 QQ 是否同根同构（All Users\QQ 旧 Registry2.0.db 暗示多产品共存） | 无（TIM 记为非目标） |
+| 2 | TIM 与 QQ 是否同根同构（All Users\QQ 旧 Registry2.0.db 暗示多产品共存） | 无（TIM 记为非目标） |
+
+**NTQQ 9.0.x 早期布局**（最终对证澄清，逆向 agent）：这是首轮「版本
+覆盖」问题的**保险性待确认项**，**无任何实际证据表明 9.0.x 布局不同**
+（全量记录检索无 9.0–9.8 观察；唯一线索是 login.db 可能的旧格式，属
+数据库格式非目录布局）。按「存在性探测 + 版本无关」处理即可，无需
+特别风险处置。
 
 已解决：mac 根路径（维持 docs 原值，Data/Documents 是误写）；mac 进程名
 （QQ.app/Contents/MacOS/QQ，darwin 适配器现状正确）；mac 根下无数字目录
 （legacy probe 不会误触）；`%APPDATA%\Tencent\QQ` 非数据根（binary +
 全新安装 9.9.33 真机双证据，次级回退保留）；官方对旧版遗留采取「保留
-+ 统计」不清理（Windows IDB 实证，与本工具策略一致）。
++ 统计」不清理（Windows IDB 实证，与本工具策略一致）；NTQQ 9.0.x 布局
+差异（无证据，保险性疑问，版本无关探测即可，见下注）。

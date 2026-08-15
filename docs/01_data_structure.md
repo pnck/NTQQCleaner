@@ -80,7 +80,7 @@
 | 5 | `File` | 文件（无年月） |
 | 6 | `Emoji` | 表情 |
 | 12 | `dataline` + `Feed` | 数据线 / 看点动态缓存——**两个目录共用 biz 码 12**（IDB 原始指令铁证：`0Ch+"dataline"` 与 `0Ch+"Feed"` 两条注册，非笔误） |
-| 29 | `flashfransfer` | 闪传中转：`upload_temp`/`download_temp`/`thumb`（官方「缓存文件」集合，docs/03 §1） |
+| 29 | `flashfransfer` | 闪传中转：`upload_temp`/`download_temp`/`thumb`（官方「缓存文件」集合，docs/03 §1）。**拼写是腾讯真实笔误**（9.9.33 wrapper.node 字节扫描铁证：目录常量 `flashfransfer`×1、功能/日志名 `flashtransfer`×2、mmkv key `flash_transfer`×192）——工具必须原样用 `flashfransfer` 匹配。三子目录**惰性创建**：真机全新机收发文件后只有 thumb + upload_temp，download_temp 非必然存在，遍历按存在性探测 |
 | 31 | `FilterVideo` | 过滤视频 |
 | 其他 | `7=GroupAnnouncement 8=avatar 9=Log 10=msf 16=OnlineStatus 17=PrivilegeIcon 18=PhotoWall 19=Qzone 20=msgbackup 22=VasUpdateSystem 25=config 26=wifiphoto 30=mmkv 34=wmpf 35=guildFileTransfer 36=tracing 37=ams 38=qtransfer` | 见下 |
 

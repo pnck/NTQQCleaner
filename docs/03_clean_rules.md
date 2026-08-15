@@ -29,7 +29,7 @@ for each file in nt_data 扫描范围:
 
 | 入口 | 路径集合 |
 |---|---|
-| `StartScanCacheFiles`（UI「缓存文件」category；GetFileCacheInfo type==3） | 富媒体 biz {Pic,Video,Ptt,File,Emoji,dataline,FilterVideo} × `{OriTemp,ThumbTemp}` + biz29 = `flashfransfer/{upload_temp,download_temp,thumb}` |
+| `StartScanCacheFiles`（UI「缓存文件」category；GetFileCacheInfo type==3） | 富媒体 biz × `{OriTemp,ThumbTemp}` + biz29 = `flashfransfer/{upload_temp,download_temp,thumb}`。biz 集合按平台：mac = {Pic,Video,Ptt,File,Emoji,dataline,FilterVideo}；**Windows 无 FilterVideo（elem 49 返回 0）= {2,3,5,6,12}，不含 31** |
 | `StartScanNormalFiles`（普通缓存） | 同 biz 集合 × `{Ori,Thumb}`（dataline 用 `.thumb`） |
 
 - `SilentCache` 仅是**扫描标记**（路径名含 "SilentCache" 时打静默缓存
