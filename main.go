@@ -17,11 +17,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"text/tabwriter"
 
 	"qqcleaner/internal/app"
 	"qqcleaner/internal/discovery"
+	"qqcleaner/internal/logring"
 	"qqcleaner/internal/qq"
 	"qqcleaner/internal/report"
 	"qqcleaner/internal/rules"
@@ -33,6 +35,13 @@ import (
 var version = "dev"
 
 func main() {
+	// 崩溃报告 + 内存环形日志：全平台、全构建模式（含 release）开启。
+	// 未处理 panic 的运行时转储写入 <tmp>/ntqq-cleaner/crash-<ts>.log
+	// （debug.SetCrashOutput）；原生崩溃由系统报告器覆盖（WER /
+	// DiagnosticReports）。Recover 把环形缓冲追加进同一文件后重新 panic。
+	logring.EnableCrashLog(app.ConfigDir())
+	logring.Logf("start: version=%s goos=%s goarch=%s", version, runtime.GOOS, runtime.GOARCH)
+	defer logring.Recover()
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)

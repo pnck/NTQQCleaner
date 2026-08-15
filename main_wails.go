@@ -13,6 +13,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"qqcleaner/internal/app"
+	"qqcleaner/internal/logring"
 )
 
 //go:embed all:frontend/dist
@@ -122,6 +123,10 @@ func fitWindowToScreen(ctx context.Context) {
 // frontend can reach the filesystem exclusively through the whitelisted
 // preview handler (docs/06 §5b).
 func runGUI() error {
+	// panic 时把环形缓冲写进崩溃文件后重新 panic（运行时崩溃转储随后
+	// 追加进同一文件）。
+	defer logring.Recover()
+	logring.Logf("gui starting")
 	backend := app.NewBackend(configPath(), nil)
 	emitter := &wailsEmitter{}
 	dlgs := &Dialogs{}

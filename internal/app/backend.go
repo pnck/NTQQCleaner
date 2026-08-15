@@ -17,6 +17,7 @@ import (
 	"qqcleaner/internal/classify"
 	"qqcleaner/internal/clean"
 	"qqcleaner/internal/discovery"
+	"qqcleaner/internal/logring"
 	"qqcleaner/internal/media"
 	"qqcleaner/internal/platform"
 	"qqcleaner/internal/qq"
@@ -71,6 +72,7 @@ func (b *Backend) ensurePreviewServer() {
 			return
 		}
 		b.previewBase = "http://" + ln.Addr().String()
+		logring.Logf("preview server on %s", b.previewBase)
 		mux := http.NewServeMux()
 		mux.HandleFunc("/preview/", b.PreviewHandler)
 		srv := &http.Server{Handler: mux}
@@ -182,15 +184,10 @@ func (b *Backend) Scan(opts ScanOptions) error {
 	b.scanning = true
 	b.mu.Unlock()
 
+	logring.Logf("scan start: root=%s onlyBizs=%v minAgeDays=%d minSize=%d", root, opts.OnlyBizs, opts.MinAgeDays, opts.MinSize)
 	b.emit(EvState, map[string]bool{"scanning": true})
 	go func() {
-		defer func() {
-			b.mu.Lock()
-			b.scanning = false
-			b.cancel = nil
-			b.mu.Unlock()
-			b.emit(EvState, map[string]bool{"scanning": false})
-		}()
+		defer logring.Recover()
 		// 旧版布局（docs/08 §3.5）：不扫描，把占用报告拼进错误消息——
 		// 数据根是用户可自由选择的候选目录，选到旧版目录也应看到统计。
 		var out *Outcome
@@ -214,8 +211,20 @@ func (b *Backend) Scan(opts ScanOptions) error {
 			b.outcome = out
 		}
 		reports := b.accountsLocked()
+		var total int
+		for _, a := range reports {
+			total += a.TotalFiles
+		}
+		logring.Logf("scan finished: accounts=%d files=%d error=%q", len(reports), total, b.lastErr)
 		msg := map[string]any{"root": root, "accounts": reports, "error": b.lastErr}
+		// 状态清理必须先于 done/error 事件：等待方看到事件后立即查询/
+		// 清理，不能与 scanning=false 竞争（此前清理在 defer 里，事件
+		// 已发出而清理未执行——full-suite 负载下 Clean 撞上
+		// "scan running" 的竞态）。
+		b.scanning = false
+		b.cancel = nil
 		b.mu.Unlock()
+		b.emit(EvState, map[string]bool{"scanning": false})
 		if err != nil {
 			b.emit(EvError, msg)
 		} else {
@@ -673,6 +682,11 @@ func cfgOpenGates(cfg rules.Config) rules.Config {
 // confirm becomes req.Confirmed; every file is re-verified inside
 // clean.Run regardless (docs/06: UI 不可信).
 func (b *Backend) Clean(req CleanRequest) (CleanResult, error) {
+	// 批量清理是崩溃高发场景（十万级文件），panic 时把环形缓冲写进
+	// 崩溃文件后重新 panic。
+	defer logring.Recover()
+	logring.Logf("clean start: files=%d move=%v audit=%v force=%v confirmed=%v ignoreRunning=%v",
+		len(req.IDs), req.Move, req.Audit, req.Force, req.Confirmed, req.IgnoreRunning)
 	b.mu.Lock()
 	if b.scanning {
 		b.mu.Unlock()
@@ -717,6 +731,7 @@ func (b *Backend) Clean(req CleanRequest) (CleanResult, error) {
 	// 预检：QQ 运行中 → 返回哨兵错误，前端据以下发二次确认后带
 	// ignoreRunning=true 重试（clean 层另有自身检查，双保险）。
 	if !req.IgnoreRunning && clean.QQRunning() {
+		logring.Logf("clean blocked: QQ running (sentinel)")
 		return CleanResult{}, errQQRunningSentinel
 	}
 	res, err := clean.Run(context.Background(), clean.Request{
@@ -732,8 +747,11 @@ func (b *Backend) Clean(req CleanRequest) (CleanResult, error) {
 		Config:        cfgOpenGates(cfg), // 结构红线不变，分类门控随 GUI 放开
 	})
 	if err != nil {
+		logring.Logf("clean failed: %v", err)
 		return CleanResult{}, err
 	}
+	logring.Logf("clean done: processed=%d moved=%d deleted=%d skipped=%d failed=%d freed=%d errors=%d",
+		res.Processed, res.Moved, res.Deleted, res.Skipped, res.Failed, res.BytesFreed, len(res.Errors))
 	// The index is now stale (files are gone); force a rescan before any
 	// further queries so stale IDs can never be cleaned twice.
 	b.mu.Lock()
