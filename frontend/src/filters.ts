@@ -37,6 +37,7 @@ export const FILTER_FIELDS: FilterFieldDef[] = [
       { value: "emoji", label: "表情" },
       { value: "file", label: "文件" },
       { value: "dataline", label: "设备互传" },
+      { value: "flashfransfer", label: "闪传中转" },
     ],
   },
   {
@@ -50,6 +51,8 @@ export const FILTER_FIELDS: FilterFieldDef[] = [
       { value: "OriTemp", label: "OriTemp（下载残留）" },
       { value: "ThumbTemp", label: "ThumbTemp（下载残留）" },
       { value: "file_assistant", label: "file_assistant" },
+      { value: "upload_temp", label: "upload_temp（闪传上传中转）" },
+      { value: "download_temp", label: "download_temp（闪传下载中转）" },
     ],
   },
   {

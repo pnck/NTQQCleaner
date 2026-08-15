@@ -3,7 +3,7 @@ import type { SyntheticEvent } from "react";
 import { api } from "../api";
 import { explainReason } from "../reasons";
 import type { FileRow } from "../types";
-import { BIZ_LABEL, fmtSize, fmtTime } from "../types";
+import { BIZ_LABEL, SUB_LABEL, fmtSize, fmtTime } from "../types";
 import { Tooltip } from "./Tooltip";
 
 interface Props {
@@ -246,7 +246,7 @@ export function PreviewPanel({ row, rows, dupMode, onNavigate, onToast, onSelect
         <div className="kv">
           <span className="k">类型</span>
           <span>
-            {BIZ_LABEL[row.biz] ?? row.biz} · {row.sub}
+            {BIZ_LABEL[row.biz] ?? row.biz} · {SUB_LABEL[row.sub] ?? row.sub}
             {row.month ? ` · ${row.month}` : ""}
           </span>
         </div>

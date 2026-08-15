@@ -3,6 +3,14 @@ import { fmtSize } from "../types";
 import type { Theme } from "../theme";
 import { THEME_LABEL } from "../theme";
 
+// 进度 stage 形如 "<账号hash>/<biz目录名>"：目录名是 QQ 原始拼写
+// （flashfransfer 为官方笔误，docs/01 §2.3），展示映射为无错别字形式。
+function stageLabel(stage: string): string {
+  const i = stage.lastIndexOf("/");
+  if (i < 0) return stage;
+  return stage.slice(0, i + 1) + (stage.slice(i + 1) === "flashfransfer" ? "flashtransfer" : stage.slice(i + 1));
+}
+
 // 主题图标：内联 SVG（太阳/月亮/自动半圆），不依赖图标库。
 function ThemeIcon({ theme }: { theme: Theme }) {
   const common = {
@@ -128,7 +136,7 @@ export function TopBar({
           </div>
           <span className="stage">
             {progress.total > 0
-              ? `${progress.stage} · ${progress.done} / ${progress.total}`
+              ? `${stageLabel(progress.stage)} · ${progress.done} / ${progress.total}`
               : "正在统计文件数…"}
           </span>
         </div>

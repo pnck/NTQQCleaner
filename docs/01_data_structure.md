@@ -108,7 +108,7 @@ elem_type → biz 映射（IDB `sub_186D4C2`）：图片 elem 2→biz2（sub_typ
 
 ```
 Emoji/
-├── BaseEmojiSyastems/       # 基础表情资源（注意拼写 Syastems）
+├── BaseEmojiSyastems/       # 基础表情资源（QQ 官方拼写错误，正确应为 Systems）
 │   ├── EmojiSystermResource/{表情字符}/png/...   # 354 个表情目录，正式资源（QQ 可重下）
 │   └── ThumbTemp/{id}_{base|advance}.zip          # 表情包下载暂存 zip（可安全清）
 ├── emoji-recv/              # 收到的表情，{YYYY-MM}/Thumb/{md5}_{size}.{ext}
@@ -120,6 +120,12 @@ Emoji/
 **清理建议**：
 - `BaseEmojiSyastems/ThumbTemp/*.zip` = 下载中间产物，**可安全清理**
 - `BaseEmojiSyastems/EmojiSystermResource` = 基础表情资源，**风险较高**（QQ 有接口可整体重下）
+
+**错拼展示映射**：`BaseEmojiSyastems`（→BaseEmojiSystems）与
+`EmojiSystermResource`（→EmojiSystemResource）是 QQ 官方拼写错误（与
+`flashfransfer` 同类，逆向铁证）。**磁盘匹配保持原始拼写**；界面展示
+经展示层映射为无错别字名称（前端 `SUB_LABEL`、Go 侧 dupLabel
+`displaySub`，docs/07 §4.4）。
 - `emoji-recv` = 收到的表情，按年月超龄清理（同 Pic 规则）
 - `marketface` = 表情包，QQ 按"最近使用"保留 → 工具默认只报告（clean_marketface=false）
 - `personal_emoji` = 个人表情，**用户主动制作，默认不清除**

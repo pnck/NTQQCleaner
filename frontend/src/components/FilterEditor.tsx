@@ -28,8 +28,8 @@ const SELECT_KINDS = [
 
 // 语法帮助的字段取值参考（与 filters.ts 的 FILTER_FIELDS 语义一致）。
 const HELP_FIELDS: { field: string; note: string }[] = [
-  { field: "biz", note: "业务类型：pic / video / ptt / emoji / file / dataline" },
-  { field: "sub", note: "子目录：Ori / Thumb / OriTemp / ThumbTemp / file_assistant" },
+  { field: "biz", note: "业务类型：pic / video / ptt / emoji / file / dataline / flashfransfer（QQ 原始拼写，界面显示「闪传中转」）" },
+  { field: "sub", note: "子目录：Ori / Thumb / OriTemp / ThumbTemp / file_assistant / upload_temp / download_temp" },
   { field: "category", note: "分类路径片段，如 marketface / personal-emoji" },
   { field: "month", note: "月份，形如 2024-09" },
   { field: "age", note: "修改于 N 天前（数值）" },

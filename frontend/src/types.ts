@@ -164,9 +164,18 @@ export const BIZ_LABEL: Record<string, string> = {
   emoji: "表情",
   file: "文件",
   dataline: "设备互传",
+  // 目录名是腾讯真实拼写错误（flashfransfer，逆向铁证）：
+  // 磁盘匹配必须原样，界面展示映射为无错别字名称（docs/01 §2.3）。
+  flashfransfer: "闪传中转",
   log: "运行日志",
   "log-cache": "日志缓存",
   avatar: "头像缓存",
+};
+
+// SUB_LABEL 同 BIZ_LABEL：QQ 目录名错拼的展示层映射（Emoji 五子类里
+// EmojiSystermResource 是官方拼写错误，应为 EmojiSystemResource）。
+export const SUB_LABEL: Record<string, string> = {
+  EmojiSystermResource: "EmojiSystemResource",
 };
 
 export function fmtSize(n: number): string {

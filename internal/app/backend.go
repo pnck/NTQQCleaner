@@ -458,7 +458,17 @@ func sortDupGroups(groups []DupGroup) []DupGroup {
 }
 
 func dupLabel(e classify.FileEntry) string {
-	return e.Month + "/" + e.Sub + "/" + filepath.Base(e.Path)
+	return e.Month + "/" + displaySub(e.Sub) + "/" + filepath.Base(e.Path)
+}
+
+// displaySub 映射 QQ 目录名错拼（EmojiSystermResource 应为
+// EmojiSystemResource，逆向铁证）——仅展示层，磁盘匹配保持原样
+// （docs/01 §2.3；前端 SUB_LABEL 同源映射）。
+func displaySub(sub string) string {
+	if sub == "EmojiSystermResource" {
+		return "EmojiSystemResource"
+	}
+	return sub
 }
 
 // GetGroups aggregates the left tree: by="biz" or by="month"
