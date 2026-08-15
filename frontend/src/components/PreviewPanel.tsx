@@ -113,7 +113,23 @@ function Player({
   // 翻转同样触发（开关勾上时当前媒体立即起播），此时 src 未变、不重设
   // （重设会让播放中的媒体从头开始）。
   useEffect(() => {
-    if (kind !== "video" && kind !== "audio") return;
+    if (kind !== "video" && kind !== "audio") {
+      // 卸载（焦点离开媒体时立即释放，边缘在卸载路径而非下次加载）：
+      // display:none 不会暂停播放，而 pause 也不释放资源（解码帧与
+      // 缓冲仍占内存）——pause + 清空 src + load() 让元素回到空态，
+      // 音频立即停止、资源立即释放。常驻单例只保元素与音量/静音，
+      // 不保媒体本身（先自动播放 A、取消开关、切到 B 时 A 不再后台
+      // 出声）。prev 一并复位：重新进入同一媒体 = 全新加载。
+      for (const el of [videoRef.current, audioRef.current]) {
+        if (el && (el.getAttribute("src") || !el.paused)) {
+          el.pause();
+          el.removeAttribute("src");
+          el.load();
+        }
+      }
+      prev.current = { kind: "", src: "", autoStart: false };
+      return;
+    }
     const el = kind === "video" ? videoRef.current : audioRef.current;
     if (!el || !src) return;
     const same = prev.current.kind === kind && prev.current.src === src;
