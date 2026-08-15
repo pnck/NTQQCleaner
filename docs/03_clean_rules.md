@@ -23,6 +23,20 @@ for each file in nt_data 扫描范围:
 - **\*Temp 目录**：`OriTemp`/`ThumbTemp` 是下载中断/未完成残留，QQ 单独优先清理
 - **引用判定**：QQ 解析加密 DB 判断"文件是否仍被消息引用"→ 工具不解析 DB（解析需运行时 dump enc_key），只能用启发式
 
+**官方「缓存文件」category（IDB 实证，2026-08-15，mac CacheScannerWorker）**：
+官方清理器对「缓存文件」与「普通缓存」是**两个独立扫描入口**，共用同一
+259199s(3天)/mode_flag 统计逻辑（同一 worker 类）——差别只在路径集合：
+
+| 入口 | 路径集合 |
+|---|---|
+| `StartScanCacheFiles`（UI「缓存文件」category；GetFileCacheInfo type==3） | 富媒体 biz {Pic,Video,Ptt,File,Emoji,dataline,FilterVideo} × `{OriTemp,ThumbTemp}` + biz29 × `{upload_temp,download_temp,thumb}` + SilentCache 类 |
+| `StartScanNormalFiles`（普通缓存） | 同 biz 集合 × `{Ori,Thumb}`（dataline 用 `.thumb`） |
+
+⇒ 官方「缓存文件」的核心就是我们工具里的 **\*Temp 集合（clean_temp 首选
+清理）**，方向一致；biz29 目录名与 SilentCache 覆盖范围待逆向补充。
+注意命名碰撞：本工具给 BaseEmoji 资源的展示标签也叫「缓存文件」
+（自有分类），与官方同名 category（≈ 下载中断残留）不是一回事。
+
 **工具对齐方式**：扫描默认跳过 mtime 距今 < 3 天的文件（`MinAgeDays` 默认 3，
 `internal/rules/config.go` 的 `DefaultMinAgeDays`）。更细的时间选择交给筛选器
 （`age >= 90`、`month <= 2025-12` 等表达式）。

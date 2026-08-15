@@ -67,16 +67,25 @@
 
 ### 2.3 biz 目录名映射（内部业务码 → 目录名）
 
+> 2026-08-15 修订：以下业务码以 IDB 反编译实证为准（`sub_186D4C2`
+> elem_type→biz 映射，mac QQ 6.9.99 / wrapper.node）。旧表 Video=3、
+> File=5 为错误，正确是 **Video=5、File=3**。
+
 | 内部码 | 目录名 | 说明 |
 |---|---|---|
-| 2 | `Pic` | 图片 |
-| 3 | `Video` | 视频 |
-| 4 | `Ptt` | 语音 |
-| 5 | `File` | 文件（无年月） |
+| 2 | `Pic` | 图片（elem 2，sub_type 位图门控；否则归 Emoji） |
+| 5 | `Video` | 视频（elem 3） |
+| 4 | `Ptt` | 语音（elem 4） |
+| 3 | `File` | 文件（无年月，elem 5） |
 | 6 | `Emoji` | 表情 |
-| 12 | `dataline` | 数据线 |
-| 31 | `FilterVideo` | 过滤视频 |
+| 12 | `dataline` | 数据线（elem 22） |
+| 31 | `FilterVideo` | 过滤视频（elem 49） |
+| 29 | 目录名待确认 | 官方「缓存文件」集合成员：`upload_temp`/`download_temp`/`thumb`（docs/03 §1） |
 | 其他 | `GroupAnnouncement/avatar/Log/msf/OnlineStatus/PrivilegeIcon/PhotoWall/Qzone/...` | 见下 |
+
+elem_type → biz 映射（IDB `sub_186D4C2`）：图片 2→biz2（sub_type∈位图
+门控，否则 biz6 Emoji）、视频 3→biz5、语音 4→biz4、文件 5→biz3、
+数据线 22→biz12、过滤视频 49→biz31、其他→0。
 
 ### 2.4 其他 nt_data 目录（非富媒体缓存）
 
