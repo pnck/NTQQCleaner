@@ -153,6 +153,7 @@ export interface Config {
   cleanLog: boolean; // 高级 opt-in：运行日志
   cleanDatalineTmp: boolean; // 高级 opt-in：传输缓存（NFC 残留）
   cleanAvatar: boolean; // 高级 opt-in：头像缓存
+  scanAllAges: boolean; // 高级 opt-in：解开 QQ 3 天扫描基线（近 3 天文件入索引）
   minFileSizeBytes: number;
   skipDirs: string[];
   backupDir: string; // 备份目录（空 = 直接删除，仅写审计报告）

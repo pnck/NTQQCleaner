@@ -147,10 +147,16 @@ func (b *Backend) Scan(opts ScanOptions) error {
 		b.mu.Unlock()
 		return fmt.Errorf("scan already running")
 	}
-	if opts.MinAgeDays <= 0 {
-		opts.MinAgeDays = rules.DefaultMinAgeDays // 对齐 QQ 官方 3 天基线
-	}
 	cfg := b.cfg
+	// 扫描基线（设置→高级 scanAllAges，docs/03 §1）：GUI 没有 min-age
+	// UI，前端恒传默认值 3——基线以配置为准：scanAllAges=true 时不设
+	// 最小年龄（近 3 天文件同样入索引），否则用 QQ 官方 3 天基线。
+	// scanAllAges=false 时显式正数仍生效（未来 API 扩展位）。
+	if cfg.ScanAllAges {
+		opts.MinAgeDays = 0
+	} else if opts.MinAgeDays <= 0 {
+		opts.MinAgeDays = rules.DefaultMinAgeDays
+	}
 	// GUI 模式：普通类别门控全部放开（选择权在用户的筛选器），
 	// 高级 opt-in 类别（传输残留/日志/头像）保持用户在设置里的选择
 	// ——默认关闭的类别不进索引。结构性红线在 clean 层照常强制。

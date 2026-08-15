@@ -22,6 +22,7 @@ const ADVANCED: { key: keyof Config; label: string; note: string }[] = [
   { key: "cleanDatalineTmp", label: "传输残留", note: "数据线传输中断留下的未完成文件" },
   { key: "cleanLog", label: "运行日志", note: "QQ 的运行日志，删除后自动重建" },
   { key: "cleanAvatar", label: "头像缓存", note: "好友头像的本地缓存，重新查看时自动下载" },
+  { key: "scanAllAges", label: "包含近 3 天文件", note: "默认按 QQ 官方 3 天基线跳过新文件；勾选后全部入索引" },
 ];
 
 export function SettingsDialog({ open, onClose, theme, onThemeChange, config, onConfigSave }: Props) {
@@ -36,6 +37,7 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange, config, on
       cleanDatalineTmp: Boolean(config.cleanDatalineTmp),
       cleanLog: Boolean(config.cleanLog),
       cleanAvatar: Boolean(config.cleanAvatar),
+      scanAllAges: Boolean(config.scanAllAges),
     });
   }, [open, config]);
 
@@ -48,6 +50,7 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange, config, on
         cleanDatalineTmp: Boolean(advanced.cleanDatalineTmp),
         cleanLog: Boolean(advanced.cleanLog),
         cleanAvatar: Boolean(advanced.cleanAvatar),
+        scanAllAges: Boolean(advanced.scanAllAges),
         backupDir: backup,
       });
     }

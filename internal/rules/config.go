@@ -33,9 +33,13 @@ type Config struct {
 	CleanPersonalEmoji bool `yaml:"clean_personal_emoji" json:"cleanPersonalEmoji"`
 	CleanFile          bool `yaml:"clean_file" json:"cleanFile"`
 	// 高级 opt-in 门控（默认关，设置里勾选后扫描与清理才覆盖，docs/03 §6）：
-	CleanLog         bool `yaml:"clean_log" json:"cleanLog"`                   // log/log-cache 运行日志（QQ 自动重建）
+	CleanLog         bool `yaml:"clean_log" json:"cleanLog"`                  // log/log-cache 运行日志（QQ 自动重建）
 	CleanDatalineTmp bool `yaml:"clean_dataline_tmp" json:"cleanDatalineTmp"` // dataline/.tmp 传输残留（NFC）
-	CleanAvatar      bool `yaml:"clean_avatar" json:"cleanAvatar"`             // avatar 头像缓存（重新拉取）
+	CleanAvatar      bool `yaml:"clean_avatar" json:"cleanAvatar"`            // avatar 头像缓存（重新拉取）
+	// ScanAllAges 解开 QQ 官方 3 天扫描基线（逆向结论的默认对齐，非产品
+	// 需求，docs/03 §1）：true = 不设最小年龄，近 3 天文件同样入索引。
+	// 设置→高级 opt-in，默认 false（保持 QQ 3 天基线）。
+	ScanAllAges bool `yaml:"scan_all_ages" json:"scanAllAges"`
 
 	MinFileSizeBytes int64    `yaml:"min_file_size_bytes" json:"minFileSizeBytes"`
 	SkipDirs         []string `yaml:"skip_dirs" json:"skipDirs"`
@@ -57,6 +61,7 @@ func Default() Config {
 		CleanLog:           false,
 		CleanDatalineTmp:   false,
 		CleanAvatar:        false,
+		ScanAllAges:        false,
 		MinFileSizeBytes:   0,
 		SkipDirs:           []string{"mmkv", "msf", "OnlineStatus", "UnitedConfig", "config"},
 	}

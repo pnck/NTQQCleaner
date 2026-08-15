@@ -55,8 +55,11 @@ StorageCleanMgr 是多步骤状态机，统计与清理是两条独立路径，�
 旧版冗余占用。
 
 **工具对齐方式**：扫描默认跳过 mtime 距今 < 3 天的文件（`MinAgeDays` 默认 3，
-`internal/rules/config.go` 的 `DefaultMinAgeDays`）。更细的时间选择交给筛选器
-（`age >= 90`、`month <= 2025-12` 等表达式）。
+`internal/rules/config.go` 的 `DefaultMinAgeDays`）。3 天基线是对 QQ 官方
+行为的默认对齐（逆向结论，非产品需求）——GUI 在**设置→高级**提供
+`scan_all_ages` opt-in 解开限制（勾选后近 3 天文件同样入索引），CLI
+用 `--min-age-days 0`。更细的时间选择交给筛选器（`age >= 90`、
+`month <= 2025-12` 等表达式）。
 
 ---
 
@@ -169,6 +172,7 @@ clean_file: false
 clean_log: false                        # 高级 opt-in：运行日志
 clean_dataline_tmp: false               # 高级 opt-in：传输缓存（NFC 残留）
 clean_avatar: false                     # 高级 opt-in：头像缓存
+scan_all_ages: false                    # 高级 opt-in：解开 QQ 3 天扫描基线（近 3 天文件入索引）
 min_file_size_bytes: 0                  # 只统计大于此值的文件
 skip_dirs: [mmkv, msf, OnlineStatus, UnitedConfig, config]
 backup_dir: ""                          # 移动备份目录（仅当显式选择移动时使用，空 = 直接删除）
