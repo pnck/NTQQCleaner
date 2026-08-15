@@ -1,10 +1,13 @@
 package platform
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 )
+
+var errConfirmUnsupported = errors.New("platform confirm dialog not supported")
 
 // RenameOrCopy 跨平台的「移动」实现：同卷 rename；跨卷（EXDEV 或
 // rename 失败）复制内容后删除源，保留权限与 mtime。Windows 与 POSIX
@@ -52,3 +55,9 @@ func (unixBase) MoveFile(src, dst string) error { return RenameOrCopy(src, dst) 
 // FreezeAnimatedThumbs：darwin/linux 不静态化——WKWebView/webkit2gtk
 // 对动图解码的 CPU 开销可接受，动图在照片墙正常播放。
 func (unixBase) FreezeAnimatedThumbs() bool { return false }
+
+// ConfirmYesNo：darwin/linux 不提供平台级确认（NSAlert/GTK 经 wails
+// 已是本机样式）——返回错误让调用方回退 wails MessageDialog。
+func (unixBase) ConfirmYesNo(title, message string) (bool, error) {
+	return false, errConfirmUnsupported
+}

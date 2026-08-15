@@ -14,6 +14,7 @@ import (
 
 	"qqcleaner/internal/app"
 	"qqcleaner/internal/logring"
+	"qqcleaner/internal/platform"
 )
 
 //go:embed all:frontend/dist
@@ -57,14 +58,21 @@ func (d *Dialogs) ConfirmYesNo(title, msg string) (string, error) {
 	return d.confirmYesNo(title, msg)
 }
 
-// confirmYesNo 统一为系统标准 YES/NO（OK/CANCEL）形态。关键点（wails
-// v2.14 实测源码）：Windows 的 MessageDialog **完全忽略** Buttons 自定义
-// 文案（MessageBoxW 不支持自定义按钮）——WarningDialog 只会渲染单 OK 按钮，
-// 点击返回 "Ok"，此前与前端「清理」文案比较永远不相等，表现为「点了确认
-// 没反应」。QuestionDialog 映射为 MB_YESNO，返回 "Yes"/"No"。macOS 的
-// NSAlert 按 Buttons 文案显示并返回所选文案——两边都以 "Yes"/"No" 为契约。
-// DefaultButton "No"：Windows 侧落 MB_DEFBUTTON2，回车不会误触发危险动作。
+// confirmYesNo 统一为系统标准 YES/NO 形态。Windows 走平台层的
+// TaskDialogIndirect（现代化样式；wails 的 MessageDialog 在 Windows 上
+// 是 MessageBoxW——旧式 WIN32 样式且完全忽略 Buttons 自定义文案，
+// WarningDialog 只会渲染单 OK 按钮返回 "Ok"，此前与前端「清理」文案比较
+// 永远不相等，表现为「点了确认没反应」）。darwin/linux 平台层不支持时
+// 回退 wails MessageDialog（macOS NSAlert 按 Buttons 文案显示并返回所选
+// 文案，本就是本机现代化样式）。两边契约一致：返回 "Yes" / "No"，
+// 默认按钮 No（回车不误触发危险动作）。
 func (d *Dialogs) confirmYesNo(title, msg string) (string, error) {
+	if ok, err := platform.Current().ConfirmYesNo(title, msg); err == nil {
+		if ok {
+			return "Yes", nil
+		}
+		return "No", nil
+	}
 	return runtime.MessageDialog(d.ctx, runtime.MessageDialogOptions{
 		Type:          runtime.QuestionDialog,
 		Title:         title,

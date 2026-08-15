@@ -47,7 +47,7 @@ task frontend:typecheck
 - 容器**无显示器、无 C 编译器**：GUI 无法在容器内运行
 - **wails v2.14.0**（go.mod）+ go-webview2 v1.0.22；用户 Mac 的 wails CLI 需同步 `go install github.com/wailsapp/wails/v2/cmd/wails@v2.14.0`（CLI 与库版本不一致会构建异常；webview2 版本跟库走）
 - **Wails v2 对话框（任何版本）只有 Go 侧 API**（注入前端的 runtime.js 不含 dialog 函数）：项目里对话框在 `main_wails.go` 的 `Dialogs` 结构体（window.go.main.Dialogs），前端经 api.ts 调用 —— 这也符合"确认在 Go 侧"的红线
-- **Windows MessageDialog 完全忽略自定义按钮文案**（MessageBoxW 无自定义按钮；WarningDialog 恒单 OK 按钮、返回 "Ok"）：二元确认统一走 `QuestionDialog` YES/NO（MB_YESNO / NSAlert），返回契约 "Yes"/"No"（main_wails.go `confirmYesNo`，前端按 "Yes" 判断）
+- **Windows MessageDialog 完全忽略自定义按钮文案**（MessageBoxW 无自定义按钮；WarningDialog 恒单 OK 按钮、返回 "Ok"）——现已不用：Windows 的二元确认走平台层 `TaskDialogIndirect`（comctl32，Vista+，现代化样式；纯 syscall 可容器交叉编译），darwin/linux 回退 wails NSAlert/GTK。契约统一 "Yes"/"No"、默认 No（main_wails.go `confirmYesNo`，前端按 "Yes" 判断）
 - darwin 构建需要 `CGO_LDFLAGS=-framework UniformTypeIdentifiers`（wails 2.14 的 WailsContext.m 用 UTType 但未链接该 framework）
 - 交叉编译（实测 + 官方文档）：
   - **裸 `go build` 必须带 `production` 标签**（wails build 自动加）：缺了会编进 app_default_*.go stub，运行时报 "Wails applications will not build without the correct build tags"

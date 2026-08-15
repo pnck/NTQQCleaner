@@ -30,6 +30,11 @@ type Adapter interface {
 	// 设置（CoreWebView2Settings 无此项），墙内几十个动图同时解码
 	// 极耗 CPU；darwin/linux 保持动图正常播放。
 	FreezeAnimatedThumbs() bool
+
+	// ConfirmYesNo 弹系统级确认对话框（危险操作二次确认），返回用户
+	// 是否选择 Yes。各平台用本机现代化样式（Windows = TaskDialog）；
+	// 平台不支持时返回错误，调用方回退其它对话框实现。
+	ConfirmYesNo(title, message string) (bool, error)
 }
 
 // impl 由各平台 build-tagged 文件的 defaultAdapter() 初始化。
