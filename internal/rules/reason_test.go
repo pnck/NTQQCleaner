@@ -28,7 +28,8 @@ func d(y int, m time.Month, day int) time.Time { return time.Date(y, m, day, 12,
 // ① 字节级重复（重复出现，contentCount ≥ 2）
 // ② 有对应原文件（原图仍在，缩略图行）
 // ③ 有对应缩略图（有缩略图，原文件行）——Ori 不得因同名缩略图被误标
-//    「重复出现」（回归：用户反馈的 bug）。
+//
+//	「重复出现」（回归：用户反馈的 bug）。
 func TestReason(t *testing.T) {
 	now := testutil.Now
 	cases := []struct {
@@ -50,6 +51,13 @@ func TestReason(t *testing.T) {
 		{"personal emoji", entry("emoji/personal-emoji/ori", "Ori", "", "ff", d(2024, 1, 1), 10), false, false, false, "个人表情"},
 		{"fallback", entry("other", "x", "", "", now, 10), false, false, false, "缓存文件"},
 		{"no md5", entry("pic/thumb", "Thumb", "2023-01", "", d(2023, 1, 15), 10), false, false, false, "缩略图"},
+		{"flashfransfer upload_temp", entry("flashfransfer/upload_temp", "upload_temp", "", "", now, 10), false, false, false, "传输残留"},
+		{"flashfransfer download_temp", entry("flashfransfer/download_temp", "download_temp", "", "", now, 10), false, false, false, "传输残留"},
+		{"flashfransfer thumb", func() classify.FileEntry {
+			e := entry("flashfransfer/thumb", "thumb", "", "", now, 10)
+			e.IsThumb = true // 真实分类中 sub=thumb → IsThumb；类别标签优先
+			return e
+		}(), false, false, false, "传输残留"},
 	}
 	for _, c := range cases {
 		got := Reason(c.e, c.hasOri, c.hasThumb, map[bool]int{false: 0, true: 2}[c.dupCount])

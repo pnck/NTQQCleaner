@@ -31,6 +31,10 @@ func Reason(e classify.FileEntry, hasOri, hasThumb bool, contentCount int) strin
 		parts = append(parts, "下载中断残留")
 	case strings.Contains(strings.ToLower(e.Category), "dataline/tmp"):
 		parts = append(parts, "传输残留")
+	case strings.Contains(strings.ToLower(e.Category), "flashfransfer"):
+		// 闪传中转区（官方「缓存文件」category，docs/03 §1）：整类标
+		// 「传输残留」，优先于 IsThumb（thumb 子目录条目也是中转产物）。
+		parts = append(parts, "传输残留")
 	case e.IsThumb:
 		parts = append(parts, "缩略图")
 	case strings.Contains(strings.ToLower(e.Category), "marketface"):

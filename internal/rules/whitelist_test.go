@@ -31,8 +31,13 @@ func TestWhitelisted(t *testing.T) {
 		{"Emoji/personal_emoji/Ori/x.png", true},
 		{"dataline/.tmp/output.mp4.x.NFC", true}, // 传输残留（clean_temp）
 		{"dataline/.tmp", false},
-		{"avatar/x.jpg", true}, // 头像缓存（高级 opt-in）
-		{"log/2026-08/x.log", true},  // 运行日志（clean_log）
+		{"flashfransfer/upload_temp/x", true}, // 官方「缓存文件」category（clean_temp）
+		{"flashfransfer/download_temp/x", true},
+		{"flashfransfer/thumb/x.png", true},
+		{"flashfransfer/other/x", false}, // 未知子目录 fail-closed
+		{"flashfransfer", false},
+		{"avatar/x.jpg", true},      // 头像缓存（高级 opt-in）
+		{"log/2026-08/x.log", true}, // 运行日志（clean_log）
 		{"log-cache/x", true},
 		{"mmkv/mmkv.default", false},
 		{"UnitedConfig/000/x", false},
@@ -52,10 +57,10 @@ func TestWhitelisted(t *testing.T) {
 		rel  string
 		want bool
 	}{
-		{"Pic/2024-09/Thumb/abc_720.png", true},     // clean_thumb=true
-		{"Pic/2024-09/Ori/abc.jpg", false},         // clean_ori=false → 只报告
-		{"Pic/2024-09/OriTemp/abc.tmp", true},      // clean_temp=true
-		{"File/Thumb/abc.png", false},              // clean_file=false
+		{"Pic/2024-09/Thumb/abc_720.png", true},         // clean_thumb=true
+		{"Pic/2024-09/Ori/abc.jpg", false},              // clean_ori=false → 只报告
+		{"Pic/2024-09/OriTemp/abc.tmp", true},           // clean_temp=true
+		{"File/Thumb/abc.png", false},                   // clean_file=false
 		{"Emoji/emoji-recv/2024-05/Ori/abc.png", false}, // clean_ori=false
 		{"Emoji/BaseEmojiSyastems/EmojiSystermResource/😀/png/x.png", false},
 		{"Emoji/marketface/123/x.png", false},
@@ -63,11 +68,19 @@ func TestWhitelisted(t *testing.T) {
 		{"dataline/.tmp/x.NFC", false}, // clean_dataline_tmp=false（高级默认关）
 		{"log/2026-08/x.log", false},   // clean_log=false（高级默认关）
 		{"avatar/x.jpg", false},
+		{"flashfransfer/upload_temp/x", true}, // clean_temp=true（默认开，对齐官方「缓存文件」）
 	}
 	for _, c := range gated {
 		if got := Whitelisted(ntK(), c.rel, def); got != c.want {
 			t.Errorf("Whitelisted(%q) with defaults = %v, want %v", c.rel, got, c.want)
 		}
+	}
+
+	// clean_temp=false 时 flashfransfer 三子目录同样关闭（与 *Temp 同门控）。
+	noTemp := Default()
+	noTemp.CleanTemp = false
+	if Whitelisted(ntK(), "flashfransfer/upload_temp/x", noTemp) {
+		t.Error("flashfransfer must be gated by clean_temp=false")
 	}
 }
 
@@ -86,7 +99,7 @@ func TestBlacklisted(t *testing.T) {
 		{"/data/nt_qq_xx/nt_data/OnlineStatus/x", true},
 		{"/data/nt_qq_xx/nt_data/UnitedConfig/000/x", true},
 		{"/data/nt_qq_xx/nt_data/log/2026-08/x.log", false}, // 已移入白名单政策（clean_log）
-		{"/data/nt_qq_xx/nt_data/avatar/x.jpg", false}, // 已移入白名单政策（clean_avatar）
+		{"/data/nt_qq_xx/nt_data/avatar/x.jpg", false},      // 已移入白名单政策（clean_avatar）
 		{"/data/nt_qq_xx/nt_data/Pic/2024-09/Thumb/a.png", false},
 		{"/data/nt_qq_xx/nt_data/Pic/2024-09/Ori/b.jpg", false},
 	}

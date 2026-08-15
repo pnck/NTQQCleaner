@@ -122,7 +122,7 @@ func identifyFromUnitedConfig(ntData string) (string, error) {
 // ---- 布局与命名（docs/01）----
 
 var (
-	bizDirs  = []string{"Pic", "Video", "Ptt", "File", "dataline", "Emoji", "log", "log-cache", "avatar"}
+	bizDirs  = []string{"Pic", "Video", "Ptt", "File", "dataline", "Emoji", "flashfransfer", "log", "log-cache", "avatar"}
 	skipDirs = map[string]bool{
 		"mmkv": true, "msf": true, "OnlineStatus": true, "UnitedConfig": true,
 		"config": true,
@@ -175,6 +175,14 @@ func (*NT) Classify(segments []string) (biz, category, sub, month string) {
 		// （docs/01 §2.4）。高级 opt-in 门控（默认关）。
 		sub = ""
 		category = biz
+	case "flashfransfer":
+		// 闪传中转区（biz 29，docs/01 §2.3、03 §1）：官方「缓存文件」
+		// category 成员，{upload_temp|download_temp|thumb}/… 无年月结构。
+		// 注意 thumb 子目录的条目 IsThumb=true（sub 即 thumb），reason
+		// 层以 category 优先标「传输残留」；中转到 md5 命名不匹配
+		// {32hex}[_{size}].{ext} 模板，不会进入 Ori/Thumb 配对索引。
+		sub = segments[1]
+		category = biz + "/" + strings.ToLower(segments[1])
 	case "file":
 		sub = lastOf(segments, "Ori", "Thumb", "OriTemp", "ThumbTemp", "file_assistant")
 		category = biz + "/" + strings.ToLower(sub)
@@ -263,6 +271,17 @@ func (*NT) Whitelisted(rel string, g qq.Gates) bool {
 	case "log", "log-cache":
 		// {biz}/{file}：运行日志，CleanLog 门控
 		return len(segs) >= 2 && g.CleanLog
+	case "flashfransfer":
+		// {flashfransfer}/{upload_temp|download_temp|thumb}/{file}：
+		// 官方「缓存文件」category（docs/03 §1），挂 clean_temp 门控。
+		if len(segs) < 3 {
+			return false
+		}
+		switch segs[1] {
+		case "upload_temp", "download_temp", "thumb":
+			return g.CleanTemp
+		}
+		return false
 	case "avatar":
 		// {biz}/{file}：头像缓存，CleanAvatar 门控
 		return len(segs) >= 2 && g.CleanAvatar
