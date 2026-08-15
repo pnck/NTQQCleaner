@@ -6,12 +6,12 @@
 
 ```sh
 task build-cli                    # 纯 CLI 二进制（无需 GUI 依赖，任何环境可构建）
-task build                        # 宿主原生 GUI 二进制（go build 层，dev：开 inspector）
-task build:<os>-<arch>            # 交叉二进制 dev 模式：windows-amd64 / darwin-arm64 /
-                                  # darwin-amd64 / linux-amd64（开 inspector、不 strip）
-task build[:<os>-<arch>]:release  # 同上 release 模式（-s -w + trimpath，无 debug 注入）
+task build[:<os>-<arch>]          # GUI 二进制（go build 层），省略 = dev：开 inspector、不 strip
+task build[:<os>-<arch>]:debug    # 显式 debug 模式（与省略默认等价）
+task build[:<os>-<arch>]:release  # release 模式（-s -w + trimpath，无 debug 注入）
 task dev / bundle / bundle:release  # 热重载 / dev .app（带 inspector）/ release .app
-task bundle:<os>-<arch>           # 平台 release 包（CI matrix 单元直接调用）
+task bundle[:<os>-<arch>]:debug   # 平台 dev 包（-debug：开 inspector、不 strip）
+task bundle:<os>-<arch>           # 平台 release 包（CI matrix 单元直接调用；= :release）
 task verify                       # CI 门禁（test + smoke + vet）
 task frontend                     # 重建 frontend/dist（存在即跳过；源码变更后 --force）
 task frontend:typecheck
@@ -25,16 +25,19 @@ task frontend:typecheck
 
 - 默认构建 = **CLI-only**（`main_wails.go` 被 `//go:build wails` 排除，`gui_stub.go` 顶替）
 - `-tags wails` = GUI（Wails + embed.FS 前端）
-- **GUI 再分 dev / release 两档**（build 族与 bundle 族同规则，省略 = dev）：
-  - **dev**：`-tags wails,production,debug,devtools` + `-gcflags all=-N -l` +
-    不 strip + `-X main.openInspectorOnStartup=1`。wails 的 `debug`/`devtools`
-    是独立 build tag（`internal/app/app_debug.go` / `app_devtools.go`）：
-    devtools 开 inspector——**Windows WebView2 启动自动打开 devtools（F12
-    亦可）**，macOS 经注入变量自动打开 WebKit inspector。bundle 层等价地走
-    wails CLI 的 `-debug` 标志（自动加上述标签 + buildvcs=false）
-  - **release**（`build:release` / `build:<os>-<arch>:release` / `bundle:release` /
-    `bundle:<os>-<arch>`）：`-tags wails,production` + `-ldflags -s -w` +
-    `-trimpath`，无任何 debug 注入
+- **GUI 再分 debug / release 两档**（显式模式 token，完全对称；省略时 build 族
+  默认 dev，bundle 族宿主默认 dev、平台变体默认 release——兼容 CI 矩阵）：
+  - **debug**（`build[:<os>-<arch>]:debug` / `bundle[:<os>-<arch>]:debug`，
+    build 族省略 = debug）：`-tags wails,production,debug,devtools` +
+    `-gcflags all=-N -l` + 不 strip + `-X main.openInspectorOnStartup=1`。
+    wails 的 `debug`/`devtools` 是独立 build tag（`internal/app/app_debug.go`
+    / `app_devtools.go`）：devtools 开 inspector——**Windows WebView2 启动
+    自动打开 devtools（F12 亦可）**，macOS 经注入变量自动打开 WebKit
+    inspector。bundle 层等价地走 wails CLI 的 `-debug` 标志（自动加上述
+    标签 + buildvcs=false）
+  - **release**（`build[:<os>-<arch>]:release` / `bundle[:<os>-<arch>]:release`，
+    bundle 平台变体省略 = release）：`-tags wails,production` +
+    `-ldflags -s -w` + `-trimpath`，无任何 debug 注入
 - `go mod tidy` 默认启用全部标签，wails 依赖会保留在 go.mod
 - 逻辑层（internal/*）**不 import Wails**：事件走 `app.Emitter` 接口，CLI 与 GUI 共用同一管线（docs/04 §8）
 
