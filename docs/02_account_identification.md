@@ -164,6 +164,11 @@ func IdentifyAccount(qqRoot, instanceHash, ntData string) string {
   Windows `hmac=HMAC_SHA1`（其余参数同：剥 1024 字节头、page=4096、
   iter=4000、kdf=PBKDF2_HMAC_SHA512）。
 - `login_table` 直接存 uid ↔ QQ号 ↔ 账号目录绝对路径映射（并含昵称）。
+  实测全表字段中**三源拿不到**的仅有：A1 登录票据（1004 BLOB）、头像
+  URL（qlogo.cn）、头像文件路径（1010/1011，mmkv 已有完整路径，非
+  增量）——均对清理工具无价值；密钥硬编码于 `LoginRecordManager::Init`
+  （qmemcpy 写死），版本升级换值即失效。价值边际为零（逆向侧实测
+  结论，2026-08-15）。
 
 **本工具不采纳**，理由：
 
