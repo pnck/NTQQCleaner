@@ -2,6 +2,21 @@
    data-theme="auto"（默认）由 @media 跟随系统。 */
 :root {
   color-scheme: light dark;
+  /* 字体栈标准化（知名开源项目基线 + 显式 CJK 无衬线族）：
+     --font-sans 取 Ant Design 的 font-family（中文 UI 库的事实标准），
+     --font-mono 取 Tailwind preflight 的 mono 栈；两者都追加
+     PingFang SC / Microsoft YaHei / Noto Sans SC。关键：CJK 族必须列在
+     generic（sans-serif / monospace / Courier New）**之前**——Windows 上
+     generic monospace 解析为 Courier New，其字体链接把中文落到宋体
+     （serif），与 sans 混排（此前「未计算（大小唯一）」、表达式编辑区
+     正是这条路径）。逐字形回退先命中显式 CJK 族即可杜绝 serif 泄漏。 */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans SC", sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC",
+    "Liberation Mono", "Courier New", monospace;
   --bg: #f5f6f8;
   --panel: #ffffff;
   --panel-2: #eceef2;
@@ -54,7 +69,7 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font: 13px/1.5 var(--font-sans);
   overflow: hidden;
   user-select: none;
 }
@@ -593,9 +608,29 @@ button.chip {
 
 /* 内容哈希值：完整 64 位显示，等宽字体便于逐位比对与复制 */
 .preview .detail .hash {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   text-align: right;
+}
+
+/* 详情区文件路径：绝对路径、可选中复制（与内容哈希同字体标准） */
+.preview .detail .path {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* 详情区操作按钮：thin 紧凑样式（小 padding/小字号，不做全尺寸） */
+.preview .detail .detail-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.preview .detail .detail-actions button {
+  padding: 3px 10px;
+  font-size: 11px;
+  flex: none;
 }
 
 .preview .big-warn {
@@ -774,7 +809,7 @@ button.chip {
 
 .expr-text-view textarea {
   width: 100%;
-  font: 12px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
+  font: 12px/1.6 var(--font-mono);
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -810,7 +845,7 @@ button.chip {
 }
 
 .expr-help code {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   background: var(--panel);
   padding: 0 4px;
@@ -898,7 +933,7 @@ button.chip {
   flex: 1;
   min-width: 200px;
   word-break: break-all;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
 }
 
@@ -953,7 +988,7 @@ button.chip {
 
 /* 去重建议里的内容哈希：完整显示、可选中复制 */
 .dupe-hash {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   word-break: break-all;
   user-select: text;
@@ -1072,7 +1107,7 @@ button.chip {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  font: 13px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font: 13px/1.6 var(--font-sans);
 }
 
 .fatal-bar button {
@@ -1086,7 +1121,7 @@ button.chip {
 }
 
 .fatal-msg {
-  font: 12px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
+  font: 12px/1.6 var(--font-mono);
   white-space: pre-wrap;
   word-break: break-all;
   user-select: text;

@@ -1,6 +1,8 @@
 // Package report holds the scan/report models shared by the CLI and the UI
-// backend. Frontend-facing rows deliberately exclude absolute paths:
-// previews go through an ID-based endpoint (docs/04 §5, docs/07 §6).
+// backend. Rows carry the absolute path for detail-panel display only
+// (docs/07 §4.4); media previews still go through an ID-based endpoint
+// (docs/04 §5, docs/07 §6) — a path string never grants the frontend any
+// filesystem access, and all file operations stay Go-side and whitelisted.
 package report
 
 // AccountReport is the per-account scan summary sent to the UI.
@@ -25,6 +27,7 @@ type AccountReport struct {
 type FileRow struct {
 	ID       int    `json:"id"`
 	MD5      string `json:"md5"`
+	Path     string `json:"path"` // 绝对路径（详情区展示；预览/删除仍按 ID 走白名单）
 	Biz      string `json:"biz"`
 	Sub      string `json:"sub"`
 	Month    string `json:"month"`

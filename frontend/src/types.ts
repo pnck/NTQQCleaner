@@ -16,6 +16,7 @@ export interface AccountReport {
 export interface FileRow {
   id: number;
   md5: string; // 文件ID：QQ 取自原文件名的 md5（标识文件，不代表内容）
+  path: string; // 绝对路径（详情区展示；预览/删除仍按 id 走 Go 侧白名单）
   biz: string;
   sub: string;
   month: string;

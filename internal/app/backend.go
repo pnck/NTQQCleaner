@@ -300,6 +300,7 @@ func (b *Backend) fileRowLocked(out *Outcome, id int) report.FileRow {
 	row := report.FileRow{
 		ID:              id,
 		MD5:             e.MD5,
+		Path:            e.Path,
 		Biz:             e.Biz,
 		Sub:             e.Sub,
 		Month:           e.Month,

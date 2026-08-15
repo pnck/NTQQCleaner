@@ -62,23 +62,33 @@ const autoLoopState = { on: false };
 // （display 切换，绝不重挂载），切换媒体只改 src——音量/静音/循环参数
 // 随元素自持，原生音量滑块不会每次切换后「先出现再移动」（此前
 // key={src} 每次切 src 都新建元素，原生控件从默认值重新初始化）。
-// 挂载时在 ref 回调里（先于首次绘制）套用单例音量/静音；src 变化即起播
-// ——效果期不在用户手势上下文，WebKit 自动播放策略下先静音起播、
+// 挂载时在 ref 回调里（先于首次绘制）套用单例音量/静音。
+// **起播必须显式门控（autoStart）**：src 装载后无条件 play() 在 Windows
+// WebView2 上会无视「自动播放」开关直接起播（WebView2 的自动播放策略比
+// WebKit 宽松，不拦非手势 play）。autoStart = 自动播放开关 ∨ 显式播放
+// 意图（▶ 叠层点击/空格）；为 false 时只装载不播放，由原生控件/空格
+// 启动。自动起播发生在 effect 期、不在用户手势上下文——先静音起播、
 // 'playing' 后恢复元素既有静音态。
 function Player({
   kind,
   src,
+  autoStart,
   autoLoop,
   onActiveEl,
 }: {
   kind: "video" | "audio" | null; // null = 隐藏待命（当前行非媒体/未进入播放器）
   src: string;
-  autoLoop: boolean;
+  autoStart: boolean; // 起播门控（开关 ∨ 显式播放意图）；与 loop 属性独立
+  autoLoop: boolean; // 自动循环 = 常驻元素 loop 属性
   onActiveEl: (el: HTMLVideoElement | HTMLAudioElement | null) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const prev = useRef<{ kind: string; src: string }>({ kind: "", src: "" });
+  const prev = useRef<{ kind: string; src: string; autoStart: boolean }>({
+    kind: "",
+    src: "",
+    autoStart: false,
+  });
 
   // 循环开关：两个元素同步（自动循环 = 常驻元素 loop 属性）。
   useEffect(() => {
@@ -99,14 +109,18 @@ function Player({
   }, [kind, onActiveEl]);
 
   // src 装载与起播。prev 守卫：StrictMode 下 effect 双跑时第二次直接
-  // 返回——否则两轮 muted 恢复监听叠加，静音态会被还原错。
+  // 返回——否则两轮 muted 恢复监听叠加，静音态会被还原错。autoStart
+  // 翻转同样触发（开关勾上时当前媒体立即起播），此时 src 未变、不重设
+  // （重设会让播放中的媒体从头开始）。
   useEffect(() => {
     if (kind !== "video" && kind !== "audio") return;
     const el = kind === "video" ? videoRef.current : audioRef.current;
     if (!el || !src) return;
-    if (prev.current.kind === kind && prev.current.src === src) return;
-    prev.current = { kind, src };
-    el.src = src;
+    const same = prev.current.kind === kind && prev.current.src === src;
+    if (same && prev.current.autoStart === autoStart) return;
+    if (!same) el.src = src;
+    prev.current = { kind, src, autoStart };
+    if (!autoStart) return;
     const wasMuted = el.muted;
     el.muted = true;
     const restore = () => {
@@ -115,7 +129,7 @@ function Player({
     };
     el.addEventListener("playing", restore);
     void el.play().catch(() => {});
-  }, [kind, src]);
+  }, [kind, src, autoStart]);
 
   const applySingleton = (el: HTMLVideoElement | HTMLAudioElement | null) => {
     if (!el) return;
@@ -152,13 +166,18 @@ function Player({
 }
 
 export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, onSelectDups }: Props) {
-  // 初始态 = 缩略图 + 叠层图标；点击后切换为播放器/原文件（视频/音频即自动播放）。
-  // 状态按 row.id 记录——切行后旧行的 played 自然失效（full 按当前行判定），
-  // 无需随行重置。播放器元素常驻（Player），不随行重挂载。
+  // 初始态 = 缩略图 + 叠层图标；点击后切换为播放器/原文件（起播由
+  // autoStart 门控：开关开或用户显式点击 ▶/空格）。状态按 row.id 记录——
+  // 切行后旧行的 played 自然失效（full 按当前行判定），无需随行重置。
+  // 播放器元素常驻（Player），不随行重挂载。
   const [played, setPlayed] = useState<number | null>(null);
   const [forceBig, setForceBig] = useState<number | null>(null);
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
   const [autoLoop, setAutoLoop] = useState(autoLoopState.on);
+  // 显式播放意图（▶ 叠层点击 / 空格起播）：与自动播放开关取或后作为
+  // Player 的 autoStart。切行时复位——无缩略图的行直接进入播放器视图
+  // 不得自动起播（Windows WebView2 自动播放策略宽松，装 src 即播）。
+  const playIntentRef = useRef(false);
 
   // 活动媒体元素回写（空格播放/暂停用；Player 在 kind 变化时回调）。
   const setMediaRef = useCallback(
@@ -181,6 +200,7 @@ export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, o
     if (lastRowId.current === row.id) return;
     lastRowId.current = row.id;
     if (autoLoop) return;
+    playIntentRef.current = false;
     setPlayed(null);
     setForceBig(null);
   }, [row, autoLoop]);
@@ -220,6 +240,7 @@ export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, o
       const hasThumb = row.thumbUrl !== "";
       const full = !hasThumb || played === row.id;
       if (hasThumb && row.oriUrl !== "" && !full && playable(row)) {
+        playIntentRef.current = true;
         setPlayed(row.id);
       }
     };
@@ -284,7 +305,10 @@ export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, o
         {showOverlay && (
           <button
             className="media-overlay"
-            onClick={() => setPlayed(row.id)}
+            onClick={() => {
+              playIntentRef.current = true;
+              setPlayed(row.id);
+            }}
             title={playable(row) ? "点击播放" : "点击查看原文件"}
           >
             <span className="play-badge">{playable(row) ? "▶" : "⤢"}</span>
@@ -310,6 +334,7 @@ export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, o
         <Player
           kind={kind === "video" || kind === "audio" ? kind : null}
           src={full ? row.oriUrl : ""}
+          autoStart={autoLoop || playIntentRef.current}
           autoLoop={autoLoop}
           onActiveEl={setMediaRef}
         />
@@ -325,6 +350,12 @@ export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, o
               </Tooltip>
             ))}
           </span>
+        </div>
+        <div className="kv">
+          <span className="k">路径</span>
+          {/* 绝对路径（docs/07 §4.4）：仅展示；预览/删除仍按 id 走 Go 侧
+              白名单，路径字符串不给前端任何文件访问能力 */}
+          <span className="selectable path">{row.path}</span>
         </div>
         <div className="kv">
           <span className="k">类型</span>
@@ -357,7 +388,7 @@ export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, o
               : "未计算（大小唯一）"}
           </span>
         </div>
-        <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+        <div className="detail-actions">
           <button onClick={reveal}>在文件夹中显示</button>
           {row.contentDupCount >= 2 && (
             <button

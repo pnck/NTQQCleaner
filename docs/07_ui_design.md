@@ -157,6 +157,9 @@ func previewHandler(rw http.ResponseWriter, req *http.Request) {
 > 名称（闪传中转 / EmojiSystemResource），磁盘匹配保持原样
 > （docs/01 §2.3、§3）。
 - **连续预览**：选中一行后，方向键/按钮可在**当前筛选结果集**内前后切换，预览始终秒开
+- **路径**（详情行第一项）：文件绝对路径、等宽字体、可选中复制。仅展示——
+  预览/删除仍按 ID 走 Go 侧白名单（§4.1），路径字符串不授予前端任何
+  文件访问能力
 - **在文件夹中显示**：定位文件真实路径（`open -R` / `explorer /select`）——仅展示不操作
 - **内容哈希**：完整 64 位显示（等宽字体，可选中复制到筛选表达式）；大小唯一
   未计算时显示「未计算（大小唯一）」；已计算但内容组只有自己时标注
@@ -287,6 +290,7 @@ func previewHandler(rw http.ResponseWriter, req *http.Request) {
 type FileRow struct {          // 中栏一行
     ID       int    `json:"id"`        // 后端索引行号
     MD5      string `json:"md5"`       // 文件ID：QQ 取自原文件名的 md5（标识，非内容）
+    Path     string `json:"path"`      // 绝对路径：仅详情区展示（§4.4），可选中复制
     Biz      string `json:"biz"`       // pic/video/...
     Sub      string `json:"sub"`       // Ori/Thumb/...
     Month    string `json:"month"`
