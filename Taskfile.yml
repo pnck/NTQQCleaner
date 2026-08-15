@@ -11,11 +11,14 @@
 # 命名规则（动词优先，维度固定顺序）：
 #   <动词>[:<平台>-<架构>][:<模式>]
 #   - 平台 token 必含 -<架构>（windows-amd64 / darwin-arm64 / darwin-amd64 /
-#     linux-amd64），省略 = 宿主；模式 token 仅 release（省略 = dev，
-#     仅宿主有意义）。平台 token 与模式 token 结构不同，解析无歧义。
-#   - 产物变体用 - 后缀：build-cli。
-#   - 例：bundle:windows-amd64（= release）、bundle:release（宿主 release）、
-#     bundle（宿主 dev）、build:darwin-arm64
+#     linux-amd64），省略 = 宿主；模式 token 仅 release（省略 = dev）。
+#     build 族与 bundle 族同规则：省略模式 = dev（开 inspector、不 strip），
+#     :release = 正式优化（-s -w + trimpath，无 debug 注入）。
+#     平台 token 与模式 token 结构不同，解析无歧义。
+#   - 产物变体用 - 后缀：build-cli；release 二进制名追加 -release 后缀
+#     （与 dev 二进制并存，不互相覆盖）。
+#   - 例：build:windows-amd64（= dev）、build:windows-amd64:release、
+#     bundle（宿主 dev）、bundle:release（宿主 release）
 #
 # 平台变体的实现方式：Taskfile 没有 glob 任务名（task build:* 不成立），
 # 标准等价写法 = internal 参数化实现（build:p / bundle:p，不出现在
@@ -49,6 +52,14 @@ vars:
   BINDIR: build/bin
   LDFLAGS: "-s -w"
   TAGS: wails,production
+  # dev（省略 = dev）模式的附加参数：debug/devtools 是 wails v2 的两个
+  # 独立 build tag（app_debug.go / app_devtools.go）——debug 开调试日志、
+  # devtools 开 inspector（Windows WebView2 PutAreDevToolsEnabled + F12）。
+  # LDFLAGS_DEV 的 -X 注入在 Windows 上同样生效：wails windows 前端在
+  # debug + OpenInspectorOnStartup 时启动自动打开 devtools（frontend.go）。
+  TAGS_DEV: "{{.TAGS}},debug,devtools"
+  LDFLAGS_DEV: -X main.openInspectorOnStartup=1
+  GCFLAGS_DEV: "all=-N -l"
   # Wails 2.14 darwin 端使用 UTType 但未链接 UniformTypeIdentifiers framework
   # （macOS 11+，已知上游未修）——macOS 构建必须补这个 framework。
   DARWIN_EXTRA_LDFLAGS: -framework UniformTypeIdentifiers
@@ -88,17 +99,22 @@ tasks:
       - '{{.GO}} build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BINDIR}}/{{.APP}}-cli .'
 
   # 平台变体的参数化实现（internal：不出现在 --list，经下方别名调用）。
-  # PLATFORM 省略 = native（宿主）。平台差异（CGO/-H windowsgui/输出名）
-  # 都在这一处按 token 条件化。
+  # PLATFORM 省略 = native（宿主）；RELEASE=1 = release。平台差异
+  # （CGO/-H windowsgui/输出名）都在这一处按 token 条件化。
+  # dev（默认）：debug+devtools 标签开 inspector、gcflags 关优化、不 strip
+  #   （产物名无后缀）；
+  # release：production 标签 + -s -w strip + trimpath（产物名 -release 后缀，
+  #   与 dev 并存）。
   build:p:
     internal: true
     vars:
       PLATFORM: '{{default "native" .PLATFORM}}'
+      RELEASE: '{{default "0" .RELEASE}}'
       OS: '{{if eq .PLATFORM "native"}}{{.GOOS}}{{else}}{{index (splitList "-" .PLATFORM) 0}}{{end}}'
       ARCH: '{{if eq .PLATFORM "native"}}{{.HOST_ARCH}}{{else}}{{index (splitList "-" .PLATFORM) 1}}{{end}}'
     deps: [frontend]
     cmds:
-      - '{{.GO}} build -tags {{.TAGS}} -trimpath -ldflags "{{.LDFLAGS}}{{if eq .OS "windows"}} -H windowsgui{{end}}" -o {{.BINDIR}}/{{.APP}}{{if ne .PLATFORM "native"}}-{{.PLATFORM}}{{end}}{{if eq .OS "windows"}}.exe{{end}} .'
+      - '{{.GO}} build -tags {{if eq .RELEASE "0"}}{{.TAGS_DEV}}{{else}}{{.TAGS}}{{end}} {{if eq .RELEASE "0"}}-gcflags "{{.GCFLAGS_DEV}}"{{end}} {{if eq .RELEASE "1"}}-trimpath{{end}} -ldflags "{{if eq .RELEASE "0"}}{{.LDFLAGS_DEV}}{{else}}{{.LDFLAGS}}{{end}}{{if eq .OS "windows"}} -H windowsgui{{end}}" -o {{.BINDIR}}/{{.APP}}{{if ne .PLATFORM "native"}}-{{.PLATFORM}}{{end}}{{if eq .RELEASE "1"}}-release{{end}}{{if eq .OS "windows"}}.exe{{end}} .'
     env:
       CGO_ENABLED: '{{if eq .OS "windows"}}0{{else}}1{{end}}'
       GOOS: '{{.OS}}'
@@ -106,33 +122,63 @@ tasks:
       CGO_LDFLAGS: '{{if eq .OS "darwin"}}{{.DARWIN_EXTRA_LDFLAGS}}{{end}}'
 
   build:
-    desc: 宿主原生 GUI 二进制（go build 层）
+    desc: 宿主原生 GUI 二进制（go build 层，dev：开 inspector、不 strip）
     cmds:
       - task: build:p
 
+  build:release:
+    desc: 宿主 release GUI 二进制（go build 层：-s -w + trimpath，无 debug 注入）
+    cmds:
+      - task: build:p
+        vars: {RELEASE: "1"}
+
   build:windows-amd64:
-    desc: Windows GUI 二进制（go build 层，任意主机交叉；正式分发走 bundle:windows-amd64）
+    desc: Windows GUI 二进制 dev 模式（go build 层，任意主机交叉；debug/devtools 标签开 inspector。release 见 build:windows-amd64:release）
     cmds:
       - task: build:p
         vars: {PLATFORM: windows-amd64}
 
+  build:windows-amd64:release:
+    desc: Windows release GUI 二进制（go build 层，-s -w + trimpath；正式分发走 bundle:windows-amd64）
+    cmds:
+      - task: build:p
+        vars: {PLATFORM: windows-amd64, RELEASE: "1"}
+
   build:darwin-arm64:
-    desc: macOS arm64 GUI 二进制（go build 层，只能在 macOS 主机上构建）
+    desc: macOS arm64 GUI 二进制 dev 模式（go build 层，只能在 macOS 主机上构建；开 inspector）
     cmds:
       - task: build:p
         vars: {PLATFORM: darwin-arm64}
 
+  build:darwin-arm64:release:
+    desc: macOS arm64 release GUI 二进制（go build 层，只能在 macOS 主机上构建）
+    cmds:
+      - task: build:p
+        vars: {PLATFORM: darwin-arm64, RELEASE: "1"}
+
   build:darwin-amd64:
-    desc: macOS amd64 GUI 二进制（go build 层，只能在 macOS 主机上构建）
+    desc: macOS amd64 GUI 二进制 dev 模式（go build 层，只能在 macOS 主机上构建；开 inspector）
     cmds:
       - task: build:p
         vars: {PLATFORM: darwin-amd64}
 
+  build:darwin-amd64:release:
+    desc: macOS amd64 release GUI 二进制（go build 层，只能在 macOS 主机上构建）
+    cmds:
+      - task: build:p
+        vars: {PLATFORM: darwin-amd64, RELEASE: "1"}
+
   build:linux-amd64:
-    desc: Linux GUI 二进制（go build 层，需 webkit2gtk；未实测——开发容器无此依赖）
+    desc: Linux GUI 二进制 dev 模式（go build 层，需 webkit2gtk；未实测——开发容器无此依赖）
     cmds:
       - task: build:p
         vars: {PLATFORM: linux-amd64}
+
+  build:linux-amd64:release:
+    desc: Linux release GUI 二进制（go build 层，需 webkit2gtk；未实测）
+    cmds:
+      - task: build:p
+        vars: {PLATFORM: linux-amd64, RELEASE: "1"}
 
   # ==================== 开发（宿主热重载） ====================
 
@@ -146,7 +192,12 @@ tasks:
   # ==================== 打包层：wails build（正式分发 / CI 子目标） ====================
 
   # 打包的参数化实现。PLATFORM 省略 = 宿主（BUNDLE_PLATFORM 推断）；
-  # RELEASE=1 = release（无 debug 标签、不开 inspector）；dev 模式仅宿主。
+  # RELEASE=1 = release；dev 模式仅宿主。
+  # dev：wails build -debug（Mode Debug：自动加 production,debug,devtools
+  #   标签、gcflags all=-N -l、buildvcs=false）——Windows 自动打开
+  #   WebView2 devtools / macOS 经 -X 注入自动打开 WebKit inspector；
+  #   不 strip（保留符号）。
+  # release：production 标签 + -s -w strip + trimpath，无任何 debug 注入。
   # darwin 的 framework 链接由 darwin 别名/宿主任务携带（wails 透传 env）。
   bundle:p:
     internal: true
@@ -155,10 +206,10 @@ tasks:
       RELEASE: '{{default "0" .RELEASE}}'
     deps: [frontend]
     cmds:
-      - 'wails build -platform {{if eq .PLATFORM "native"}}{{.BUNDLE_PLATFORM}}{{else}}{{replace "-" "/" .PLATFORM}}{{end}} -clean -s -tags "wails{{if eq .RELEASE "0"}},debug{{end}}" {{if eq .RELEASE "0"}}-devtools{{end}} -trimpath -ldflags "{{.LDFLAGS}}{{if eq .RELEASE "0"}} -X main.openInspectorOnStartup=1{{end}}"'
+      - 'wails build -platform {{if eq .PLATFORM "native"}}{{.BUNDLE_PLATFORM}}{{else}}{{replace "-" "/" .PLATFORM}}{{end}} -clean -s -tags wails {{if eq .RELEASE "0"}}-debug{{end}} -trimpath -ldflags "{{if eq .RELEASE "0"}}{{.LDFLAGS_DEV}}{{else}}{{.LDFLAGS}}{{end}}"'
 
   bundle:
-    desc: 宿主 dev .app 包（debug 标签 + 启动自动打开 WebKit inspector）；release 见 bundle:release
+    desc: 宿主 dev .app 包（-debug：开 inspector、不 strip）；release 见 bundle:release
     cmds:
       - task: bundle:p
     env:
