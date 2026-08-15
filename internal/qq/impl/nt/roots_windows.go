@@ -13,11 +13,11 @@ import (
 
 // Windows 数据根候选（docs/08 §2.1）：
 //  1. <Documents>\Tencent Files——真机实测主根；
-//  2. %APPDATA%\Tencent\QQ——次级回退：逆向真机实测该目录不存在，但
-//     单机观察不能覆盖所有机型/版本（测试机特调过，Documents 被重定向），
-//     已请逆向 agent 从 binary 侧复核（NTQQ 是否引用 Roaming\Tencent）。
-//     未拿到 binary 证据前保守保留：探测逻辑要求目录存在且含实例
-//     （IsInstanceRoot）才会被选中，无风险。
+//  2. %APPDATA%\Tencent\QQ——次级回退：binary + 全新安装真机双证据确认
+//     非数据根（9.9.33 wrapper.node 无 RoamingAppData 路径拼装，全新安装
+//     只产生空 STemp\Uninstall 残留），仅为升级路径/旧版兼容代码等极特
+//     殊情况兜底。探测逻辑要求目录存在且含实例（IsInstanceRoot）才会
+//     被选中，零风险。
 func init() {
 	qq.RegisterRoots(func() []string {
 		var out []string

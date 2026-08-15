@@ -40,6 +40,20 @@ for each file in nt_data 扫描范围:
 - 注意命名碰撞：本工具给 BaseEmoji 资源的展示标签也叫「缓存文件」
   （自有分类），与官方同名 category（≈ 下载中断残留）不是一回事。
 
+**官方「统计 ≠ 清理」双口径（Windows IDB 实证，2026-08-15）**：
+StorageCleanMgr 是多步骤状态机，统计与清理是两条独立路径，不能互相
+代表：
+
+| 口径 | 入口 | 范围 |
+|---|---|---|
+| 统计（UI「磁盘 + QQ 占用」） | `GetDiskAndQQSize` → `ScanQQDirSize` | 账号目录顶层**全部**子目录（含旧版 Image/Video + Msg3.0.db），只累加 size 不删除 |
+| 清理（可清理缓存） | `StartScanNormalFiles` → 路径构建 → `InnerScanFiles` → `ClearChatCacheInfo`/`ClearAllChatCacheInfo` | 仅注册路径：nt_data biz 子目录 + flashfransfer 三子目录 |
+
+⇒ 官方 UI 的「QQ 占用」≠「可清理缓存」（差异 = 官方不动的旧版冗余）。
+**本工具的可清理口径对齐清理路径**（白名单 = nt_data biz 结构），旧版
+遗留走独立的只统计展示（docs/08 §2.4）——报告天然双栏：可清理总量 vs
+旧版冗余占用。
+
 **工具对齐方式**：扫描默认跳过 mtime 距今 < 3 天的文件（`MinAgeDays` 默认 3，
 `internal/rules/config.go` 的 `DefaultMinAgeDays`）。更细的时间选择交给筛选器
 （`age >= 90`、`month <= 2025-12` 等表达式）。

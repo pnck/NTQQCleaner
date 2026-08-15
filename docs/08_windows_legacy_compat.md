@@ -31,7 +31,7 @@
 | 平台 | 默认根候选（探测顺序） |
 |---|---|
 | macOS | `~/Library/Containers/com.tencent.qq/Data/Library/Application Support/QQ`（docs/01；逆向 IDB + 历史真机 64+ 处实证复核确认，`Data/Documents` 是误写已否决）。IDA 佐证：GetSaveDir 根来自运行时注入的 biz_base_dir，非硬编码——探测与发现逻辑兼容 |
-| Windows | ① `<Documents>\Tencent Files`（真机实测主根；Documents 可能被重定向）；② `%APPDATA%\Tencent\QQ`（**次级回退**：真机实测不存在（Roaming/Tencent 为空），但单机观察不能覆盖所有机型/版本/安装方式——测试机特调过；已请逆向 agent 从 binary 侧复核 NTQQ 是否引用 Roaming\Tencent，出结论前保守保留。探测要求目录存在且含实例（IsInstanceRoot）才选中，零风险） |
+| Windows | ① `<Documents>\Tencent Files`（真机实测主根；Documents 可能被重定向）；② `%APPDATA%\Tencent\QQ`（**次级回退**：binary + 全新安装真机双证据确认非数据根——9.9.33 wrapper.node 无 RoamingAppData 路径拼装（SHGetFolderPathA 只用 ProgramData；Tencent\QQ 命中仅注册表与旧版兼容路径模板），全新安装只产生空 STemp\Uninstall 残留。仍保留回退以覆盖极特殊情况（升级路径/旧版兼容代码），探测要求目录存在且含实例才选中，零风险） |
 | Linux | 无稳定默认根，`--root` / UI 指定（现状不变） |
 
 ### 2.2 账号实例与全局目录（Windows 与 mac 差异最大处）
@@ -57,8 +57,14 @@ Emoji 五子类、File 无年月、dataline/.tmp 等结构全部同构（docs/01
 
 - 形态：`<根>/<数字QQ号>/`，顶层 25 个旧库 + 缓存目录（实测清单）。
 - 判定：数字目录且**不含** `nt_qq/nt_data`（含则它是 Windows NT 实例）。
-- 官方行为：`ScanQQDirSize` 只统计旧库不清理（实测结论）；官方是否清理
-  Image/Video 顶层缓存**未确认** → 保守：默认只统计不清理。
+- 官方行为（Windows IDB 实证，2026-08-15）：**官方清理工具不清理任何
+  旧版遗留**——CacheScannerWorker 的扫描/清理路径集合只含 nt_data biz
+  子目录 + flashfransfer 三子目录，无旧版顶层目录；`ScanQQDirSize` 构造
+  旧库（Msg3.0.db）+ 新库（nt_msg.db）双路径但**只累加 size 不删除**
+  （「保留 + 统计」策略，迁移后靠用户手动清理）。本工具的「只统计不
+  清理」与官方策略完全一致 ✓。旧版遗留作为**独立冗余展示**（CLI 报告 /
+  GUI 账号行标记），不并入任何可清理 category，也不提供清理门控
+  （比官方更保守：连统计之外的操作都没有）。
 - 实测顶层缓存目录：`Ads AppWebCache Audio CloudRes DiscussHead Emoji
   ExpressionRecommend FileRecv GroupCollection Image MyCollection
   OfflinePackage QQ QQGuild RecommendFace SelCreateGroupHead Video
@@ -198,9 +204,9 @@ type ResidueReporter interface {
 ### 3.6 Windows 根路径探测
 
 `roots_windows.go` 两个候选（§2.1）：`<Documents>\Tencent Files` +
-`%APPDATA%\Tencent\QQ` 次级回退（binary 复核出结论前保守保留；存在且
-含实例才会被自动探测选中）。Documents 定位链（按序，全部失败才放弃；
-`--root` 覆盖始终可用）：
+`%APPDATA%\Tencent\QQ` 次级回退（binary 证据确认非数据根，仅为极特殊
+情况兜底；存在且含实例才会被自动探测选中）。Documents 定位链（按序，
+全部失败才放弃；`--root` 覆盖始终可用）：
 
 1. `SHGetKnownFolderPath(FOLDERID_Documents)`（shell32，经
    `golang.org/x/sys/windows` 的 GUID/CoTaskMemFree + syscall LazyDLL，
@@ -282,12 +288,12 @@ backend.go 现状逻辑不变）——加了 Windows 实例判定后，`Tencent 
 
 | # | 问题 | 阻塞 |
 |---|---|---|
-| 1 | NTQQ binary 是否引用 `%APPDATA%\Tencent\QQ`（Roaming\Tencent）——决定次级候选去留（真机单机观察不具普遍性，binary 证据为准） | 中（已恢复次级回退，出结论前保守保留） |
-| 2 | 官方清理器是否清理旧版 Image/Video 顶层缓存 | 低（当前保守「只统计不清理」；若确认官方可清，未来可做旧版扫描——需独立知识：`$` 编码名/无年月/md5.png 平铺） |
-| 3 | Windows nt_data 头部截断未见的目录（emoji-recv/marketface/*Temp 等可能量小或不存在） | 低（白名单结构驱动、存在性无关，fail-closed 天然兜底） |
-| 4 | NTQQ 9.0.x 早期布局是否不同；根下是否可能混现 nt_qq_<hash> | 低（识别不依赖版本号；混现时 nt probe 两路都认） |
-| 5 | TIM 与 QQ 是否同根同构（All Users\QQ 旧 Registry2.0.db 暗示多产品共存） | 无（TIM 记为非目标） |
+| 1 | Windows nt_data 头部截断未见的目录（emoji-recv/marketface/*Temp 等可能量小或不存在） | 低（白名单结构驱动、存在性无关，fail-closed 天然兜底） |
+| 2 | NTQQ 9.0.x 早期布局是否不同；根下是否可能混现 nt_qq_<hash> | 低（识别不依赖版本号；混现时 nt probe 两路都认） |
+| 3 | TIM 与 QQ 是否同根同构（All Users\QQ 旧 Registry2.0.db 暗示多产品共存） | 无（TIM 记为非目标） |
 
 已解决：mac 根路径（维持 docs 原值，Data/Documents 是误写）；mac 进程名
 （QQ.app/Contents/MacOS/QQ，darwin 适配器现状正确）；mac 根下无数字目录
-（legacy probe 不会误触）。
+（legacy probe 不会误触）；`%APPDATA%\Tencent\QQ` 非数据根（binary +
+全新安装 9.9.33 真机双证据，次级回退保留）；官方对旧版遗留采取「保留
++ 统计」不清理（Windows IDB 实证，与本工具策略一致）。
