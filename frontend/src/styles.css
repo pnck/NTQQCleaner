@@ -74,6 +74,41 @@ body {
   user-select: none;
 }
 
+/* Windows 滚动条策略：除照片墙外全部完全隐藏（main.tsx 按 UA 给
+   <html> 加 .windows）。双保险：标准 scrollbar-width:none（Chromium
+   121+）+ ::-webkit-scrollbar display:none；照片墙例外保留滚动条
+   （虚拟滚动需要可拖拽的条）。非 Windows 平台不套任何规则，保持
+   原生行为（macOS 覆盖式滚动条）。 */
+html.windows * {
+  scrollbar-width: none;
+}
+
+html.windows ::-webkit-scrollbar {
+  display: none;
+}
+
+html.windows .wall-scroll {
+  scrollbar-width: thin;
+}
+
+html.windows .wall-scroll::-webkit-scrollbar {
+  display: block;
+  width: 10px;
+}
+
+html.windows .wall-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html.windows .wall-scroll::-webkit-scrollbar-thumb {
+  background: var(--text-dim);
+  border-radius: 5px;
+}
+
+html.windows .wall-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
 button {
   font: inherit;
   color: inherit;
