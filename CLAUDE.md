@@ -10,8 +10,8 @@ task build[:<os>-<arch>]          # GUI 二进制（go build 层），省略 = d
 task build[:<os>-<arch>]:debug    # 显式 debug 模式（与省略默认等价）
 task build[:<os>-<arch>]:release  # release 模式（-s -w + trimpath，无 debug 注入）
 task dev / bundle / bundle:release  # 热重载 / dev .app（带 inspector）/ release .app
-task bundle[:<os>-<arch>]:debug   # 平台 dev 包（-debug：开 inspector、不 strip）
-task bundle:<os>-<arch>           # 平台 release 包（CI matrix 单元直接调用；= :release）
+task bundle[:<os>-<arch>]         # 平台 dev 包（省略 = dev，与宿主一致；-debug 开 inspector）
+task bundle[:<os>-<arch>]:release # 平台 release 包（CI matrix 单元直接调用）
 task verify                       # CI 门禁（test + smoke + vet）
 task frontend                     # 重建 frontend/dist（存在即跳过；源码变更后 --force）
 task frontend:typecheck

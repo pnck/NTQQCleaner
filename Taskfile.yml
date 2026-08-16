@@ -14,9 +14,9 @@
 #     linux-amd64），省略 = 宿主；模式 token 显式 debug | release，
 #     完全对称（debug = 开 inspector、不 strip；release = -s -w +
 #     trimpath、无 debug 注入）。
-#   - 省略模式的默认值：build 族 = dev；bundle 族宿主 = dev、平台变体
-#     = release（兼容既有调用与 CI 矩阵）。显式 :debug/:release 与默认
-#     无关。
+#   - 省略模式的默认值：build/bundle 全族统一 = dev（宿主与平台变体
+#     一致，无「mac dev / windows release」的意外落差）。release 一律
+#     显式 :release（CI 矩阵调用 bundle:<os>-<arch>:release）。
 #   - 产物变体用 - 后缀：build-cli；release 二进制名追加 -release 后缀
 #     （与 dev 二进制并存，不互相覆盖）。
 #   - 例：build:windows-amd64:debug、build:windows-amd64:release、
@@ -262,10 +262,10 @@ tasks:
       CGO_LDFLAGS: "{{.DARWIN_EXTRA_LDFLAGS}}"
 
   bundle:windows-amd64:
-    desc: Windows release 包（wails build：manifest/图标/版本资源齐全；需 wails CLI，任意主机。dev 见 bundle:windows-amd64:debug）
+    desc: Windows dev 包（wails build：manifest/图标/版本资源齐全，-debug 开 inspector；需 wails CLI，任意主机。release 见 bundle:windows-amd64:release）
     cmds:
       - task: bundle:p
-        vars: {PLATFORM: windows-amd64, RELEASE: "1"}
+        vars: {PLATFORM: windows-amd64}
 
   bundle:windows-amd64:debug:
     desc: Windows dev 包（-debug：开 inspector、不 strip；需 wails CLI，任意主机）
@@ -274,10 +274,10 @@ tasks:
         vars: {PLATFORM: windows-amd64}
 
   bundle:darwin-arm64:
-    desc: macOS arm64 release 包（只能在 macOS 主机上构建）
+    desc: macOS arm64 dev 包（-debug 开 inspector；只能在 macOS 主机上构建。release 见 bundle:darwin-arm64:release）
     cmds:
       - task: bundle:p
-        vars: {PLATFORM: darwin-arm64, RELEASE: "1"}
+        vars: {PLATFORM: darwin-arm64}
     env:
       CGO_LDFLAGS: "{{.DARWIN_EXTRA_LDFLAGS}}"
 
@@ -290,10 +290,10 @@ tasks:
       CGO_LDFLAGS: "{{.DARWIN_EXTRA_LDFLAGS}}"
 
   bundle:darwin-amd64:
-    desc: macOS amd64 release 包（只能在 macOS 主机上构建）
+    desc: macOS amd64 dev 包（-debug 开 inspector；只能在 macOS 主机上构建。release 见 bundle:darwin-amd64:release）
     cmds:
       - task: bundle:p
-        vars: {PLATFORM: darwin-amd64, RELEASE: "1"}
+        vars: {PLATFORM: darwin-amd64}
     env:
       CGO_LDFLAGS: "{{.DARWIN_EXTRA_LDFLAGS}}"
 
@@ -306,10 +306,10 @@ tasks:
       CGO_LDFLAGS: "{{.DARWIN_EXTRA_LDFLAGS}}"
 
   bundle:linux-amd64:
-    desc: Linux release 包（需 webkit2gtk，只能在 Linux 主机上构建；未实测）
+    desc: Linux dev 包（-debug 开 inspector；需 webkit2gtk；未实测。release 见 bundle:linux-amd64:release）
     cmds:
       - task: bundle:p
-        vars: {PLATFORM: linux-amd64, RELEASE: "1"}
+        vars: {PLATFORM: linux-amd64}
 
   bundle:linux-amd64:debug:
     desc: Linux dev 包（-debug：开 inspector、不 strip；需 webkit2gtk；未实测）
