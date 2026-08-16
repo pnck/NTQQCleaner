@@ -20,7 +20,7 @@
 #   - 产物变体用 - 后缀：build-cli；release 二进制名追加 -release 后缀
 #     （与 dev 二进制并存，不互相覆盖）。
 #   - 例：build:windows-amd64:debug、build:windows-amd64:release、
-#     bundle:windows-amd64（默认 release）、bundle:windows-amd64:debug
+#     bundle:windows-amd64（默认 dev）、bundle:windows-amd64:release
 #
 # 平台变体的实现方式：Taskfile 没有 glob 任务名（task build:* 不成立），
 # 标准等价写法 = internal 参数化实现（build:p / bundle:p，不出现在
@@ -45,7 +45,11 @@ vars:
   GO:
     sh: command -v go
   PNPM:
-    sh: command -v pnpm
+    # 允许缺失：task 对全局 sh: 变量是急切求值（任何 task 都先跑一遍
+    # command -v pnpm），而 CI 矩阵单元只构建二进制、不装 pnpm。
+    # 缺失时为空串：frontend 任务只在有 pnpm 的环境（gate/开发机）
+    # 运行，其余环境由 status 检查跳过。
+    sh: command -v pnpm || true
   GOOS:
     sh: '{{.GO}} env GOOS'
   HOST_ARCH:
@@ -100,9 +104,50 @@ tasks:
     cmds:
       - '{{.GO}} build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BINDIR}}/{{.APP}}-cli .'
 
+  # CLI 的平台变体（internal 参数化 + 别名，CI 矩阵单元直接调用）：
+  # CLI 纯 Go（无 GUI 依赖），任意主机可交叉（CGO_ENABLED=0）；windows
+  # 输出 .exe。产物名带平台后缀，与宿主 build-cli 并存。
+  build-cli:p:
+    internal: true
+    vars:
+      PLATFORM: '{{default "native" .PLATFORM}}'
+      OS: '{{if eq .PLATFORM "native"}}{{.GOOS}}{{else}}{{index (splitList "-" .PLATFORM) 0}}{{end}}'
+      ARCH: '{{if eq .PLATFORM "native"}}{{.HOST_ARCH}}{{else}}{{index (splitList "-" .PLATFORM) 1}}{{end}}'
+    cmds:
+      - '{{.GO}} build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BINDIR}}/{{.APP}}-cli{{if ne .PLATFORM "native"}}-{{.PLATFORM}}{{end}}{{if eq .OS "windows"}}.exe{{end}} .'
+    env:
+      CGO_ENABLED: 0
+      GOOS: '{{.OS}}'
+      GOARCH: '{{.ARCH}}'
+
+  build-cli:windows-amd64:
+    desc: Windows CLI 二进制（纯 Go，任意主机交叉）
+    cmds:
+      - task: build-cli:p
+        vars: {PLATFORM: windows-amd64}
+
+  build-cli:darwin-arm64:
+    desc: macOS arm64 CLI 二进制（纯 Go，任意主机交叉）
+    cmds:
+      - task: build-cli:p
+        vars: {PLATFORM: darwin-arm64}
+
+  build-cli:darwin-amd64:
+    desc: macOS amd64 CLI 二进制（纯 Go，任意主机交叉）
+    cmds:
+      - task: build-cli:p
+        vars: {PLATFORM: darwin-amd64}
+
+  build-cli:linux-amd64:
+    desc: Linux CLI 二进制（纯 Go，任意主机交叉）
+    cmds:
+      - task: build-cli:p
+        vars: {PLATFORM: linux-amd64}
+
   # 平台变体的参数化实现（internal：不出现在 --list，经下方别名调用）。
   # PLATFORM 省略 = native（宿主）；RELEASE=1 = release。平台差异
-  # （CGO/-H windowsgui/输出名）都在这一处按 token 条件化。
+  # （CGO/-H windowsgui/输出名/linux webkit2_41 tag）都在这一处按
+  # token 条件化。
   # dev（默认）：debug+devtools 标签开 inspector、gcflags 关优化、不 strip
   #   （产物名无后缀）；
   # release：production 标签 + -s -w strip + trimpath（产物名 -release 后缀，
@@ -116,7 +161,7 @@ tasks:
       ARCH: '{{if eq .PLATFORM "native"}}{{.HOST_ARCH}}{{else}}{{index (splitList "-" .PLATFORM) 1}}{{end}}'
     deps: [frontend]
     cmds:
-      - '{{.GO}} build -tags {{if eq .RELEASE "0"}}{{.TAGS_DEV}}{{else}}{{.TAGS}}{{end}} {{if eq .RELEASE "0"}}-gcflags "{{.GCFLAGS_DEV}}"{{end}} {{if eq .RELEASE "1"}}-trimpath{{end}} -ldflags "{{if eq .RELEASE "0"}}{{.LDFLAGS_DEV}}{{else}}{{.LDFLAGS}}{{end}}{{if eq .OS "windows"}} -H windowsgui{{end}}" -o {{.BINDIR}}/{{.APP}}{{if ne .PLATFORM "native"}}-{{.PLATFORM}}{{end}}{{if eq .RELEASE "1"}}-release{{end}}{{if eq .OS "windows"}}.exe{{end}} .'
+      - '{{.GO}} build -tags {{if eq .RELEASE "0"}}{{.TAGS_DEV}}{{else}}{{.TAGS}}{{end}}{{if eq .OS "linux"}},webkit2_41{{end}} {{if eq .RELEASE "0"}}-gcflags "{{.GCFLAGS_DEV}}"{{end}} {{if eq .RELEASE "1"}}-trimpath{{end}} -ldflags "{{if eq .RELEASE "0"}}{{.LDFLAGS_DEV}}{{else}}{{.LDFLAGS}}{{end}}{{if eq .OS "windows"}} -H windowsgui{{end}}" -o {{.BINDIR}}/{{.APP}}{{if ne .PLATFORM "native"}}-{{.PLATFORM}}{{end}}{{if eq .RELEASE "1"}}-release{{end}}{{if eq .OS "windows"}}.exe{{end}} .'
     env:
       CGO_ENABLED: '{{if eq .OS "windows"}}0{{else}}1{{end}}'
       GOOS: '{{.OS}}'
@@ -229,6 +274,8 @@ tasks:
   #   WebView2 devtools / macOS 经 -X 注入自动打开 WebKit inspector；
   #   不 strip（保留符号）。
   # release：production 标签 + -s -w strip + trimpath，无任何 debug 注入。
+  # linux：webkit2_41 标签（wails v2 按此选 webkit2gtk-4.1 的 pkg-config，
+  #   Ubuntu 24.04 只有 4.1 dev 包）。
   # darwin 的 framework 链接由 darwin 别名/宿主任务携带（wails 透传 env）。
   bundle:p:
     internal: true
@@ -237,7 +284,7 @@ tasks:
       RELEASE: '{{default "0" .RELEASE}}'
     deps: [frontend]
     cmds:
-      - 'wails build -platform {{if eq .PLATFORM "native"}}{{.BUNDLE_PLATFORM}}{{else}}{{replace "-" "/" .PLATFORM}}{{end}} -clean -s -tags wails {{if eq .RELEASE "0"}}-debug{{end}} -trimpath -ldflags "{{if eq .RELEASE "0"}}{{.LDFLAGS_DEV}}{{else}}{{.LDFLAGS}}{{end}}"'
+      - 'wails build -platform {{if eq .PLATFORM "native"}}{{.BUNDLE_PLATFORM}}{{else}}{{replace "-" "/" .PLATFORM}}{{end}} -clean -s -tags wails{{if or (hasPrefix "linux" .PLATFORM) (and (eq .PLATFORM "native") (eq .GOOS "linux"))}},webkit2_41{{end}} {{if eq .RELEASE "0"}}-debug{{end}} -trimpath -ldflags "{{if eq .RELEASE "0"}}{{.LDFLAGS_DEV}}{{else}}{{.LDFLAGS}}{{end}}"'
 
   bundle:
     desc: 宿主 dev .app 包（-debug：开 inspector、不 strip）；release 见 bundle:release
@@ -273,6 +320,12 @@ tasks:
       - task: bundle:p
         vars: {PLATFORM: windows-amd64}
 
+  bundle:windows-amd64:release:
+    desc: Windows release 包（wails build：正式分发；需 wails CLI，任意主机）
+    cmds:
+      - task: bundle:p
+        vars: {PLATFORM: windows-amd64, RELEASE: "1"}
+
   bundle:darwin-arm64:
     desc: macOS arm64 dev 包（-debug 开 inspector；只能在 macOS 主机上构建。release 见 bundle:darwin-arm64:release）
     cmds:
@@ -286,6 +339,14 @@ tasks:
     cmds:
       - task: bundle:p
         vars: {PLATFORM: darwin-arm64}
+    env:
+      CGO_LDFLAGS: "{{.DARWIN_EXTRA_LDFLAGS}}"
+
+  bundle:darwin-arm64:release:
+    desc: macOS arm64 release 包（wails build：正式分发；只能在 macOS 主机上构建）
+    cmds:
+      - task: bundle:p
+        vars: {PLATFORM: darwin-arm64, RELEASE: "1"}
     env:
       CGO_LDFLAGS: "{{.DARWIN_EXTRA_LDFLAGS}}"
 
@@ -305,6 +366,14 @@ tasks:
     env:
       CGO_LDFLAGS: "{{.DARWIN_EXTRA_LDFLAGS}}"
 
+  bundle:darwin-amd64:release:
+    desc: macOS amd64 release 包（wails build：正式分发；只能在 macOS 主机上构建）
+    cmds:
+      - task: bundle:p
+        vars: {PLATFORM: darwin-amd64, RELEASE: "1"}
+    env:
+      CGO_LDFLAGS: "{{.DARWIN_EXTRA_LDFLAGS}}"
+
   bundle:linux-amd64:
     desc: Linux dev 包（-debug 开 inspector；需 webkit2gtk；未实测。release 见 bundle:linux-amd64:release）
     cmds:
@@ -316,6 +385,12 @@ tasks:
     cmds:
       - task: bundle:p
         vars: {PLATFORM: linux-amd64}
+
+  bundle:linux-amd64:release:
+    desc: Linux release 包（wails build：正式分发；需 webkit2gtk；未实测）
+    cmds:
+      - task: bundle:p
+        vars: {PLATFORM: linux-amd64, RELEASE: "1"}
 
   # ==================== 验证 ====================
 

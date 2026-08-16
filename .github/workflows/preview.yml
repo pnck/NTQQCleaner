@@ -1,0 +1,279 @@
+# preview.yml — main push → rolling alpha preview release
+#
+# 版本规则：取最新正式语义 tag（无任何 tag 时兜底 v0.1.0）为 base，
+# 生成 v<base.patch+1>-alpha.N 的 preview release；N 按既有同名 alpha
+# release 数量从 1 开始持续滚动，新正式 tag 使 base 变化 → 前缀变化 →
+# N 重置。例：上一个正式 tag 是 v0.1.2 → 本次生成 v0.1.3-alpha.N；
+# 无 tag → 第一个 preview 是 v0.1.1-alpha.1。
+#
+# 内容：完整门禁（与 release.yml 相同），矩阵编译并发布每个平台的
+# cli + bundle debug/release（裸 GUI build 层与 bundle 冗余——同一二
+# 进制少了 manifest/图标/版本资源——不发布；仍在 Taskfile 里供容器
+# 快速验证）。前端产物不单独发布（embed 进 GUI 二进制）。这正是
+# Taskfile 的意义：CI 矩阵单元直接调用 task 子目标（CLAUDE.md
+# 「构建标签方案」）。资产命名 ntqq-cleaner-<target>-<mode>-<version>
+# [.ext]（版本后缀在末尾，插在扩展名之前）。
+# preview release 标记 prerelease、只留最近 10 个（删除时连带清理
+# alpha tag，避免 tag 空间膨胀）；正式 release 永不删除（release.yml）。
+#
+# 前端只构建一次：dist 平台无关（各 GUI 目标 embed 同一份），在 gate
+# 构建并作为 artifact 传给矩阵单元——单元不装 node/pnpm，Taskfile 的
+# frontend 任务检测到 dist 即跳过（status: test -f dist/index.html）。
+#
+# 矩阵（runner 按平台能力分型）：
+#   windows-amd64 → ubuntu-24.04（交叉；后端纯 Go，容器已验证。windows
+#     runner 与 Taskfile 的 unix 方言 sh: 变量不兼容，实测 task 求值
+#     `go env GOOS` 直接 127）
+#   darwin-arm64  → macos-15（arm64）
+#   darwin-amd64 → macos-15-intel（macos-13 已退役，x64 专用标签）
+#   linux-amd64   → ubuntu-24.04（apt 装 webkit2gtk 4.1 dev；Taskfile 已
+#                   内联 webkit2_41 tag）
+# 矩阵产物为 GitHub Actions artifacts（仅传输用，1 天过期防 quota 打满），
+# 发布物以 release assets 形式保留（保留策略见上）。
+
+name: preview
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      # setup-go 无条件经 GITHUB_ENV 导出 GOTOOLCHAIN=local（覆盖 job 级
+      # env）——task v3.52.0 需要 go >= 1.25.10 而 go.mod 只声明 1.25.0：
+      # 重新导出 auto，go install 按需自动下载更高工具链。项目自身已用
+      # 精确 1.25.0 工具链实测 build+test 通过，不会触发切换。
+      - name: Allow toolchain auto-switching
+        run: echo "GOTOOLCHAIN=auto" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+      - uses: pnpm/setup@v2.0.2
+        with:
+          # packageManager 在 frontend/package.json（pnpm@11.21.0）；仓库
+          # 根目录没有 package.json，默认探测会报 No pnpm version specified
+          package-json-file: frontend/package.json
+          install: false
+      - name: Install task CLI
+        env:
+          GOBIN: ${{ github.workspace }}/.tools
+        run: |
+          go install github.com/go-task/task/v3/cmd/task@v3.52.0
+          echo "${{ github.workspace }}/.tools" >> "$GITHUB_PATH"
+      - run: pnpm install --frozen-lockfile
+      - name: gofmt check
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then echo "$out"; echo "::error::gofmt found unformatted files"; exit 1; fi
+      - name: Go test + smoke + vet
+        run: task verify
+      - name: Frontend typecheck
+        run: task frontend:typecheck
+      - name: Build frontend dist
+        run: task frontend
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          if-no-files-found: error
+          # 纯传输用，1 天过期
+          retention-days: 1
+
+  build:
+    needs: gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows-amd64
+            os: ubuntu-24.04
+          - target: darwin-arm64
+            os: macos-15
+          - target: darwin-amd64
+            os: macos-15-intel
+          - target: linux-amd64
+            os: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Linux system deps (webkit2gtk)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      # 同 gate：覆盖 setup-go 的 GOTOOLCHAIN=local，让 go install 按需切换
+      - name: Allow toolchain auto-switching
+        shell: bash
+        run: echo "GOTOOLCHAIN=auto" >> "$GITHUB_ENV"
+      - name: Install task + wails CLI
+        shell: bash
+        env:
+          GOBIN: ${{ github.workspace }}/.tools
+        run: |
+          go install github.com/go-task/task/v3/cmd/task@v3.52.0
+          # wails CLI 版本必须与 go.mod 一致（CLAUDE.md「容器环境」）
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.14.0
+          echo "${{ github.workspace }}/.tools" >> "$GITHUB_PATH"
+      - name: Download frontend dist (built once in gate)
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: frontend-dist
+          # upload-artifact 以给定 path 为根存储（artifact 内无
+          # frontend/dist 前缀）：解包到 frontend/dist，匹配 Taskfile
+          # frontend 任务的 status 检查（test -f dist/index.html）
+          path: frontend/dist
+      - name: Verify frontend dist layout
+        shell: bash
+        run: test -f frontend/dist/index.html
+      # bundle 先跑：wails -clean 会清空 build/bin，而 bundle 产物名
+      # 无模式后缀（debug/release 同名），每个 bundle 跑完立刻移出暂存。
+      # preview 只发布 cli + bundle 两档：裸 GUI build 层（task build:*
+      # 的输出）与 bundle 冗余（同一二进制少了 manifest/图标/版本资源），
+      # 不生成。
+      - name: Bundle (debug + release)
+        shell: bash
+        run: |
+          mkdir -p release
+          task "bundle:${{ matrix.target }}"
+          case "${{ matrix.target }}" in
+            darwin-*)
+              ditto -c -k --keepParent "build/bin/ntqq-cleaner.app" "release/ntqq-cleaner-${{ matrix.target }}-debug.zip"
+              ;;
+            windows-*)
+              mv "build/bin/ntqq-cleaner.exe" "release/ntqq-cleaner-${{ matrix.target }}-debug.exe"
+              ;;
+            linux-*)
+              mv "build/bin/ntqq-cleaner" "release/ntqq-cleaner-${{ matrix.target }}-debug"
+              ;;
+          esac
+          task "bundle:${{ matrix.target }}:release"
+          case "${{ matrix.target }}" in
+            darwin-*)
+              ditto -c -k --keepParent "build/bin/ntqq-cleaner.app" "release/ntqq-cleaner-${{ matrix.target }}-release.zip"
+              ;;
+            windows-*)
+              mv "build/bin/ntqq-cleaner.exe" "release/ntqq-cleaner-${{ matrix.target }}-release.exe"
+              ;;
+            linux-*)
+              mv "build/bin/ntqq-cleaner" "release/ntqq-cleaner-${{ matrix.target }}-release"
+              ;;
+          esac
+      - name: CLI
+        shell: bash
+        run: |
+          task "build-cli:${{ matrix.target }}"
+          case "${{ matrix.target }}" in
+            windows-*)
+              mv "build/bin/ntqq-cleaner-cli-${{ matrix.target }}.exe" "release/ntqq-cleaner-${{ matrix.target }}-cli.exe"
+              ;;
+            *)
+              mv "build/bin/ntqq-cleaner-cli-${{ matrix.target }}" "release/ntqq-cleaner-${{ matrix.target }}-cli"
+              ;;
+          esac
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: artifacts-${{ matrix.target }}
+          path: release/
+          if-no-files-found: error
+          # 纯传输用，1 天过期（发布物持久保留在 release assets）
+          retention-days: 1
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    # 串行化发布临界区：并发 push 会同时计算 alpha N 并撞名；同组的
+    # 第二个 publish 排队等第一个完成后再算 N（此时能看到新 release）。
+    concurrency:
+      group: preview-publish
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0 # 完整历史 + tags：base tag 与 changelog 需要
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: artifacts-*
+          merge-multiple: true
+          path: assets
+      - name: Compute preview version
+        id: ver
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # 最新正式语义 tag。不用 git tag -l 的 glob（fnmatch 的 [0-9]* 会
+          # 连 -alpha.7 一起吞掉），grep 锚定整串 + sort -V 版本序。
+          # 无任何 tag → v0.1.0 兜底（第一个 preview = v0.1.1-alpha.1）。
+          BASE="$(git tag -l | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+          if [ -z "$BASE" ]; then BASE=v0.1.0; FOUND=0; else FOUND=1; fi
+          MAJOR="${BASE#v}"; MAJOR="${MAJOR%%.*}"
+          MINOR="${BASE#v*.}"; MINOR="${MINOR%%.*}"
+          PATCH="${BASE##*.}"
+          VER="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          PREFIX="${VER}-alpha."
+          # N = 既有同名 alpha release 数 + 1（持续滚动；新正式 tag 换前缀即重置）
+          N="$(gh release list --limit 100 --json tagName --jq '[.[].tagName | select(startswith("'"$PREFIX"'"))] | length')"
+          N=$((N + 1))
+          echo "name=${PREFIX}${N}" >> "$GITHUB_OUTPUT"
+          echo "base=${BASE}" >> "$GITHUB_OUTPUT"
+          echo "found=${FOUND}" >> "$GITHUB_OUTPUT"
+          echo "Preview version: ${PREFIX}${N} (base ${BASE})"
+      - name: Create preview release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NAME="${{ steps.ver.outputs.name }}"
+          BASE="${{ steps.ver.outputs.base }}"
+          {
+            echo "Auto-built preview from \`$(echo "$GITHUB_SHA" | cut -c1-7)\` (main)."
+            echo
+            echo "Changelog since \`${BASE}\`:"
+            echo
+            if [ "${{ steps.ver.outputs.found }}" = "1" ]; then
+              git log "${BASE}..HEAD" --pretty=format:'- %s'
+            else
+              git log -n 20 --pretty=format:'- %s'
+            fi
+            echo
+          } > notes.md
+          # 资产名 = ntqq-cleaner-<target>-<mode>-<version>[.ext]：版本
+          # 后缀在末尾，插在扩展名之前（linux ELF 无扩展名直接追加）。
+          # 不依赖 gh 的 file#displayName 语法——实测 runner 上的 gh
+          # release create 忽略 # 部分——在本地暂存目录先改名再上传
+          mkdir -p staged
+          for f in assets/*; do
+            [ -f "$f" ] || continue
+            base="$(basename "$f")"
+            case "$base" in
+              *.*) cp "$f" "staged/${base%.*}-${NAME}.${base##*.}" ;;
+              *) cp "$f" "staged/${base}-${NAME}" ;;
+            esac
+          done
+          gh release create "$NAME" staged/* \
+            --prerelease --target "$GITHUB_SHA" \
+            --title "$NAME" --notes-file notes.md
+      - name: Prune preview releases (keep newest 10)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --limit 100 --json tagName,isPrerelease,createdAt \
+            | jq -r '[.[] | select(.isPrerelease)] | sort_by(.createdAt) | reverse | .[10:] | .[].tagName' \
+            | while IFS= read -r t; do
+                echo "deleting stale preview release: $t"
+                # --cleanup-tag 连带清理 alpha tag，tag 空间不膨胀
+                gh release delete "$t" --cleanup-tag --yes
+              done
