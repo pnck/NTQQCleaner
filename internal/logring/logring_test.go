@@ -60,6 +60,23 @@ func TestCrashFileNaming(t *testing.T) {
 	}
 }
 
+// TestCleanupRemovesCrashFile：受控退出路径（docs/09 §3.5）——Cleanup
+// 删除本次会话的崩溃文件且幂等；panic 路径不调 Cleanup，证据保留
+// （见 TestRecoverDumpsRing）。
+func TestCleanupRemovesCrashFile(t *testing.T) {
+	dir := t.TempDir()
+	path := EnableCrashLog(dir)
+	if path == "" {
+		t.Fatal("EnableCrashLog failed")
+	}
+	Crumb("clean op: remove /x/y")
+	Cleanup()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("crash file still exists after Cleanup: %v", err)
+	}
+	Cleanup() // 幂等：无 panic
+}
+
 // TestCrumbLandsImmediately：面包屑在进程存活期间即落盘（docs/09
 // §3.2）——外部击毙时崩溃文件不为 0 字节、最后一根面包屑定位死点。
 func TestCrumbLandsImmediately(t *testing.T) {

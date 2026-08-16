@@ -35,18 +35,19 @@ import (
 var version = "dev"
 
 func main() {
-	// 崩溃报告（docs/09 §3.5 平台决策）：崩溃文件 + 原生异常过滤器
-	// （SEH/minidump）+ 面包屑整套仅在 Windows 启用——Windows 是外部
-	// 击毙与原生崩溃的实测场景。POSIX（macOS）未观察到异常崩溃，Go
-	// panic 走默认 stderr 输出（CLI 终端可见），不启用文件方案，保持
-	// 轻量。logring 的内存环形缓冲与 Recover 仍全平台生效（零开销）。
-	if runtime.GOOS == "windows" {
-		logring.EnableCrashLog(app.ConfigDir())
-		logring.Crumb("boot: version=%s goos=%s goarch=%s pid=%d", version, runtime.GOOS, runtime.GOARCH, os.Getpid())
-	}
+	// 崩溃报告（docs/09 §3.5 平台决策，build tag 静态分派）：
+	// setupCrashReport 在 Windows 上启用崩溃文件 + SEH 原生异常过滤器
+	// + 逐操作 ops 日志，在 POSIX 上 no-op（未观察到异常崩溃，Go panic
+	// 走默认 stderr）。logring 的内存环形缓冲与 Recover 全平台生效。
+	setupCrashReport()
 	logring.Logf("start: version=%s goos=%s goarch=%s", version, runtime.GOOS, runtime.GOARCH)
 	defer logring.Recover()
-	if err := run(os.Args[1:]); err != nil {
+	err := run(os.Args[1:])
+	// 受控退出（Windows）：删除本次会话的崩溃文件（正常退出后只剩 ops
+	// 痕迹、无诊断价值）。panic 时 Recover 重新抛出、此处不执行——
+	// 证据保留；不能放 defer（LIFO 先于 Recover、毁掉证据）。
+	teardownCrashReport()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}

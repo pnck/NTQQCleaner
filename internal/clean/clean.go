@@ -139,6 +139,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 			res.Skipped++
 			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", f.Path, err))
 			res.Items = append(res.Items, CleanItem{Path: f.Path, Action: "skip", Reason: err.Error(), Size: f.Size})
+			logring.Crumb("clean op: skip %s (%v)", f.Path, err)
 			continue
 		}
 
@@ -152,6 +153,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 			res.Failed++
 			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", f.Path, err))
 			res.Items = append(res.Items, CleanItem{Path: f.Path, Action: "fail", Reason: err.Error(), Size: f.Size})
+			logring.Crumb("clean op: fail %s (%v)", f.Path, err)
 			continue
 		}
 		switch action {
@@ -167,11 +169,10 @@ func Run(ctx context.Context, req Request) (Result, error) {
 			res.BytesFreed += f.Size
 		}
 		res.Items = append(res.Items, CleanItem{Path: f.Path, Action: action, BackupPath: backupPath, Reason: reason, Size: f.Size})
-		// 面包屑（docs/09 §3.2）：进程被外部击毙时定位死点与进度。
-		if res.Processed%1000 == 0 {
-			logring.Crumb("clean progress: %d/%d deleted=%d moved=%d reboot=%d failed=%d",
-				res.Processed, len(req.Files), res.Deleted, res.Moved, res.RebootDeferred, res.Failed)
-		}
+		// 逐操作 ops 痕迹（docs/09 §3.5）：每个文件的动作实时落盘——
+		// 进程被外部击毙（TerminateProcess，无 handler 可拦截）时死点
+		// 精确到单个文件。
+		logring.Crumb("clean op: %s %s", action, f.Path)
 	}
 	return res, nil
 }

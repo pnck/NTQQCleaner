@@ -129,6 +129,27 @@ func EnableCrashLog(dir string) string {
 	return f.Name()
 }
 
+// Cleanup 关闭并删除本次会话的崩溃文件（docs/09 §3.5）：**只在受控
+// 退出路径调用**——main 的 run() 返回之后。panic 时 Recover 重新抛出，
+// 本函数不会执行；外部击毙（TerminateProcess）时进程直接死亡——
+// 两条异常路径文件都保留证据（逐操作 ops 痕迹）。正常退出后文件只剩
+// ops 痕迹、无诊断价值，删除避免 %TEMP% 堆积。不能以 defer 调用：
+// LIFO 会先于 Recover 执行、毁掉证据。幂等。
+func Cleanup() {
+	mu.Lock()
+	f := crashF
+	crashF = nil
+	n := crashN
+	crashN = ""
+	mu.Unlock()
+	if f != nil {
+		f.Close()
+	}
+	if n != "" {
+		os.Remove(n)
+	}
+}
+
 // Recover 供顶层/边界 goroutine 的 defer 使用：捕获 panic，把环形
 // 缓冲写进崩溃文件后重新 panic（运行时照常输出崩溃转储、系统崩溃
 // 报告器照常介入）。用法：

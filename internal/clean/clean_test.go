@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"qqcleaner/internal/classify"
+	"qqcleaner/internal/logring"
 	"qqcleaner/internal/platform"
 	"qqcleaner/internal/qq/impl/nt"
 	"qqcleaner/internal/rules"
@@ -287,6 +288,47 @@ func TestRunRebootDeferredMove(t *testing.T) {
 	if len(res.Items) != 1 || res.Items[0].Action != "reboot" ||
 		res.Items[0].BackupPath != filepath.Join(backup, filepath.Base(src)) {
 		t.Fatalf("items: %+v", res.Items)
+	}
+}
+
+// TestRunWritesOpsTrace：逐操作 ops 痕迹（docs/09 §3.5）——每个文件
+// 的动作实时落盘，被 KILL 时死点精确到单个文件。
+func TestRunWritesOpsTrace(t *testing.T) {
+	setQQRunning(t, false)
+	crash := logring.EnableCrashLog(t.TempDir())
+	if crash == "" {
+		t.Fatal("EnableCrashLog failed")
+	}
+	defer logring.Cleanup()
+	base := t.TempDir()
+	src := filepath.Join(base, "Pic", "2023-01", "Thumb", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01_720.png")
+	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := Request{
+		Files: []classify.FileEntry{{
+			Path: src, Biz: "pic", Sub: "Thumb", Category: "pic/thumb",
+			Month: "2023-01", Size: 1, IsThumb: true,
+			MTime: testutil.Now.AddDate(-2, 0, 0).Unix(), MD5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01",
+		}},
+		AllowedRoots: []string{base},
+		Force:        true,
+		Confirmed:    true,
+		K:            ntKN(),
+		Config:       rules.Default(),
+	}
+	if _, err := Run(context.Background(), r); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(crash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "clean op: remove "+src) {
+		t.Fatalf("ops trace missing remove line:\n%s", data)
 	}
 }
 
