@@ -28,56 +28,99 @@ import (
 	"golang.org/x/image/webp"
 )
 
-// IsAnimated 判定文件是否为动图（多帧 gif / 动画 webp / APNG）。
-// 任何读/解析错误按静态处理——该标记只门控一个显示优化（照片墙动图
-// 缩略图取首帧静态变体），不参与可清性判断。
-func IsAnimated(abs string) bool {
-	f, err := os.Open(abs)
-	if err != nil {
-		return false
-	}
-	defer f.Close()
-	br := bufio.NewReader(f)
-	head, _ := br.Peek(512) // Peek 不消费，后续解析仍从文件头开始
-	switch http.DetectContentType(head) {
-	case "image/gif":
-		return animatedGIF(br)
-	case "image/webp":
-		return animatedWebP(br)
-	case "image/png":
-		return animatedPNG(br)
-	}
-	return false
+// ---- 统一抽象：按内容 MIME 注册的格式处理器 ----
+// 每种动图格式提供两个能力：动图判定（IsAnimated 用）与首帧解码
+// （FirstFrame 用）。MIME 判定与分派是通用入口（sniffMIME + 注册表
+// 查找）——**新增格式 = 注册一个 handler，不改动任何分派逻辑**。
+// 处理器接收路径而非 reader：各格式自行打开（小文件，webp 回退路径
+// 需要从头重读，路径语义最干净）。
+type formatHandler struct {
+	animated func(abs string) bool                 // 是否为动图（解析失败一律静态）
+	first    func(abs string) (image.Image, error) // 首帧解码
 }
 
-// FirstFrame 解码动图的第一帧（gif / 动画 webp / APNG）。按内容 MIME
-// 分派；非可解码类型/解码失败返回错误，调用方以 PlaceholderPNG 兜底
-// （动图缩略图绝不得回退动画原图）。
-func FirstFrame(abs string) (image.Image, error) {
+var formatHandlers = map[string]formatHandler{
+	"image/gif":  {animated: animatedGIF, first: gifFirstFrame},
+	"image/png":  {animated: animatedPNG, first: pngFirstFrame}, // APNG：默认图像 = 第一帧
+	"image/webp": {animated: animatedWebP, first: webpFirstFrame},
+}
+
+func gifFirstFrame(abs string) (image.Image, error) {
+	f, err := os.Open(abs)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return gif.Decode(f)
+}
+
+func pngFirstFrame(abs string) (image.Image, error) {
+	f, err := os.Open(abs)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return png.Decode(f)
+}
+
+// webpFirstFrame：x/image/webp 没有 ANMF chunk 处理路径（动画容器
+// 解码失败，上游不支持）——失败时回退到容器级首帧提取。
+func webpFirstFrame(abs string) (image.Image, error) {
 	f, err := os.Open(abs)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 	br := bufio.NewReader(f)
-	head, _ := br.Peek(512)
-	switch http.DetectContentType(head) {
-	case "image/gif":
-		return gif.Decode(br) // 只解第一帧
-	case "image/webp":
-		if img, err := webp.Decode(br); err == nil {
-			return img, nil
-		}
-		// 动画 webp：x/image/webp 没有 ANMF chunk 处理路径，动画容器
-		// 解码失败——从容器提取首帧位流，重建最小 RIFF 容器解码。
-		if _, err := f.Seek(0, io.SeekStart); err != nil {
-			return nil, err
-		}
-		return firstWebPFrame(f)
-	case "image/png":
-		return png.Decode(br) // APNG：默认图像 = 第一帧
+	if img, err := webp.Decode(br); err == nil {
+		return img, nil
 	}
-	return nil, fmt.Errorf("media: no first-frame decoder for %s", http.DetectContentType(head))
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+	return firstWebPFrame(f)
+}
+
+// sniffMIME 按内容魔数判定文件类型（不信任扩展名）。
+func sniffMIME(abs string) (string, error) {
+	f, err := os.Open(abs)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	br := bufio.NewReader(f)
+	head, _ := br.Peek(512)
+	return http.DetectContentType(head), nil
+}
+
+// IsAnimated 判定文件是否为动图（多帧 gif / 动画 webp / APNG）。
+// 任何读/解析错误按静态处理——该标记只门控一个显示优化（照片墙动图
+// 缩略图取首帧静态变体），不参与可清性判断。
+func IsAnimated(abs string) bool {
+	mime, err := sniffMIME(abs)
+	if err != nil {
+		return false
+	}
+	h, ok := formatHandlers[mime]
+	if !ok || h.animated == nil {
+		return false
+	}
+	return h.animated(abs)
+}
+
+// FirstFrame 解码动图的第一帧。按内容 MIME 分派到注册的格式处理器；
+// 非可解码类型/解码失败返回错误，调用方以 PlaceholderPNG 兜底
+// （动图缩略图绝不得回退动画原图）。
+func FirstFrame(abs string) (image.Image, error) {
+	mime, err := sniffMIME(abs)
+	if err != nil {
+		return nil, err
+	}
+	h, ok := formatHandlers[mime]
+	if !ok || h.first == nil {
+		return nil, fmt.Errorf("media: no first-frame decoder for %s", mime)
+	}
+	return h.first(abs)
 }
 
 // PlaceholderPNG 是 2×2 中性灰 PNG——首帧解码失败的兜底图。
@@ -190,8 +233,13 @@ func decodeWrappedWebP(cc string, bs []byte) (image.Image, error) {
 
 // animatedGIF 只解第一帧（gif.Decode 精确读到帧 1 数据结束）；下一个
 // 字节不是 trailer（0x3B）则还有后续帧。
-func animatedGIF(r io.Reader) bool {
-	br := bufio.NewReader(r)
+func animatedGIF(abs string) bool {
+	f, err := os.Open(abs)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	br := bufio.NewReader(f)
 	if _, err := gif.Decode(br); err != nil {
 		return false
 	}
@@ -204,9 +252,14 @@ func animatedGIF(r io.Reader) bool {
 
 // animatedWebP 检查 VP8X chunk 的 flags 字节：bit 1 = ANIM。
 // VP8/VP8L 无 VP8X chunk，恒为静态。
-func animatedWebP(r io.Reader) bool {
+func animatedWebP(abs string) bool {
+	f, err := os.Open(abs)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
 	var hdr [24]byte
-	if _, err := io.ReadFull(r, hdr[:]); err != nil {
+	if _, err := io.ReadFull(f, hdr[:]); err != nil {
 		return false
 	}
 	if string(hdr[0:4]) != "RIFF" || string(hdr[8:12]) != "WEBP" || string(hdr[12:16]) != "VP8X" {
@@ -217,8 +270,13 @@ func animatedWebP(r io.Reader) bool {
 
 // animatedPNG 扫描 PNG chunk 结构：首个 IDAT 前出现 acTL = APNG。
 // chunk 长度做合理性上限——acTL 必须出现在文件头部。
-func animatedPNG(r io.Reader) bool {
-	br := bufio.NewReader(r)
+func animatedPNG(abs string) bool {
+	f, err := os.Open(abs)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	br := bufio.NewReader(f)
 	sig := make([]byte, 8)
 	if _, err := io.ReadFull(br, sig); err != nil {
 		return false
