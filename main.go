@@ -41,6 +41,7 @@ func main() {
 	// DiagnosticReports）。Recover 把环形缓冲追加进同一文件后重新 panic。
 	logring.EnableCrashLog(app.ConfigDir())
 	logring.Logf("start: version=%s goos=%s goarch=%s", version, runtime.GOOS, runtime.GOARCH)
+	logring.Crumb("boot: version=%s goos=%s goarch=%s pid=%d", version, runtime.GOOS, runtime.GOARCH, os.Getpid())
 	defer logring.Recover()
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)

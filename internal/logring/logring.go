@@ -37,7 +37,26 @@ var (
 func Logf(format string, args ...any) {
 	mu.Lock()
 	defer mu.Unlock()
-	e := entry{ts: time.Now(), text: fmt.Sprintf(format, args...)}
+	appendEntryLocked(fmt.Sprintf(format, args...))
+}
+
+// Crumb 追加一行内存日志，并在崩溃文件已启用时**立刻**把它追加写进
+// 崩溃文件（docs/09 §3.2）。与 Logf 的区别：Logf 只进内存缓冲（崩溃
+// 瞬间才落盘）；面包屑在进程存活期间即落盘——进程被外部击毙
+// （TerminateProcess，如杀软/QQ 防护干预）时，最后一根面包屑直接
+// 定位死点与进度。0 字节崩溃文件从此不再出现（启动即落首行）。
+func Crumb(format string, args ...any) {
+	mu.Lock()
+	defer mu.Unlock()
+	text := fmt.Sprintf(format, args...)
+	appendEntryLocked(text)
+	if crashF != nil {
+		fmt.Fprintf(crashF, "%s %s\n", time.Now().Format("2006-01-02T15:04:05.000"), text)
+	}
+}
+
+func appendEntryLocked(text string) {
+	e := entry{ts: time.Now(), text: text}
 	if len(ring) < maxEntries {
 		ring = append(ring, e)
 		return
@@ -80,8 +99,9 @@ func dumpLocked(w io.Writer) {
 
 // EnableCrashLog 在 dir 下创建崩溃转储文件（crash-<时间戳>.log）并经
 // debug.SetCrashOutput 让未处理 panic/fatal 的运行时转储写入同一文件
-// （重复调用以最后一次为准；所有平台生效）。返回文件路径（失败时
-// 返回空串）。
+// （重复调用以最后一次为准；所有平台生效）。Windows 上同时安装原生
+// 异常兜底（installNativeFilter，docs/09 §3.3：非 Go 线程的崩溃写
+// minidump 并继续交给系统报告器）。返回文件路径（失败时返回空串）。
 func EnableCrashLog(dir string) string {
 	f, err := os.OpenFile(
 		filepath.Join(dir, "crash-"+time.Now().Format("20060102-150405")+".log"),
@@ -99,7 +119,10 @@ func EnableCrashLog(dir string) string {
 	}
 	crashF, crashN = f, f.Name()
 	mu.Unlock()
-	Logf("crash log enabled: %s", f.Name())
+	installNativeFilter()
+	// 首行面包屑：即使进程被外部击毙，崩溃文件也至少有一条记录
+	// 证明监视器活着（docs/09 §3.2）。
+	Crumb("crash watcher armed: %s pid=%d", f.Name(), os.Getpid())
 	return f.Name()
 }
 

@@ -3,6 +3,7 @@
 package platform
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -28,29 +29,33 @@ func (windowsAdapter) QQProcesses() []string {
 	return procs
 }
 
-// DeleteFile 的 Windows 语义：只读属性的文件 DeleteFile 会失败
-// （POSIX unlink 不会）——先清只读属性再重试；仍失败则返回最初的错误。
+// DeleteFile 的 Windows 语义（docs/09 §3.1）：只读属性先行清除
+// （DeleteFileW 对只读文件恒失败，POSIX unlink 不会），删除本体走
+// deleteLadder 三级阶梯——共享冲突退避重试、持久锁登记重启删除
+// （成功时返回 platform.ErrDeferredReboot，由上层计入 reboot）。
 func (windowsAdapter) DeleteFile(path string) error {
-	err := os.Remove(path)
-	if err == nil {
-		return nil
+	err := deleteLadder(path)
+	if err == nil || errors.Is(err, ErrDeferredReboot) {
+		return err
 	}
 	// 常见于「只读属性」：清除后重试
 	if cerr := os.Chmod(path, 0o666); cerr == nil {
-		err = os.Remove(path)
+		err = deleteLadder(path)
 	}
 	return err
 }
 
-// MoveFile 的 Windows 语义：同卷 rename，跨卷复制后删除；
+// MoveFile 的 Windows 语义（docs/09 §3.1）：moveLadder 三级阶梯——
+// 同卷 MoveFileExW(REPLACE_EXISTING)；跨卷复制后删源（删源同阶梯）；
+// 持久锁同卷登记重启移动、跨卷在备份已生成后登记重启删源。
 // 只读属性同样会阻止移动，清除后重试。
 func (windowsAdapter) MoveFile(src, dst string) error {
-	err := RenameOrCopy(src, dst)
-	if err == nil {
-		return nil
+	err := moveLadder(src, dst)
+	if err == nil || errors.Is(err, ErrDeferredReboot) {
+		return err
 	}
 	if cerr := os.Chmod(src, 0o666); cerr == nil {
-		err = RenameOrCopy(src, dst)
+		err = moveLadder(src, dst)
 	}
 	return err
 }

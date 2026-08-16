@@ -59,3 +59,26 @@ func TestCrashFileNaming(t *testing.T) {
 		t.Fatalf("unexpected crash path: %s", path)
 	}
 }
+
+// TestCrumbLandsImmediately：面包屑在进程存活期间即落盘（docs/09
+// §3.2）——外部击毙时崩溃文件不为 0 字节、最后一根面包屑定位死点。
+func TestCrumbLandsImmediately(t *testing.T) {
+	path := EnableCrashLog(t.TempDir())
+	if path == "" {
+		t.Fatal("EnableCrashLog failed")
+	}
+	// 启用即落首行（crash watcher armed）。
+	first, err := os.ReadFile(path)
+	if err != nil || len(first) == 0 {
+		t.Fatalf("crash file empty right after EnableCrashLog: %v", err)
+	}
+	Crumb("progress 1000/5000")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	if !strings.Contains(s, "crash watcher armed") || !strings.Contains(s, "progress 1000/5000") {
+		t.Fatalf("crumb missing from crash file:\n%s", s)
+	}
+}

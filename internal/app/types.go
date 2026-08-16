@@ -134,12 +134,12 @@ type CleanRequest struct {
 	IgnoreRunning bool   `json:"ignoreRunning"` // QQ 运行中仍清理（需二次确认）
 }
 
-// CleanItem is one file's outcome in a cleanup run。上层只回传 skip/fail
-// 明细（大清理下逐文件列表过长，docs/07 §5）；审计文件（启用时）是
-// 完整的权威清单。
+// CleanItem is one file's outcome in a cleanup run。上层只回传
+// skip/fail/reboot 明细（大清理下逐文件列表过长，docs/07 §5）；
+// 审计文件（启用时）是完整的权威清单。
 type CleanItem struct {
 	Path       string `json:"path"`
-	Action     string `json:"action"` // move | remove | skip | fail
+	Action     string `json:"action"` // move | remove | reboot | skip | fail
 	BackupPath string `json:"backupPath,omitempty"`
 	Reason     string `json:"reason,omitempty"`
 	Size       int64  `json:"size"`
@@ -147,13 +147,15 @@ type CleanItem struct {
 
 // CleanResult summarizes a cleanup run.
 type CleanResult struct {
-	Processed  int         `json:"processed"`
-	Moved      int         `json:"moved"`
-	Deleted    int         `json:"deleted"`
-	Skipped    int         `json:"skipped"`
-	Failed     int         `json:"failed"`
-	BytesFreed int64       `json:"bytesFreed"`
-	Items      []CleanItem `json:"items"`     // 仅 skip/fail 明细
-	AuditPath  string      `json:"auditPath"` // 本次审计报告（按需生成；未启用时为空）
-	Errors     []string    `json:"errors"`
+	Processed int `json:"processed"`
+	Moved     int `json:"moved"`
+	Deleted   int `json:"deleted"`
+	Skipped   int `json:"skipped"`
+	Failed    int `json:"failed"`
+	// RebootDeferred 已登记重启后删除/移动（docs/09 §3.1）。
+	RebootDeferred int         `json:"rebootDeferred"`
+	BytesFreed     int64       `json:"bytesFreed"`
+	Items          []CleanItem `json:"items"`     // 仅 skip/fail/reboot 明细
+	AuditPath      string      `json:"auditPath"` // 本次审计报告（按需生成；未启用时为空）
+	Errors         []string    `json:"errors"`
 }
