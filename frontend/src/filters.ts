@@ -181,11 +181,11 @@ export const SEED_FILTERS: NamedFilter[] = [
   },
 ];
 
-const KEY = "ntqq-cleaner-named-filters";
 // 种子合并标记：旧版本（内置筛选器硬编码在代码里）升级时只合并一次，
 // 之后存储就是唯一权威——用户删除内置筛选器后不会在下次启动被复活。
 // 预设语义升级（如「XX前」改用 month 匹配）时递增 SEED_VERSION 重种。
-const SEEDED_KEY = "ntqq-cleaner-named-filters-seeded";
+// 持久化在 Go 侧 config.yaml（namedFilters/filtersSeeded 字段），
+// 不再用 WebView 自带存储。
 const SEED_VERSION = "2";
 
 // legacyStages 迁移旧存储的 select/orders/limit/offset 字段（旧规范顺序
@@ -222,11 +222,10 @@ function normalizeStages(stages?: Stage[]): Stage[] | undefined {
   return out.length > 0 ? out : undefined;
 }
 
-// readStored 读取用户筛选器；兼容旧存储（conditions 数组迁移为 AND 组，
-// select/orders/limit/offset 迁移为 stages）。
-function readStored(): NamedFilter[] {
+// parseFilters 解析筛选器列表载荷；兼容旧存储形态（conditions 数组迁移
+// 为 AND 组，select/orders/limit/offset 迁移为 stages）。
+function parseFilters(raw: string): NamedFilter[] {
   try {
-    const raw = localStorage.getItem(KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as Array<Record<string, unknown>>;
     if (!Array.isArray(parsed)) return [];
@@ -248,21 +247,23 @@ function readStored(): NamedFilter[] {
   }
 }
 
-// loadFilters 返回完整筛选器列表。首次使用（或预设语义升级）时把内置
-// 种子写入存储——从此种子与自定义筛选器地位完全相同。升级重种时内置
-// 种子**覆盖同名条目**（预设语义变更，如「XX前」从 age 改为 month 边界），
-// 其余用户条目保留；此后存储就是唯一权威。
-export function loadFilters(): NamedFilter[] {
-  const stored = readStored();
-  if (localStorage.getItem(SEEDED_KEY) === SEED_VERSION) return stored;
+// loadFilters 从配置载荷得到完整筛选器列表。首次使用（或预设语义升级）
+// 时把内置种子并入——从此种子与自定义筛选器地位完全相同。升级重种时
+// 内置种子**覆盖同名条目**（预设语义变更，如「XX前」从 age 改为 month
+// 边界），其余用户条目保留；此后存储就是唯一权威。
+// 返回列表、序列化载荷与种子版本（载荷/版本变化时调用方写回配置）。
+export function loadFilters(
+  raw: string,
+  seededVersion: string,
+): { list: NamedFilter[]; raw: string; seeded: string } {
+  const stored = parseFilters(raw);
+  if (seededVersion === SEED_VERSION) return { list: stored, raw, seeded: seededVersion };
   const seedNames = new Set(SEED_FILTERS.map((s) => s.name));
   const rest = stored.filter((f) => !seedNames.has(f.name));
   const merged = [...SEED_FILTERS.map((s) => ({ ...s })), ...rest];
-  localStorage.setItem(KEY, JSON.stringify(merged));
-  localStorage.setItem(SEEDED_KEY, SEED_VERSION);
-  return merged;
+  return { list: merged, raw: JSON.stringify(merged), seeded: SEED_VERSION };
 }
 
-export function saveFilters(list: NamedFilter[]) {
-  localStorage.setItem(KEY, JSON.stringify(list));
+export function serializeFilters(list: NamedFilter[]): string {
+  return JSON.stringify(list);
 }

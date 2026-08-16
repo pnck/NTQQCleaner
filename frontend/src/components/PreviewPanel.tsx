@@ -8,7 +8,10 @@ import { Splitter } from "./Splitter";
 import { Tooltip } from "./Tooltip";
 
 interface Props {
-  width: number; // 拖拽分隔条调整的栏宽（App 持有并记忆）
+  width: number; // 拖拽分隔条调整的栏宽（App 持有，config.yaml 持久化）
+  mediaH: number; // 媒体区高度（App 持有）
+  onMediaH: (h: number) => void;
+  onLayoutPersist: () => void; // 拖拽结束 → App 写回 config.yaml
   row: FileRow | null;
   rows: FileRow[];
   // 勾选模式：dups = 只勾副本（保留 keeper）；all = 勾选全部（含 keeper）。
@@ -23,10 +26,6 @@ interface Props {
 // 大文件门限只针对「原文件」中的图片：图片无法流式，>50MB 需显式确认；
 // 视频/音频可流式，点击播放即切换播放器。
 const BIG_IMAGE = 50 << 20;
-
-// 媒体/详情上下分栏的持久化键与默认高度。
-const MEDIA_H_KEY = "preview-media-h";
-const DEFAULT_MEDIA_H = 340;
 
 // ScrollEnd：可选中值（右对齐 + 溢出滚动）。内容变化时自动滚到行尾，
 // 保证右对齐下可见的是值的尾部（文件名/哈希后缀）；用户可自由往回
@@ -200,7 +199,7 @@ function Player({
   );
 }
 
-export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, onSelectDups }: Props) {
+export function PreviewPanel({ width, mediaH, onMediaH, onLayoutPersist, row, rows, dupMode, onNavigate, onToast, onSelectDups }: Props) {
   // 初始态 = 缩略图 + 叠层图标；点击后切换为播放器/原文件（起播由
   // autoStart 门控：开关开或用户显式点击 ▶/空格）。状态按 row.id 记录——
   // 切行后旧行的 played 自然失效（full 按当前行判定），无需随行重置。
@@ -213,16 +212,9 @@ export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, o
   // Player 的 autoStart。切行时复位——无缩略图的行直接进入播放器视图
   // 不得自动起播（Windows WebView2 自动播放策略宽松，装 src 即播）。
   const playIntentRef = useRef(false);
-  // 媒体/详情上下分栏：媒体区高度由分隔条拖动调整（localStorage 记忆，
-  // 与左右栏宽同一模式），详情区占剩余高度并内部滚动。
+  // 媒体/详情上下分栏：媒体区高度由分隔条拖动调整（App 持有，写入
+  // config.yaml 持久化），详情区占剩余高度并内部滚动。
   const panelRef = useRef<HTMLElement | null>(null);
-  const [mediaH, setMediaH] = useState(() => {
-    const v = Number(localStorage.getItem(MEDIA_H_KEY));
-    return Number.isFinite(v) && v > 0 ? v : DEFAULT_MEDIA_H;
-  });
-  useEffect(() => {
-    localStorage.setItem(MEDIA_H_KEY, String(mediaH));
-  }, [mediaH]);
 
   // 活动媒体元素回写（空格播放/暂停用；Player 在 kind 变化时回调）。
   const setMediaRef = useCallback(
@@ -392,8 +384,9 @@ export function PreviewPanel({ width, row, rows, dupMode, onNavigate, onToast, o
         axis="y"
         onDrag={(dy) => {
           const max = (panelRef.current?.clientHeight ?? 600) - 160;
-          setMediaH((h) => Math.min(max, Math.max(160, h + dy)));
+          onMediaH(Math.min(max, Math.max(160, mediaH + dy)));
         }}
+        onDragEnd={onLayoutPersist}
       />
 
       <div className="detail">

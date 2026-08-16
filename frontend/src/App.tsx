@@ -21,9 +21,9 @@ import {
   setSimpleExpr,
   toggleInExpr,
 } from "./expression";
-import { DEFAULT_SORT, loadFilters, saveFilters, type NamedFilter } from "./filters";
+import { DEFAULT_SORT, loadFilters, serializeFilters, type NamedFilter } from "./filters";
 import { lastFocusArea } from "./focus";
-import { applyTheme, getTheme, nextTheme, type Theme } from "./theme";
+import { applyTheme, nextTheme, validTheme, type Theme } from "./theme";
 import type {
   AccountReport,
   CleanResult,
@@ -72,7 +72,7 @@ export default function App() {
   const [expr, setExpr] = useState<Expr | null>(null);
   const [stages, setStages] = useState<Stage[]>([]);
   const [sort, setSort] = useState<{ field: string; desc: boolean }>({ field: "size", desc: true });
-  const [filters, setFilters] = useState<NamedFilter[]>(loadFilters);
+  const [filters, setFilters] = useState<NamedFilter[]>([]);
   const [appliedFilter, setAppliedFilter] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
@@ -93,7 +93,7 @@ export default function App() {
   const [cleanReport, setCleanReport] = useState<CleanResult | null>(null);
   // 清理确认对话框（审计/移动两个显式 opt-in，最终确认在 Go 侧原生对话框）
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [theme, setTheme] = useState<Theme>(getTheme());
+  const [theme, setTheme] = useState<Theme>("auto");
   // 后端 config（设置对话框的高级门控/备份策略；普通门控 GUI 恒全开）
   const [cfg, setCfg] = useState<Config | null>(null);
   // 面板布局（左右栏宽 + 左栏 biz 分区高 + 预览媒体区高）：状态供实时
@@ -103,32 +103,57 @@ export default function App() {
   const [layout, setLayout] = useState(() => ({ left: 210, right: 320, bizH: 220, mediaH: 340 }));
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
-  const layoutSeeded = useRef(false);
+  // WebView 自带存储全部弃用（main.tsx 启动时清扫 localStorage/
+  // sessionStorage——这类「浏览器数据」落在 WebView profile 目录，
+  // app 退出后清理困难）：主题 / 命名筛选器 / 面板布局统一持久化到
+  // Go 侧 config.yaml。cfg 到达时一次性播种三者（此后以会话内状态为
+  // 准），任何变更经 mergeConfig 写回。
+  const mergeConfig = useCallback((patch: Partial<Config>) => {
+    setCfg((c) => {
+      if (!c) return c;
+      const nc = { ...c, ...patch };
+      void api.setConfig(nc).catch(console.error);
+      return nc;
+    });
+  }, []);
+  const cfgSeeded = useRef(false);
   useEffect(() => {
-    if (!cfg || layoutSeeded.current) return;
-    layoutSeeded.current = true;
+    if (!cfg || cfgSeeded.current) return;
+    cfgSeeded.current = true;
     setLayout({
       left: clampSideW(cfg.leftPanelWidth || 210, "left"),
       right: clampSideW(cfg.rightPanelWidth || 320, "right"),
       bizH: cfg.bizTreeHeight || 220,
       mediaH: cfg.previewMediaHeight || 340,
     });
-  }, [cfg]);
+    const t = validTheme(cfg.theme);
+    setTheme(t);
+    applyTheme(t);
+    const fl = loadFilters(cfg.namedFilters ?? "", cfg.filtersSeeded ?? "");
+    setFilters(fl.list);
+    if (fl.raw !== (cfg.namedFilters ?? "") || fl.seeded !== (cfg.filtersSeeded ?? "")) {
+      mergeConfig({ namedFilters: fl.raw, filtersSeeded: fl.seeded });
+    }
+  }, [cfg, mergeConfig]);
   // 拖拽结束写回配置（布局值也合入 cfg state，设置对话框往返不丢）。
   const persistLayout = useCallback(() => {
-    setCfg((c) => {
-      if (!c) return c;
-      const l = layoutRef.current;
-      const nc = {
-        ...c,
-        leftPanelWidth: l.left,
-        rightPanelWidth: l.right,
-        bizTreeHeight: l.bizH,
-        previewMediaHeight: l.mediaH,
-      };
-      void api.setConfig(nc).catch(console.error);
-      return nc;
+    const l = layoutRef.current;
+    mergeConfig({
+      leftPanelWidth: l.left,
+      rightPanelWidth: l.right,
+      bizTreeHeight: l.bizH,
+      previewMediaHeight: l.mediaH,
     });
+  }, [mergeConfig]);
+  // 退出时尽力清扫 WebView 存储（宿主销毁 WebView 时不保证执行 JS——
+  // 启动清扫是最终保证，见 main.tsx）。
+  useEffect(() => {
+    const onUnload = () => {
+      localStorage.clear();
+      sessionStorage.clear();
+    };
+    window.addEventListener("beforeunload", onUnload);
+    return () => window.removeEventListener("beforeunload", onUnload);
   }, []);
 
   const filter = useMemo(() => ({ account, expr, stages }), [account, expr, stages]);
@@ -142,10 +167,14 @@ export default function App() {
     [queryKey],
   );
 
-  const changeTheme = useCallback((t: Theme) => {
-    applyTheme(t);
-    setTheme(t);
-  }, []);
+  const changeTheme = useCallback(
+    (t: Theme) => {
+      applyTheme(t);
+      setTheme(t);
+      mergeConfig({ theme: t });
+    },
+    [mergeConfig],
+  );
   const cycleTheme = useCallback(() => changeTheme(nextTheme(theme)), [theme, changeTheme]);
 
   // toast 自动消失：提示性消息 ~6s 后隐去（错误提示也一并处理；用户中途
@@ -743,7 +772,7 @@ export default function App() {
                               x.name === f.name ? { ...x, pinned: true } : x,
                             );
                             setFilters(next);
-                            saveFilters(next);
+                            mergeConfig({ namedFilters: serializeFilters(next) });
                           }}
                           title="固定到工具栏直选"
                         >
@@ -876,7 +905,7 @@ export default function App() {
         filters={filters}
         onSaveFilters={(list) => {
           setFilters(list);
-          saveFilters(list);
+          mergeConfig({ namedFilters: serializeFilters(list) });
         }}
         onApply={applyFilter}
         onClose={() => setFilterOpen(false)}

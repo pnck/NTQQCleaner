@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import { setFocusArea } from "../focus";
 import type { GroupStat } from "../types";
 import { BIZ_LABEL, fmtSize } from "../types";
@@ -8,7 +8,10 @@ import { Splitter } from "./Splitter";
 // 勾选状态即当前筛选条件；中栏照片墙按勾选过滤。
 
 interface Props {
-  width: number; // 拖拽分隔条调整的栏宽（App 持有并记忆）
+  width: number; // 拖拽分隔条调整的栏宽（App 持有，config.yaml 持久化）
+  bizH: number; // biz 分区高度（App 持有）
+  onBizH: (h: number) => void;
+  onLayoutPersist: () => void; // 拖拽结束 → App 写回 config.yaml
   bizGroups: GroupStat[];
   monthGroups: GroupStat[];
   activeBizs: string[];
@@ -85,13 +88,13 @@ function Section({
   );
 }
 
-// biz/月份上下分栏：biz 分区高度由分隔条拖动调整（localStorage 记忆，
-// 与左右栏宽同一模式），月份分区占剩余高度。
-const BIZ_H_KEY = "lefttree-biz-h";
-const DEFAULT_BIZ_H = 220;
-
+// biz/月份上下分栏：biz 分区高度由分隔条拖动调整（App 持有，写入
+// config.yaml 持久化），月份分区占剩余高度。
 export function LeftTree({
   width,
+  bizH,
+  onBizH,
+  onLayoutPersist,
   bizGroups,
   monthGroups,
   activeBizs,
@@ -104,13 +107,6 @@ export function LeftTree({
   onSetMonths,
 }: Props) {
   const boxRef = useRef<HTMLElement | null>(null);
-  const [bizH, setBizH] = useState(() => {
-    const v = Number(localStorage.getItem(BIZ_H_KEY));
-    return Number.isFinite(v) && v > 0 ? v : DEFAULT_BIZ_H;
-  });
-  useEffect(() => {
-    localStorage.setItem(BIZ_H_KEY, String(bizH));
-  }, [bizH]);
 
   return (
     <aside className="lefttree" style={{ width }} ref={boxRef}>
@@ -130,8 +126,9 @@ export function LeftTree({
         axis="y"
         onDrag={(dy) => {
           const max = (boxRef.current?.clientHeight ?? 600) - 120;
-          setBizH((h) => Math.min(max, Math.max(80, h + dy)));
+          onBizH(Math.min(max, Math.max(80, bizH + dy)));
         }}
+        onDragEnd={onLayoutPersist}
       />
       <div className="tree-section-scroll fill">
         <Section

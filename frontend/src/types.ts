@@ -157,6 +157,13 @@ export interface Config {
   minFileSizeBytes: number;
   skipDirs: string[];
   backupDir: string; // 备份目录（空 = 直接删除，仅写审计报告）
+  leftPanelWidth: number; // 面板布局（拖拽记忆，config.yaml 持久化；0 = 默认）
+  rightPanelWidth: number;
+  bizTreeHeight: number;
+  previewMediaHeight: number;
+  theme: string; // 前端持久化状态（Go 不解释）：auto / light / dark
+  namedFilters: string; // 命名筛选器列表的 JSON 载荷
+  filtersSeeded: string; // 内置筛选器种子版本标记
 }
 
 export const BIZ_LABEL: Record<string, string> = {

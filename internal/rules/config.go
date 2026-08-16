@@ -46,6 +46,20 @@ type Config struct {
 	// BackupDir 清理时把文件移动到的备份目录（GUI 设置项；空 = 直接删除，
 	// 仅写审计报告）。与其它设置一同存在 tmp 下的 config.yaml。
 	BackupDir string `yaml:"backup_dir" json:"backupDir"`
+
+	// 面板布局（拖拽记忆，docs/07 §2）：左右栏宽 + 左栏 biz 分区高 +
+	// 预览媒体区高。0 = 未持久化过，前端用默认值。与其它设置同存于
+	// tmp 下的 config.yaml（拖拽结束写回）。
+	LeftPanelWidth     int `yaml:"left_panel_width" json:"leftPanelWidth"`
+	RightPanelWidth    int `yaml:"right_panel_width" json:"rightPanelWidth"`
+	BizTreeHeight      int `yaml:"biz_tree_height" json:"bizTreeHeight"`
+	PreviewMediaHeight int `yaml:"preview_media_height" json:"previewMediaHeight"`
+
+	// 前端持久化状态（Go 不解释，只保管——WebView 自带存储弃用：
+	// localStorage 落在 WebView profile 目录，app 退出后清理困难）：
+	Theme         string `yaml:"theme" json:"theme"`                   // auto / light / dark
+	NamedFilters  string `yaml:"named_filters" json:"namedFilters"`    // 命名筛选器列表的 JSON 载荷
+	FiltersSeeded string `yaml:"filters_seeded" json:"filtersSeeded"`  // 内置筛选器种子版本标记
 }
 
 // Default returns the documented defaults (docs/03 §6).
@@ -108,6 +122,9 @@ func Save(path string, cfg Config) error {
 func (c *Config) Validate() error {
 	if c.MinFileSizeBytes < 0 {
 		return fmt.Errorf("min_file_size_bytes must be >= 0")
+	}
+	if c.LeftPanelWidth < 0 || c.RightPanelWidth < 0 || c.BizTreeHeight < 0 || c.PreviewMediaHeight < 0 {
+		return fmt.Errorf("panel layout values must be >= 0")
 	}
 	return nil
 }

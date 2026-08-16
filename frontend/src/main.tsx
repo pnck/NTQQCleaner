@@ -1,11 +1,19 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { applyTheme, getTheme } from "./theme";
+import { applyTheme } from "./theme";
 import "./styles.css";
 
-// 在 React 挂载前应用持久化主题，避免闪烁。
-applyTheme(getTheme());
+// WebView 自带存储（localStorage/sessionStorage）整体弃用并清扫：这类
+// 「浏览器数据」落在 WebView profile 目录（Windows 为 EBWebView），app
+// 退出时无法可靠清理——所有持久化都走 Go 侧 config.yaml（主题/命名
+// 筛选器/面板布局，见 App.tsx mergeConfig）。启动时清一次：旧版本的
+// 遗留数据一并清除；App 的 beforeunload 是退出时的尽力清扫。
+localStorage.clear();
+sessionStorage.clear();
+
+// config 到达前先按 auto 渲染，避免闪烁；App 播种配置后应用持久化主题。
+applyTheme("auto");
 
 // 把未捕获的运行时错误直接显示在屏幕上：黑屏排查神器，
 // 生产环境同样保留（用户遇到问题时可拍照反馈）。渲染期异常由

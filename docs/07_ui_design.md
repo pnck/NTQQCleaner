@@ -54,9 +54,19 @@ main.tsx 的 window error / unhandledrejection 底部红条。后端返回的数
   需要 runtime ctx（OnStartup 之后），窗口先以默认尺寸创建、随即调整
   （main_wails.go fitWindowToScreen；Size 为逻辑像素，Windows 侧已按
   DPI 折算）
-- 左栏（类型树）与右栏（预览面板）宽度可**拖拽分隔条调整**（左 150–420px
-  / 右 240–560px；分隔条带常驻细线视觉引导，悬停/拖动高亮），照片墙经
-  ResizeObserver 自动重排列数；宽度记忆在 localStorage，下次启动恢复
+- 面板布局全部可**拖拽分隔条调整**：左右栏宽（左 150–420px / 右
+  240–560px）、左栏 biz/月份分区高度（biz 分区 80px 起）、预览媒体/
+  详情分区高度（媒体区 160px 起）；分隔条带常驻细线视觉引导，悬停/
+  拖动高亮，照片墙经 ResizeObserver 自动重排列数。布局在**拖拽结束**
+  时写入 Go 侧 config.yaml（tmp 下的暂存配置，与设置项同文件），下次
+  启动恢复
+- **持久化一律走 Go 侧 config.yaml**（主题 / 命名筛选器 / 面板布局，
+  见 Config 的 theme/namedFilters/filtersSeeded/布局字段——前端数据以
+  JSON 载荷存于 yaml，Go 不解释只保管）。**WebView 自带存储
+  （localStorage/sessionStorage）整体弃用**：这类「浏览器数据」落在
+  WebView profile 目录（Windows 为 EBWebView），app 退出后清理困难；
+  前端启动时清扫一次（旧版本遗留数据一并清除），beforeunload 做
+  退出时的尽力清扫
 
 ---
 
