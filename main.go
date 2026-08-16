@@ -35,13 +35,16 @@ import (
 var version = "dev"
 
 func main() {
-	// 崩溃报告 + 内存环形日志：全平台、全构建模式（含 release）开启。
-	// 未处理 panic 的运行时转储写入 <tmp>/ntqq-cleaner/crash-<ts>.log
-	// （debug.SetCrashOutput）；原生崩溃由系统报告器覆盖（WER /
-	// DiagnosticReports）。Recover 把环形缓冲追加进同一文件后重新 panic。
-	logring.EnableCrashLog(app.ConfigDir())
+	// 崩溃报告（docs/09 §3.5 平台决策）：崩溃文件 + 原生异常过滤器
+	// （SEH/minidump）+ 面包屑整套仅在 Windows 启用——Windows 是外部
+	// 击毙与原生崩溃的实测场景。POSIX（macOS）未观察到异常崩溃，Go
+	// panic 走默认 stderr 输出（CLI 终端可见），不启用文件方案，保持
+	// 轻量。logring 的内存环形缓冲与 Recover 仍全平台生效（零开销）。
+	if runtime.GOOS == "windows" {
+		logring.EnableCrashLog(app.ConfigDir())
+		logring.Crumb("boot: version=%s goos=%s goarch=%s pid=%d", version, runtime.GOOS, runtime.GOARCH, os.Getpid())
+	}
 	logring.Logf("start: version=%s goos=%s goarch=%s", version, runtime.GOOS, runtime.GOARCH)
-	logring.Crumb("boot: version=%s goos=%s goarch=%s pid=%d", version, runtime.GOOS, runtime.GOARCH, os.Getpid())
 	defer logring.Recover()
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)

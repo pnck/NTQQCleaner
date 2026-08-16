@@ -107,7 +107,9 @@ crash 文件从**启动起持续落 breadcrumb**（区别于仅在崩溃瞬间�
 `internal/logring/native_windows.go`（build tag windows）：
 
 - `EnableCrashLog` 时预加载 dbghelp 的 `MiniDumpWriteDump` proc 并
-  `kernel32.SetUnhandledExceptionFilter` 安装过滤器；
+  `kernel32.SetUnhandledExceptionFilter` 安装过滤器（EnableCrashLog
+  由 main 仅在 Windows 调用，§3.5 平台决策；包本身平台无关，测试
+  可在任意平台直接启用文件方案）；
 - 触发时：写 minidump（`MiniDumpNormal|MiniDumpWithIndirectly
   ReferencedMemory`，**不用 FullMemory**——进程内存可能含 QQ 账号/
   路径之外的敏感数据）+ `DumpCrash()` 把环形缓冲追加进 crash log；
@@ -117,6 +119,21 @@ crash 文件从**启动起持续落 breadcrumb**（区别于仅在崩溃瞬间�
 - 与 Go runtime VEH 共存：Go panic/fatal 走 SetCrashOutput（现状
   不变），本过滤器只接住 VEH 不处理的非 Go 线程异常；两条链路
   不冲突。
+
+### 3.5 平台范围决策（2026-08 修订，产品取舍）
+
+- **Windows**：崩溃文件 + SEH 过滤器（SetUnhandledExceptionFilter +
+  minidump）+ 面包屑（启动/scan/clean 阶段、每 1000 文件）整套启用
+  ——外部击毙（TerminateProcess：taskkill /F、杀软、QQ 防护）与原生
+  崩溃是 Windows 实测场景；TerminateProcess 无可拦截路径，面包屑把
+  死点定位压到清理进度粒度。
+- **POSIX（macOS）**：不启用文件方案（main 按 runtime.GOOS 门控）
+  ——未观察到异常崩溃，Go panic 走默认 stderr 输出（CLI 终端可见），
+  保持轻量；logring 内存环形缓冲与 Recover 全平台生效（零开销）。
+- **明确不做**：signal.Notify 拦截（Windows windowsgui 子系统无控制
+  台信号、macOS 无需求）；正常退出删除 crash 文件的退出清理逻辑
+  （文件只在崩溃时有内容价值，正常退出残留由 OS 清理 %TEMP%）；
+  5s 心跳面包屑（每 1000 文件进度已够定位粒度）。
 
 ### 3.4 UI 报告契约扩展
 
@@ -144,6 +161,7 @@ crash 文件从**启动起持续落 breadcrumb**（区别于仅在崩溃瞬间�
 | clean 层 reboot 分支 | 假 Adapter（platform.Install）返回 ErrDeferredReboot → 断言 Action/计数/审计 |
 | logring.Crumb | 单测：启动即落首行、进度行追加进同一文件 |
 | Windows 适配层编译 | `GOOS=windows CGO_ENABLED=0 go build ./...`（容器门禁） |
+| 平台门控 | linux/windows/darwin 交叉编译 + 全量测试；Windows 上 crash 文件方案生效、POSIX 不生成 crash 文件 |
 | 真机（用户执行） | ① 完全关闭 QQ 复测批量清理——若闪退消失则坐实外部击毙；② 跨卷移动+QQ 运行：占用文件进「重启后删除」计数；③ 重启后确认 PendingFileRenameOperations 生效；④ 杀软白名单/Defender 排除后复测 |
 
 ## 6. 待确认项

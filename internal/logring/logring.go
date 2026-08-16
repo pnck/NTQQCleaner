@@ -4,9 +4,12 @@
 // 落盘到工具 tmp 目录——Windows 批量清理中途闪退（-H windowsgui
 // 无控制台，stderr 不可见）后仍能拿到崩溃现场。
 //
-// 原生崩溃（WebView2 等 C 层段错误）由系统崩溃报告器覆盖（Windows
-// WER / macOS DiagnosticReports 默认开启，无需本包）。全平台、
-// 全构建模式（含 release）启用，不做任何 build tag 门控。
+// 崩溃文件方案（EnableCrashLog/Crumb）的启用由入口按平台门控
+// （docs/09 §3.5 产品决策：仅 Windows 启用——main 调用；POSIX 未
+// 观察到异常崩溃，不启用文件方案，Go panic 走默认 stderr）。包本身
+// 平台无关：内存环形缓冲与 Recover 全平台生效，测试可在任意平台
+// 直接启用文件方案。原生崩溃兜底（installNativeFilter 写 minidump）
+// 仅 Windows 有实现（native_windows.go），其余平台 no-op。
 package logring
 
 import (
