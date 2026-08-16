@@ -35,15 +35,29 @@ import (
 var version = "dev"
 
 func main() {
-	// 崩溃报告 + 内存环形日志：全平台、全构建模式（含 release）开启。
-	// 未处理 panic 的运行时转储写入 <tmp>/ntqq-cleaner/crash-<ts>.log
-	// （debug.SetCrashOutput）；原生崩溃由系统报告器覆盖（WER /
-	// DiagnosticReports）。Recover 把环形缓冲追加进同一文件后重新 panic。
-	logring.EnableCrashLog(app.ConfigDir())
+	// 崩溃报告（docs/09 §3.5 平台决策，build tag 静态分派）：
+	// setupCrashReport 在 Windows 上启用崩溃文件 + SEH 原生异常过滤器
+	// + 逐操作 ops 日志，在 POSIX 上 no-op（未观察到异常崩溃，Go panic
+	// 走默认 stderr）。logring 的内存环形缓冲与 Recover 全平台生效。
+	setupCrashReport()
 	logring.Logf("start: version=%s goos=%s goarch=%s", version, runtime.GOOS, runtime.GOARCH)
 	defer logring.Recover()
-	if err := run(os.Args[1:]); err != nil {
+	// 退出路径先声明自身性质（docs/09 §3.5）：run() 返回 nil 才是真正
+	// 的正常退出——cleanExit flag 只在此为 true。错误退出（CLI 报错/
+	// GUI 启动失败）保留崩溃文件：ops 痕迹是失败运行的诊断证据，并落
+	// 一行原因。teardown 只看 flag 决定是否删除。
+	cleanExit := true
+	err := run(os.Args[1:])
+	if err != nil {
+		cleanExit = false
+		logring.Crumb("exit: error %v", err)
 		fmt.Fprintln(os.Stderr, "error:", err)
+	}
+	// panic 时 Recover 重新抛出、此处不执行——证据保留；被 KILL 时
+	// 进程直接死亡——同样保留。不能放 defer（LIFO 先于 Recover、
+	// 毁掉证据）。
+	teardownCrashReport(cleanExit)
+	if !cleanExit {
 		os.Exit(1)
 	}
 }
