@@ -57,3 +57,18 @@ func TestServeFirstFrame(t *testing.T) {
 		t.Fatal("placeholder fallback is not a PNG")
 	}
 }
+
+// TestWallSafeExt：媒体扩展名不可作为 <img> 回退（配对缩略图被清理后
+// 墙面空瓦片而非图裂，docs/07 §4.1）；图片与未知扩展名保持回退。
+func TestWallSafeExt(t *testing.T) {
+	for _, ext := range []string{"mp4", "MOV", "webm", "mp3", "m4a"} {
+		if wallSafeExt(ext) {
+			t.Errorf("media ext %q must not be wall-safe", ext)
+		}
+	}
+	for _, ext := range []string{"png", "jpg", "gif", "webp", "dat", "unknownext"} {
+		if !wallSafeExt(ext) {
+			t.Errorf("ext %q should fall back to self", ext)
+		}
+	}
+}
