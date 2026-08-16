@@ -345,17 +345,39 @@ func (b *Backend) fileRowLocked(out *Outcome, id int) report.FileRow {
 	// Windows=true / darwin/linux=false）：政策在 Go 侧直接落到 URL
 	// （?static=1），前端对平台差异零感知、公共管线不破坏。
 	thumbID := id
+	noWallThumb := false
 	if e.Sub == "Ori" {
 		if t, ok := out.ThumbID[e.MD5]; ok {
 			thumbID = t
+		} else if !wallSafeExt(e.Ext) {
+			// 视频/音频的配对缩略图已被清理：媒体字节流不能被
+			// Chromium 作为图片解码，塞进 <img> 必然图裂——不给
+			// ThumbURL（墙面空瓦片），预览面板仍经 OriURL 播放
+			// （docs/07 §4.1）。
+			noWallThumb = true
 		}
 	}
-	row.ThumbURL = b.previewURL(thumbID)
-	if platform.Current().FreezeAnimatedThumbs() && out.Entries[thumbID].Animated {
-		row.ThumbURL += "?static=1"
+	if !noWallThumb {
+		row.ThumbURL = b.previewURL(thumbID)
+		if platform.Current().FreezeAnimatedThumbs() && out.Entries[thumbID].Animated {
+			row.ThumbURL += "?static=1"
+		}
 	}
 	return row
 }
+
+// wallSafeExt 判断文件是否可能作为 <img> 缩略图回退（docs/07 §4.1）：
+// 已知视频/音频扩展名不可回退（浏览器解不出图），其余（图片与未知
+// 扩展名）保持原有行为——QQ 缓存常名不符实，未知扩展名交给浏览器
+// 自行处理，只排除确定会裂的媒体类型。
+var wallMediaExts = map[string]bool{
+	"mp4": true, "mov": true, "m4v": true, "webm": true, "avi": true,
+	"mkv": true, "flv": true, "ts": true, "wmv": true, "mp3": true,
+	"m4a": true, "aac": true, "ogg": true, "wav": true, "amr": true,
+	"flac": true, "opus": true, "mid": true,
+}
+
+func wallSafeExt(ext string) bool { return !wallMediaExts[strings.ToLower(ext)] }
 
 // sortIDs sorts matched IDs by field (docs/07 §5 中栏).
 func sortIDs(out *Outcome, ids []int, s Sort) {
