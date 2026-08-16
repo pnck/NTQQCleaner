@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"qqcleaner/internal/classify"
+	"qqcleaner/internal/logring"
+	"qqcleaner/internal/platform"
 	"qqcleaner/internal/qq/impl/nt"
 	"qqcleaner/internal/rules"
 	"qqcleaner/internal/testutil"
@@ -190,6 +193,171 @@ func TestRunMoveRequiresBackupDir(t *testing.T) {
 	if _, err := Run(context.Background(), r); err == nil {
 		t.Fatal("Run accepted Move without BackupDir")
 	}
+}
+
+// TestRunRebootDeferredDelete：平台层返回 ErrDeferredReboot（docs/09
+// §3.1，Windows 重启删除登记）→ 条目计 reboot 而非 fail，审计记录
+// action=reboot，字节不计入 BytesFreed（重启前未真正释放）。
+func TestRunRebootDeferredDelete(t *testing.T) {
+	setQQRunning(t, false)
+	orig := platform.Current()
+	defer platform.Install(orig)
+	platform.Install(rebaseAdapter{deleteFunc: func(string) error {
+		return fmt.Errorf("%w: registered", platform.ErrDeferredReboot)
+	}})
+	base := t.TempDir()
+	src := filepath.Join(base, "Pic", "2023-01", "Thumb", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01_720.png")
+	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	audit := filepath.Join(t.TempDir(), "audit.log")
+	r := Request{
+		Files: []classify.FileEntry{{
+			Path: src, Biz: "pic", Sub: "Thumb", Category: "pic/thumb",
+			Month: "2023-01", Size: 1, IsThumb: true,
+			MTime: testutil.Now.AddDate(-2, 0, 0).Unix(), MD5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01",
+		}},
+		AllowedRoots: []string{base},
+		AuditLog:     audit,
+		Force:        true,
+		Confirmed:    true,
+		K:            ntKN(),
+		Config:       rules.Default(),
+	}
+	res, err := Run(context.Background(), r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.RebootDeferred != 1 || res.Deleted != 0 || res.Failed != 0 || res.BytesFreed != 0 {
+		t.Fatalf("got %+v", res)
+	}
+	if len(res.Items) != 1 || res.Items[0].Action != "reboot" {
+		t.Fatalf("items: %+v", res.Items)
+	}
+	line := readAuditLine(t, audit)
+	if line.Action != "reboot" || line.Path != src {
+		t.Fatalf("audit: %+v", line)
+	}
+	if _, err := os.Stat(src); err != nil {
+		t.Fatal("reboot-deferred file should still exist until reboot")
+	}
+}
+
+// TestRunRebootDeferredMove：Move 路径的 ErrDeferredReboot（备份已生成/
+// 重启移动已登记）→ 条目计 reboot、BackupPath 保留。
+func TestRunRebootDeferredMove(t *testing.T) {
+	setQQRunning(t, false)
+	orig := platform.Current()
+	defer platform.Install(orig)
+	platform.Install(rebaseAdapter{moveFunc: func(src, dst string) error {
+		return fmt.Errorf("%w: registered", platform.ErrDeferredReboot)
+	}})
+	base := t.TempDir()
+	src := filepath.Join(base, "Pic", "2023-01", "Thumb", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01_720.png")
+	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	backup := filepath.Join(t.TempDir(), "backup")
+	r := Request{
+		Files: []classify.FileEntry{{
+			Path: src, Biz: "pic", Sub: "Thumb", Category: "pic/thumb",
+			Month: "2023-01", Size: 1, IsThumb: true,
+			MTime: testutil.Now.AddDate(-2, 0, 0).Unix(), MD5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01",
+		}},
+		AllowedRoots: []string{base},
+		BackupDir:    backup,
+		Move:         true,
+		Force:        true,
+		Confirmed:    true,
+		K:            ntKN(),
+		Config:       rules.Default(),
+	}
+	res, err := Run(context.Background(), r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.RebootDeferred != 1 || res.Moved != 0 || res.Failed != 0 {
+		t.Fatalf("got %+v", res)
+	}
+	if len(res.Items) != 1 || res.Items[0].Action != "reboot" ||
+		res.Items[0].BackupPath != filepath.Join(backup, filepath.Base(src)) {
+		t.Fatalf("items: %+v", res.Items)
+	}
+}
+
+// TestRunWritesOpsTrace：逐操作 attempt 痕迹（docs/09 §3.5）——
+// 每个文件的 attempt 在删除/移动 API 调用前实时落盘，被 KILL 时
+// 最后一行即未完成的操作。
+func TestRunWritesOpsTrace(t *testing.T) {
+	setQQRunning(t, false)
+	crash := logring.EnableCrashLog(t.TempDir())
+	if crash == "" {
+		t.Fatal("EnableCrashLog failed")
+	}
+	defer logring.Cleanup()
+	base := t.TempDir()
+	src := filepath.Join(base, "Pic", "2023-01", "Thumb", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01_720.png")
+	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := Request{
+		Files: []classify.FileEntry{{
+			Path: src, Biz: "pic", Sub: "Thumb", Category: "pic/thumb",
+			Month: "2023-01", Size: 1, IsThumb: true,
+			MTime: testutil.Now.AddDate(-2, 0, 0).Unix(), MD5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01",
+		}},
+		AllowedRoots: []string{base},
+		Force:        true,
+		Confirmed:    true,
+		K:            ntKN(),
+		Config:       rules.Default(),
+	}
+	if _, err := Run(context.Background(), r); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(crash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "clean op: remove "+src) {
+		t.Fatalf("ops trace missing remove line:\n%s", data)
+	}
+}
+
+// rebaseAdapter 是测试用平台适配器：未设置的操作用假实现（返回错误
+// 即可，测试只走 DeleteFile/MoveFile），设置后替换对应操作。
+type rebaseAdapter struct {
+	deleteFunc func(string) error
+	moveFunc   func(string, string) error
+}
+
+func (a rebaseAdapter) QQProcesses() []string { return nil }
+func (a rebaseAdapter) DeleteFile(path string) error {
+	if a.deleteFunc != nil {
+		return a.deleteFunc(path)
+	}
+	return os.Remove(path)
+}
+func (a rebaseAdapter) MoveFile(src, dst string) error {
+	if a.moveFunc != nil {
+		return a.moveFunc(src, dst)
+	}
+	return os.Rename(src, dst)
+}
+func (rebaseAdapter) Reveal(string) error        { return fmt.Errorf("unsupported") }
+func (rebaseAdapter) OpenFile(string) error      { return fmt.Errorf("unsupported") }
+func (rebaseAdapter) FreezeAnimatedThumbs() bool { return false }
+func (rebaseAdapter) ConfirmYesNo(string, string) (bool, error) {
+	return false, fmt.Errorf("unsupported")
 }
 
 // TestRunWithoutAuditDeletes：审计按需（默认关）——AuditLog 为空时照常

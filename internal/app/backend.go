@@ -687,6 +687,7 @@ func (b *Backend) Clean(req CleanRequest) (CleanResult, error) {
 	defer logring.Recover()
 	logring.Logf("clean start: files=%d move=%v audit=%v force=%v confirmed=%v ignoreRunning=%v",
 		len(req.IDs), req.Move, req.Audit, req.Force, req.Confirmed, req.IgnoreRunning)
+	logring.Crumb("clean start: files=%d move=%v", len(req.IDs), req.Move)
 	b.mu.Lock()
 	if b.scanning {
 		b.mu.Unlock()
@@ -752,16 +753,17 @@ func (b *Backend) Clean(req CleanRequest) (CleanResult, error) {
 	}
 	logring.Logf("clean done: processed=%d moved=%d deleted=%d skipped=%d failed=%d freed=%d errors=%d",
 		res.Processed, res.Moved, res.Deleted, res.Skipped, res.Failed, res.BytesFreed, len(res.Errors))
+	logring.Crumb("clean done: processed=%d reboot=%d failed=%d", res.Processed, res.RebootDeferred, res.Failed)
 	// The index is now stale (files are gone); force a rescan before any
 	// further queries so stale IDs can never be cleaned twice.
 	b.mu.Lock()
 	b.outcome = nil
 	b.mu.Unlock()
-	// 只回传 skip/fail 明细：大清理（十万级文件）的逐文件列表过长，
-	// 完整清单仅在启用审计时落盘（docs/07 §5）。
+	// 只回传 skip/fail/reboot 明细：大清理（十万级文件）的逐文件列表
+	// 过长，完整清单仅在启用审计时落盘（docs/07 §5）。
 	items := make([]CleanItem, 0, len(res.Items))
 	for _, it := range res.Items {
-		if it.Action != "skip" && it.Action != "fail" {
+		if it.Action != "skip" && it.Action != "fail" && it.Action != "reboot" {
 			continue
 		}
 		items = append(items, CleanItem{
@@ -779,15 +781,16 @@ func (b *Backend) Clean(req CleanRequest) (CleanResult, error) {
 		}
 	}
 	return CleanResult{
-		Processed:  res.Processed,
-		Moved:      res.Moved,
-		Deleted:    res.Deleted,
-		Skipped:    res.Skipped,
-		Failed:     res.Failed,
-		BytesFreed: res.BytesFreed,
-		Items:      items,
-		AuditPath:  auditLog,
-		Errors:     res.Errors,
+		Processed:      res.Processed,
+		Moved:          res.Moved,
+		Deleted:        res.Deleted,
+		Skipped:        res.Skipped,
+		Failed:         res.Failed,
+		RebootDeferred: res.RebootDeferred,
+		BytesFreed:     res.BytesFreed,
+		Items:          items,
+		AuditPath:      auditLog,
+		Errors:         res.Errors,
 	}, nil
 }
 

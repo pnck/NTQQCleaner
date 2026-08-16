@@ -59,3 +59,65 @@ func TestCrashFileNaming(t *testing.T) {
 		t.Fatalf("unexpected crash path: %s", path)
 	}
 }
+
+// TestCleanupRemovesCrashFile：受控退出路径（docs/09 §3.5）——Cleanup
+// 删除本次会话的崩溃文件且幂等；panic 路径不调 Cleanup，证据保留
+// （见 TestRecoverDumpsRing）。
+func TestCleanupRemovesCrashFile(t *testing.T) {
+	dir := t.TempDir()
+	path := EnableCrashLog(dir)
+	if path == "" {
+		t.Fatal("EnableCrashLog failed")
+	}
+	Crumb("clean op: remove /x/y")
+	Cleanup()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("crash file still exists after Cleanup: %v", err)
+	}
+	Cleanup() // 幂等：无 panic
+}
+
+// TestSweepStaleRemovesMarkedOnly：只清扫带 clean-exit 标记的残留
+// （docs/09 §3.5——上次正常退出但删除失败的兜底），无标记的崩溃
+// 文件是潜在证据、原样保留。
+func TestSweepStaleRemovesMarkedOnly(t *testing.T) {
+	dir := t.TempDir()
+	marked := filepath.Join(dir, "crash-20260101-000000.log")
+	if err := os.WriteFile(marked, []byte("clean op: remove /x/y\n2026-01-01T00:00:00.000 clean exit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	evidence := filepath.Join(dir, "crash-20260102-000000.log")
+	if err := os.WriteFile(evidence, []byte("clean op: remove /x/y\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	SweepStale(dir)
+	if _, err := os.Stat(marked); !os.IsNotExist(err) {
+		t.Fatal("marked stale file should be swept")
+	}
+	if _, err := os.Stat(evidence); err != nil {
+		t.Fatal("unmarked evidence file must be kept")
+	}
+}
+
+// TestCrumbLandsImmediately：面包屑在进程存活期间即落盘（docs/09
+// §3.2）——外部击毙时崩溃文件不为 0 字节、最后一根面包屑定位死点。
+func TestCrumbLandsImmediately(t *testing.T) {
+	path := EnableCrashLog(t.TempDir())
+	if path == "" {
+		t.Fatal("EnableCrashLog failed")
+	}
+	// 启用即落首行（crash watcher armed）。
+	first, err := os.ReadFile(path)
+	if err != nil || len(first) == 0 {
+		t.Fatalf("crash file empty right after EnableCrashLog: %v", err)
+	}
+	Crumb("progress 1000/5000")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	if !strings.Contains(s, "crash watcher armed") || !strings.Contains(s, "progress 1000/5000") {
+		t.Fatalf("crumb missing from crash file:\n%s", s)
+	}
+}

@@ -13,7 +13,7 @@ import (
 // 字段保留为可选（默认不计算——见 clean.go deleteOne 的产品决策注释）。
 type auditEntry struct {
 	Time       string `json:"time"`
-	Action     string `json:"action"` // move | remove
+	Action     string `json:"action"` // move | remove | reboot（docs/09 §3.1）
 	Path       string `json:"path"`
 	BackupPath string `json:"backupPath,omitempty"`
 	Size       int64  `json:"size"`
