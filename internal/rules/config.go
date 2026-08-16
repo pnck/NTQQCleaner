@@ -57,9 +57,9 @@ type Config struct {
 
 	// 前端持久化状态（Go 不解释，只保管——WebView 自带存储弃用：
 	// localStorage 落在 WebView profile 目录，app 退出后清理困难）：
-	Theme         string `yaml:"theme" json:"theme"`                   // auto / light / dark
-	NamedFilters  string `yaml:"named_filters" json:"namedFilters"`    // 命名筛选器列表的 JSON 载荷
-	FiltersSeeded string `yaml:"filters_seeded" json:"filtersSeeded"`  // 内置筛选器种子版本标记
+	Theme         string `yaml:"theme" json:"theme"`                  // auto / light / dark
+	NamedFilters  string `yaml:"named_filters" json:"namedFilters"`   // 命名筛选器列表的 JSON 载荷
+	FiltersSeeded string `yaml:"filters_seeded" json:"filtersSeeded"` // 内置筛选器种子版本标记
 }
 
 // Default returns the documented defaults (docs/03 §6).
