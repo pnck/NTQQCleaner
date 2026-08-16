@@ -107,6 +107,12 @@ export const FILTER_FIELDS: FilterFieldDef[] = [
   },
   { field: "thumb", label: "是缩略图", kind: "bool", ops: ["eq", "ne"] },
   { field: "temp", label: "是 *Temp 残留", kind: "bool", ops: ["eq", "ne"] },
+  {
+    field: "ext",
+    label: "扩展名",
+    kind: "text",
+    ops: ["eq", "ne", "contains"],
+  },
 ];
 
 export function fieldDef(field: string): FilterFieldDef | undefined {

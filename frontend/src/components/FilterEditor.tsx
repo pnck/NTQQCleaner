@@ -41,6 +41,7 @@ const HELP_FIELDS: { field: string; note: string }[] = [
   { field: "reason", note: "说明标签（枚举）：缩略图 / 原图仍在 / 有缩略图 / 重复出现 / 下载中断残留 / 表情包…；一行可多标签，in 任一命中即匹配" },
   { field: "thumb", note: "是否缩略图：true / false" },
   { field: "temp", note: "是否 *Temp 下载残留：true / false" },
+  { field: "ext", note: "扩展名（不含点，小写）：ext = gif / ext != jpg / ext ~ webp（注意：QQ 缓存扩展名与内容常不符，动图可伪装成 .jpg）" },
 ];
 
 // ---- 条件叶子行 ----

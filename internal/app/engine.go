@@ -384,6 +384,8 @@ func (o *Outcome) matchOne(id int, c Condition) bool {
 			return e.ContentHash
 		case "reason":
 			return o.Reasons[id]
+		case "ext":
+			return e.Ext // 扩展名（不含点、小写；ext ~ webp 匹配内容伪装的文件名后缀）
 		}
 		return ""
 	}
