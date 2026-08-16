@@ -96,23 +96,40 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(getTheme());
   // 后端 config（设置对话框的高级门控/备份策略；普通门控 GUI 恒全开）
   const [cfg, setCfg] = useState<Config | null>(null);
-  // 左右侧栏宽度（可拖拽调整，localStorage 记忆；上下限在 clamp 处）。
-  const [sideW, setSideW] = useState<{ left: number; right: number }>(() => {
-    try {
-      const raw = localStorage.getItem("ntqq-cleaner-side-w");
-      if (raw) {
-        const p = JSON.parse(raw) as { left?: number; right?: number };
-        return { left: clampSideW(p.left ?? 210, "left"), right: clampSideW(p.right ?? 320, "right") };
-      }
-    } catch {
-      // 存储损坏时回退默认
-    }
-    return { left: 210, right: 320 };
-  });
-  // 拖拽结束即已生效；宽度变化后写回记忆（纯 effect，无 StrictMode 顾虑）。
+  // 面板布局（左右栏宽 + 左栏 biz 分区高 + 预览媒体区高）：状态供实时
+  // 拖动，持久化到 Go 侧 config.yaml（Splitter onDragEnd 时写回，
+  // docs/07 §2）。cfg 加载前用默认值；加载后以配置为准（只取一次，
+  // 之后以本会话拖动为准）。
+  const [layout, setLayout] = useState(() => ({ left: 210, right: 320, bizH: 220, mediaH: 340 }));
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
+  const layoutSeeded = useRef(false);
   useEffect(() => {
-    localStorage.setItem("ntqq-cleaner-side-w", JSON.stringify(sideW));
-  }, [sideW]);
+    if (!cfg || layoutSeeded.current) return;
+    layoutSeeded.current = true;
+    setLayout({
+      left: clampSideW(cfg.leftPanelWidth || 210, "left"),
+      right: clampSideW(cfg.rightPanelWidth || 320, "right"),
+      bizH: cfg.bizTreeHeight || 220,
+      mediaH: cfg.previewMediaHeight || 340,
+    });
+  }, [cfg]);
+  // 拖拽结束写回配置（布局值也合入 cfg state，设置对话框往返不丢）。
+  const persistLayout = useCallback(() => {
+    setCfg((c) => {
+      if (!c) return c;
+      const l = layoutRef.current;
+      const nc = {
+        ...c,
+        leftPanelWidth: l.left,
+        rightPanelWidth: l.right,
+        bizTreeHeight: l.bizH,
+        previewMediaHeight: l.mediaH,
+      };
+      void api.setConfig(nc).catch(console.error);
+      return nc;
+    });
+  }, []);
 
   const filter = useMemo(() => ({ account, expr, stages }), [account, expr, stages]);
   const queryKey = useMemo(
@@ -248,6 +265,14 @@ export default function App() {
   }, []);
 
   // ---- 左栏与快捷控件 ----
+  // 月份树随动：勾选态 = 通过当前表达式全部月份条件的月份（in 列表、
+  // month lte/gt 范围、after/before、contains）——预设应用后左栏月份
+  // 自动呈现匹配到的月份。toggle/shift 以它（用户看到的勾选态）为
+  // 增减基准，物化为显式 in 列表（见 toggleMonth）。
+  const activeMonths = useMemo(
+    () => monthsInFilter(expr, monthGroups.map((g) => g.key)),
+    [expr, monthGroups],
+  );
   // Shift 连续选中的锚点：每个分区记录最近一次点击的条目下标。
   const bizAnchor = useRef(-1);
   const monthAnchor = useRef(-1);
@@ -257,7 +282,13 @@ export default function App() {
   };
   const toggleMonth = (month: string, idx: number) => {
     monthAnchor.current = idx;
-    editExprFn((e) => toggleInExpr(e, "month", month));
+    // 以当前**视觉勾选态**（monthsInFilter：经过 before/lte 范围条件后
+    // 的有效月份）为基准增减，再物化为显式 in 列表——使用「90 天前」
+    // 预设后增减月份是在当前选择样子的基础上增减，而不是把 before
+    // 条件丢掉、重置为仅该月。
+    const cur = activeMonths;
+    const next = cur.includes(month) ? cur.filter((m) => m !== month) : [...cur, month];
+    editExprFn((e) => setInExpr(e, "month", next));
   };
   const setBizs = useCallback(
     (bizs: string[]) => editExprFn((e) => setInExpr(e, "biz", bizs)),
@@ -286,21 +317,15 @@ export default function App() {
       if (monthAnchor.current < 0) return;
       const lo = Math.min(monthAnchor.current, idx);
       const hi = Math.max(monthAnchor.current, idx);
-      const cur = getInExpr(expr, "month");
+      // 同 toggleMonth：以视觉勾选态为基准并入区间，不重置。
+      const cur = activeMonths;
       const add = monthGroups.slice(lo, hi + 1).map((g) => g.key);
       setMonths([...new Set([...cur, ...add])]);
       monthAnchor.current = idx;
     },
-    [monthGroups, expr, setMonths],
+    [monthGroups, activeMonths, setMonths],
   );
   const onlyThumb = getSimpleExpr(expr, "thumb") === "true";
-  // 月份树随动：勾选态 = 通过当前表达式全部月份条件的月份（in 列表、
-  // month lte/gt 范围、after/before、contains）——预设应用后左栏月份
-  // 自动呈现匹配到的月份；点击仍是在 in 列表上的正负切换。
-  const activeMonths = useMemo(
-    () => monthsInFilter(expr, monthGroups.map((g) => g.key)),
-    [expr, monthGroups],
-  );
   const setOnlyThumb = (v: boolean) =>
     editExprFn((e) => setSimpleExpr(e, "thumb", "eq", v ? "true" : ""));
   // 搜索框：文件ID 或 内容哈希 任一匹配。搜索词在表达式里至多一个
@@ -649,7 +674,10 @@ export default function App() {
       )}
       <div className="main">
         <LeftTree
-          width={sideW.left}
+          width={layout.left}
+          bizH={layout.bizH}
+          onBizH={(h) => setLayout((s) => ({ ...s, bizH: h }))}
+          onLayoutPersist={persistLayout}
           bizGroups={bizGroups}
           monthGroups={monthGroups}
           activeBizs={getInExpr(expr, "biz")}
@@ -662,7 +690,8 @@ export default function App() {
           onSetMonths={setMonths}
         />
         <Splitter
-          onDrag={(dx) => setSideW((s) => ({ ...s, left: clampSideW(s.left + dx, "left") }))}
+          onDrag={(dx) => setLayout((s) => ({ ...s, left: clampSideW(s.left + dx, "left") }))}
+          onDragEnd={persistLayout}
         />
         <div className="center">
           <div className="toolbar">
@@ -807,10 +836,14 @@ export default function App() {
         <Splitter
           // 右分隔条在预览面板左侧：向左拖（dx<0）分隔线左移 = 预览变宽
           // （宽度增量与鼠标位移方向相反）
-          onDrag={(dx) => setSideW((s) => ({ ...s, right: clampSideW(s.right - dx, "right") }))}
+          onDrag={(dx) => setLayout((s) => ({ ...s, right: clampSideW(s.right - dx, "right") }))}
+          onDragEnd={persistLayout}
         />
         <PreviewPanel
-          width={sideW.right}
+          width={layout.right}
+          mediaH={layout.mediaH}
+          onMediaH={(h) => setLayout((s) => ({ ...s, mediaH: h }))}
+          onLayoutPersist={persistLayout}
           row={rows.find((r) => r.id === selected) ?? null}
           rows={rows}
           dupMode={selected !== null ? (dupModes.get(selected) ?? "dups") : "dups"}
