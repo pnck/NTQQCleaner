@@ -10,7 +10,8 @@ import { Splitter } from "./Splitter";
 interface Props {
   width: number; // 拖拽分隔条调整的栏宽（App 持有，config.yaml 持久化）
   bizH: number; // biz 分区高度（App 持有）
-  onBizH: (h: number) => void;
+  // 函数式更新应用器（Splitter 统一契约：只报增量，持有方函数式应用）
+  onBizH: (apply: (h: number) => number) => void;
   onLayoutPersist: () => void; // 拖拽结束 → App 写回 config.yaml
   bizGroups: GroupStat[];
   monthGroups: GroupStat[];
@@ -126,7 +127,8 @@ export function LeftTree({
         axis="y"
         onDrag={(dy) => {
           const max = (boxRef.current?.clientHeight ?? 600) - 120;
-          onBizH(Math.min(max, Math.max(80, bizH + dy)));
+          // 函数式应用增量：闭包捕获的 boxRef 是稳定对象，max 实时读取
+          onBizH((h) => Math.min(max, Math.max(80, h + dy)));
         }}
         onDragEnd={onLayoutPersist}
       />

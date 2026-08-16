@@ -103,6 +103,17 @@ export default function App() {
   const [layout, setLayout] = useState(() => ({ left: 210, right: 320, bizH: 220, mediaH: 340 }));
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
+  // Splitter 的统一契约（横向/纵向一致）：回调只报增量，持有方用函数式
+  // 更新应用到状态。纵向分栏的 clamp 在子组件内做（需要容器尺寸），
+  // 这里给子组件的是「把函数式更新应用到对应字段」的稳定应用器。
+  const applyBizH = useCallback(
+    (f: (h: number) => number) => setLayout((s) => ({ ...s, bizH: f(s.bizH) })),
+    [],
+  );
+  const applyMediaH = useCallback(
+    (f: (h: number) => number) => setLayout((s) => ({ ...s, mediaH: f(s.mediaH) })),
+    [],
+  );
   // WebView 自带存储全部弃用（main.tsx 启动时清扫 localStorage/
   // sessionStorage——这类「浏览器数据」落在 WebView profile 目录，
   // app 退出后清理困难）：主题 / 命名筛选器 / 面板布局统一持久化到
@@ -705,7 +716,7 @@ export default function App() {
         <LeftTree
           width={layout.left}
           bizH={layout.bizH}
-          onBizH={(h) => setLayout((s) => ({ ...s, bizH: h }))}
+          onBizH={applyBizH}
           onLayoutPersist={persistLayout}
           bizGroups={bizGroups}
           monthGroups={monthGroups}
@@ -871,7 +882,7 @@ export default function App() {
         <PreviewPanel
           width={layout.right}
           mediaH={layout.mediaH}
-          onMediaH={(h) => setLayout((s) => ({ ...s, mediaH: h }))}
+          onMediaH={applyMediaH}
           onLayoutPersist={persistLayout}
           row={rows.find((r) => r.id === selected) ?? null}
           rows={rows}

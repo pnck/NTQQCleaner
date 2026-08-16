@@ -6,6 +6,11 @@ import { useRef } from "react";
 // 全部自行实现。拖动期间 body user-select:none，不会选中文本。
 // axis="x"（默认）= 左右分栏；axis="y" = 上下分栏。onDragEnd 在指针
 // 释放时回调（布局持久化用——拖拽全程高频 onDrag，只在结束时写配置）。
+//
+// **契约（唯一的机制，横向/纵向一致）**：onDrag 只报**增量**，持有方
+// 必须用函数式更新把它应用到状态（如 setH((h) => clamp(h + dy))）——
+// mousedown 注册的 window 监听捕获的是当次渲染的回调闭包，读 props
+// 旧值做增量会在重渲染后持续回弹到拖拽起点。
 export function Splitter({
   onDrag,
   onDragEnd,

@@ -10,7 +10,8 @@ import { Tooltip } from "./Tooltip";
 interface Props {
   width: number; // 拖拽分隔条调整的栏宽（App 持有，config.yaml 持久化）
   mediaH: number; // 媒体区高度（App 持有）
-  onMediaH: (h: number) => void;
+  // 函数式更新应用器（Splitter 统一契约：只报增量，持有方函数式应用）
+  onMediaH: (apply: (h: number) => number) => void;
   onLayoutPersist: () => void; // 拖拽结束 → App 写回 config.yaml
   row: FileRow | null;
   rows: FileRow[];
@@ -384,7 +385,8 @@ export function PreviewPanel({ width, mediaH, onMediaH, onLayoutPersist, row, ro
         axis="y"
         onDrag={(dy) => {
           const max = (panelRef.current?.clientHeight ?? 600) - 160;
-          onMediaH(Math.min(max, Math.max(160, mediaH + dy)));
+          // 函数式应用增量：闭包捕获的 panelRef 是稳定对象，max 实时读取
+          onMediaH((h) => Math.min(max, Math.max(160, h + dy)));
         }}
         onDragEnd={onLayoutPersist}
       />
