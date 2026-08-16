@@ -6,6 +6,15 @@
 // 不同（只读属性、共享模式、跨卷移动），由各平台实现负责。
 package platform
 
+import "errors"
+
+// ErrDeferredReboot 是 Windows 专属的成功-延迟哨兵（docs/09 §3.1）：
+// 文件被其他进程持久占用（共享冲突重试无效），已通过 MoveFileExW
+// MOVEFILE_DELAY_UNTIL_REBOOT 登记系统重启后删除/移动。DeleteFile /
+// MoveFile 返回本错误（errors.Is 判断）表示「操作已登记、尚未生效」，
+// 不是失败——上层把该条目计为 reboot 而非 fail。darwin/linux 永不返回。
+var ErrDeferredReboot = errors.New("deletion deferred to next reboot")
+
 // Adapter 是每个操作系统必须提供的能力集合。
 type Adapter interface {
 	// QQProcesses 返回疑似 QQ 客户端进程的命令行（空 = 未运行）。

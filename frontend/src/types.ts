@@ -120,11 +120,11 @@ export interface CleanRequest {
   ignoreRunning?: boolean; // QQ 运行中仍清理（需二次确认）
 }
 
-// CleanItem：清理结果对话框中回显（仅 skip/fail 明细；完整清单见
-// 审计报告——按需生成）。
+// CleanItem：清理结果对话框中回显（仅 skip/fail/reboot 明细；完整
+// 清单见审计报告——按需生成）。
 export interface CleanItem {
   path: string;
-  action: "move" | "remove" | "skip" | "fail";
+  action: "move" | "remove" | "reboot" | "skip" | "fail";
   backupPath?: string;
   reason?: string; // skip/fail 的原因
   size: number;
@@ -136,6 +136,7 @@ export interface CleanResult {
   deleted: number;
   skipped: number;
   failed: number;
+  rebootDeferred: number; // 已登记重启后删除/移动（docs/09 §3.1）
   bytesFreed: number;
   items: CleanItem[];
   auditPath: string; // 本次审计报告（系统 tmp，后端已打开）

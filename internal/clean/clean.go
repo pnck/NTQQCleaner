@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"qqcleaner/internal/classify"
+	"qqcleaner/internal/logring"
 	"qqcleaner/internal/platform"
 	"qqcleaner/internal/rules"
 )
@@ -52,7 +53,7 @@ type Request struct {
 // 大清理下逐文件列表过长——docs/07 §5）。
 type CleanItem struct {
 	Path       string `json:"path"`
-	Action     string `json:"action"` // move | remove | skip | fail
+	Action     string `json:"action"` // move | remove | reboot | skip | fail
 	BackupPath string `json:"backupPath,omitempty"`
 	Reason     string `json:"reason,omitempty"` // skip/fail 的原因
 	Size       int64  `json:"size"`
@@ -61,14 +62,18 @@ type CleanItem struct {
 // Result summarizes a run. Errors are collected per-file so one failure
 // never aborts the rest (docs/04 §4.4).
 type Result struct {
-	Processed  int
-	Deleted    int // removed without backup
-	Moved      int // moved to backup dir
-	Skipped    int // failed whitelist/blacklist verification
-	Failed     int
-	BytesFreed int64
-	Items      []CleanItem
-	Errors     []string
+	Processed int
+	Deleted   int // removed without backup
+	Moved     int // moved to backup dir
+	Skipped   int // failed whitelist/blacklist verification
+	Failed    int
+	// RebootDeferred 登记了重启后删除/移动（platform.ErrDeferredReboot，
+	// docs/09 §3.1）：操作已登记但重启前不生效——字节不计入
+	// BytesFreed（尚未真正释放）。
+	RebootDeferred int
+	BytesFreed     int64
+	Items          []CleanItem
+	Errors         []string
 }
 
 // Run executes the deletion pass. It refuses to run at all unless Force and
@@ -142,21 +147,35 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		// 类别标签，不信任扫描期关联结果。
 		reason := rules.Reason(f, false, false, 0)
 
-		backupPath, err := deleteOne(audit, f, backupDir, reason)
+		// 逐操作 attempt 痕迹（docs/09 §3.5）：在删除/移动 API 调用
+		// **之前**落 attempt——成败结果会返回给程序（计数/错误列表），
+		// 启用审计时另有逐文件精确清单；ops 日志不重复记录结果，只
+		// 回答「哪个 attempt 没完成」：进程被击毙（TerminateProcess，
+		// 无 handler 可拦截）时最后一行即未完成的操作。
+		want := "remove"
+		if backupDir != "" {
+			want = "move"
+		}
+		logring.Crumb("clean op: %s %s", want, f.Path)
+		backupPath, action, err := deleteOne(audit, f, backupDir, reason)
 		if err != nil {
 			res.Failed++
 			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", f.Path, err))
 			res.Items = append(res.Items, CleanItem{Path: f.Path, Action: "fail", Reason: err.Error(), Size: f.Size})
 			continue
 		}
-		action := "remove"
-		if req.Move {
+		switch action {
+		case "move":
 			res.Moved++
-			action = "move"
-		} else {
+		case "reboot":
+			res.RebootDeferred++
+		default: // remove
 			res.Deleted++
 		}
-		res.BytesFreed += f.Size
+		// reboot 项重启前未真正释放，不计入 BytesFreed。
+		if action != "reboot" {
+			res.BytesFreed += f.Size
+		}
 		res.Items = append(res.Items, CleanItem{Path: f.Path, Action: action, BackupPath: backupPath, Reason: reason, Size: f.Size})
 	}
 	return res, nil
@@ -211,8 +230,10 @@ func VerifyPath(k rules.Knowledge, abs string, allowedRoots []string, cfg rules.
 // deleteOne moves the file to the backup dir (recoverable) or removes it.
 // 删除/移动的 OS 语义由 platform 适配层提供（POSIX unlink 与 Windows
 // DeleteFile 不同）。审计按需：audit 为 nil 时只执行不记录（docs/06 §3）。
-// 返回备份路径（move 时非空，remove 时为 ""）。
-func deleteOne(audit *auditLogger, f classify.FileEntry, backupDir, reason string) (string, error) {
+// 返回（备份路径，实际动作，错误）：动作为 move / remove / reboot——
+// reboot 表示平台层已登记重启后删除/移动（platform.ErrDeferredReboot，
+// docs/09 §3.1），不是失败。
+func deleteOne(audit *auditLogger, f classify.FileEntry, backupDir, reason string) (string, string, error) {
 	entry := auditEntry{
 		Path:   f.Path,
 		Size:   f.Size,
@@ -223,29 +244,39 @@ func deleteOne(audit *auditLogger, f classify.FileEntry, backupDir, reason strin
 		if _, err := os.Lstat(dst); err == nil {
 			dst = uniquePath(dst) // avoid clobbering an existing backup
 		}
-		if err := platform.Current().MoveFile(f.Path, dst); err != nil {
-			return "", err
+		err := platform.Current().MoveFile(f.Path, dst)
+		if err != nil && !errors.Is(err, platform.ErrDeferredReboot) {
+			return "", "", err
 		}
-		entry.Action, entry.BackupPath = "move", dst
+		action := "move"
+		if err != nil {
+			action = "reboot"
+		}
+		entry.Action, entry.BackupPath = action, dst
 		if audit != nil {
-			if err := audit.Log(entry); err != nil {
-				return dst, err
+			if aerr := audit.Log(entry); aerr != nil {
+				return dst, action, aerr
 			}
 		}
-		return dst, nil
+		return dst, action, nil
 	}
 	// 产品决策：删除前不再计算 SHA-256（对已删文件无恢复价值，
 	// 且大文件全量哈希拖慢清理）；需要可恢复性请勾选移动（备份目录）。
-	if err := platform.Current().DeleteFile(f.Path); err != nil {
-		return "", err
+	err := platform.Current().DeleteFile(f.Path)
+	if err != nil && !errors.Is(err, platform.ErrDeferredReboot) {
+		return "", "", err
 	}
-	entry.Action = "remove"
+	action := "remove"
+	if err != nil {
+		action = "reboot"
+	}
+	entry.Action = action
 	if audit != nil {
-		if err := audit.Log(entry); err != nil {
-			return "", err
+		if aerr := audit.Log(entry); aerr != nil {
+			return "", action, aerr
 		}
 	}
-	return "", nil
+	return "", action, nil
 }
 
 func uniquePath(p string) string {

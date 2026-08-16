@@ -7,9 +7,10 @@ import { fmtSize } from "../types";
 const ACTIONS: Record<string, { label: string; cls: string }> = {
   skip: { label: "跳过", cls: "dim" },
   fail: { label: "失败", cls: "err" },
+  reboot: { label: "重启后删除", cls: "warn" },
 };
 
-const ORDER = ["skip", "fail"];
+const ORDER = ["skip", "fail", "reboot"];
 
 interface Props {
   res: CleanResult;
@@ -26,8 +27,15 @@ export function CleanReportDialog({ res, onClose }: Props) {
         <h2>清理结果</h2>
         <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
           处理 {res.processed}：移动到备份 {res.moved} · 已删除 {res.deleted} · 跳过{" "}
-          {res.skipped} · 失败 {res.failed} · 释放 {fmtSize(res.bytesFreed)}
+          {res.skipped} · 失败 {res.failed}
+          {res.rebootDeferred > 0 && <> · 重启后删除 {res.rebootDeferred}</>} · 释放{" "}
+          {fmtSize(res.bytesFreed)}
         </div>
+        {res.rebootDeferred > 0 && (
+          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+            {res.rebootDeferred} 个文件被其他进程占用，已登记系统重启后删除
+          </div>
+        )}
         {res.auditPath ? (
           <div style={{ fontSize: 11, color: "var(--text-dim)" }} title={res.auditPath}>
             审计报告已生成并打开（系统临时目录，可另存；路径见悬浮提示）
@@ -39,7 +47,7 @@ export function CleanReportDialog({ res, onClose }: Props) {
         )}
         <div className="clean-report">
           {items.length === 0 && (
-            <div className="cond-empty">没有跳过或失败的文件。</div>
+            <div className="cond-empty">没有跳过、失败或待重启删除的文件。</div>
           )}
           {items.map((it, i) => {
             const a = ACTIONS[it.action] ?? { label: it.action, cls: "dim" };
