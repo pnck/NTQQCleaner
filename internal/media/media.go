@@ -122,7 +122,37 @@ func firstWebPFrame(r io.Reader) (image.Image, error) {
 		if _, err := io.ReadFull(chunkData, hdr); err != nil {
 			return nil, err
 		}
-		bitstream, err := io.ReadAll(chunkData)
+		// 帧数据形态（实测 QQ 样本 + 编码器差异）：16 字节帧头之后是
+		// ① 可选 ALPH 子块（4cc + size + data + 偶对齐 pad），
+		// ② 图片数据——或为完整 "VP8 "/"VP8L" chunk（4cc + size + 位流
+		// + pad，QQ 转换样本即此形态），或为裸位流（规范最小形态）。
+		// 两者都必须接得住：把 chunk 头剥掉得到位流再解码。
+		br := bufio.NewReader(chunkData)
+		if tag, err := br.Peek(4); err == nil && string(tag) == "ALPH" {
+			var ahdr [8]byte
+			if _, err := io.ReadFull(br, ahdr[:]); err != nil {
+				return nil, err
+			}
+			alen := binary.LittleEndian.Uint32(ahdr[4:8])
+			if _, err := br.Discard(int(alen) + int(alen&1)); err != nil { // data + 偶对齐 pad
+				return nil, err
+			}
+		}
+		if tag, err := br.Peek(4); err == nil && (string(tag) == "VP8 " || string(tag) == "VP8L") {
+			// 完整 chunk 形态：剥 4cc + size 取位流
+			var vhdr [8]byte
+			if _, err := io.ReadFull(br, vhdr[:]); err != nil {
+				return nil, err
+			}
+			vlen := binary.LittleEndian.Uint32(vhdr[4:8])
+			bitstream := make([]byte, vlen)
+			if _, err := io.ReadFull(br, bitstream); err != nil {
+				return nil, err
+			}
+			return decodeWebPBitstream(bitstream)
+		}
+		// 裸位流形态
+		bitstream, err := io.ReadAll(br)
 		if err != nil {
 			return nil, err
 		}

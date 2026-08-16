@@ -196,6 +196,54 @@ func TestFirstFrameAnimatedWebP(t *testing.T) {
 	}
 }
 
+// TestFirstFrameAnimatedWebPVariants：ANMF 帧数据的三种真实形态——
+// 完整 "VP8 " chunk（QQ 转换样本形态，实测 12MB 样本）/ ALPH 子块 +
+// chunk / 裸位流——都必须能解出首帧。
+func TestFirstFrameAnimatedWebPVariants(t *testing.T) {
+	bits, err := base64.StdEncoding.DecodeString(vp8BitsB64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunk := func(cc string, payload []byte) []byte {
+		out := make([]byte, 8+len(payload)+(len(payload)&1))
+		copy(out[0:4], cc)
+		binary.LittleEndian.PutUint32(out[4:8], uint32(len(payload)))
+		copy(out[8:], payload)
+		return out
+	}
+	putU24 := func(b []byte, v uint32) { b[0], b[1], b[2] = byte(v), byte(v>>8), byte(v>>16) }
+	build := func(t *testing.T, frameData []byte) string {
+		t.Helper()
+		vp8xBody := make([]byte, 10)
+		vp8xBody[0] = 0x02
+		putU24(vp8xBody[4:7], 149)
+		putU24(vp8xBody[7:10], 99)
+		anmfBody := append(make([]byte, 16), frameData...)
+		var buf bytes.Buffer
+		buf.WriteString("RIFF")
+		_ = binary.Write(&buf, binary.LittleEndian, uint32(4+4+len(chunk("VP8X", vp8xBody))+len(chunk("ANIM", make([]byte, 6)))+len(chunk("ANMF", anmfBody))))
+		buf.WriteString("WEBP")
+		buf.Write(chunk("VP8X", vp8xBody))
+		buf.Write(chunk("ANIM", make([]byte, 6)))
+		buf.Write(chunk("ANMF", anmfBody))
+		return writeFile(t, t.TempDir(), "anim.webp", buf.Bytes())
+	}
+	variants := map[string][]byte{
+		"bare-bitstream":  bits,
+		"full-vp8-chunk":  chunk("VP8 ", bits), // QQ 转换样本形态
+		"alph-plus-chunk": append(chunk("ALPH", make([]byte, 4)), chunk("VP8 ", bits)...),
+	}
+	for name, frame := range variants {
+		img, err := FirstFrame(build(t, frame))
+		if err != nil {
+			t.Fatalf("FirstFrame(%s): %v", name, err)
+		}
+		if img == nil || img.Bounds().Dx() != 150 {
+			t.Fatalf("FirstFrame(%s): unexpected frame %v", name, img)
+		}
+	}
+}
+
 // TestPlaceholderPNG：兜底占位图必须是可解码 PNG（解码失败路径不回退
 // 动画原图）。
 func TestPlaceholderPNG(t *testing.T) {
