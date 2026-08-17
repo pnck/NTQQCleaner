@@ -34,6 +34,11 @@ type Engine struct {
 // to entry IDs (byte-identical copies, 二次扫描填充). Now is the clock
 // used for age conditions (kept consistent per scan).
 type Outcome struct {
+	// Epoch 是本次扫描的序号（每次扫描递增）：预览 URL 的版本参数
+	// （?v=<epoch>，docs/07 §4.1）。清理后重扫会产生全新 id 空间，
+	// 若新旧 URL 完全相同，浏览器缓存（含 404 响应）会让新扫描的
+	// 同 id 预览串台或图裂——版本参数保证每次扫描的 URL 唯一。
+	Epoch        int
 	Root         string
 	Accounts     []report.AccountReport
 	Entries      []classify.FileEntry

@@ -43,6 +43,9 @@ type Backend struct {
 	previewBase string // http://127.0.0.1:PORT（本地媒体预览服务）
 	previewSrv  *http.Server
 	previewOnce sync.Once
+	// scanEpoch 每次扫描递增的序号，作为预览 URL 版本参数（docs/07
+	// §4.1）：清理后重扫复用 id 空间，版本参数防浏览器缓存串台。
+	scanEpoch int
 }
 
 // NewBackend loads the config (or defaults when the file is absent),
@@ -182,6 +185,8 @@ func (b *Backend) Scan(opts ScanOptions) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	b.scanCtx, b.cancel = ctx, cancel
 	b.scanning = true
+	b.scanEpoch++
+	epoch := b.scanEpoch
 	b.mu.Unlock()
 
 	logring.Logf("scan start: root=%s onlyBizs=%v minAgeDays=%d minSize=%d", root, opts.OnlyBizs, opts.MinAgeDays, opts.MinSize)
@@ -208,6 +213,7 @@ func (b *Backend) Scan(opts ScanOptions) error {
 			}
 		}
 		if out != nil {
+			out.Epoch = epoch
 			b.outcome = out
 		}
 		reports := b.accountsLocked()
@@ -332,12 +338,12 @@ func (b *Backend) fileRowLocked(out *Outcome, id int) report.FileRow {
 		// 缩略图行：OriURL 指向同 md5 的原文件，OriExt 取其扩展名
 		// （缩略图行自身 ext 是缩略图扩展名，不能用于分派原文件的播放器）
 		if oriID, ok := out.OriID[e.MD5]; ok {
-			row.OriURL = b.previewURL(oriID)
+			row.OriURL = b.previewURL(out.Epoch, oriID)
 			row.OriExt = out.Entries[oriID].Ext
 		}
 	} else if e.Sub == "Ori" {
 		// 原文件行：OriURL 就是它自己（视频/动图/原图的直接预览入口）
-		row.OriURL = b.previewURL(id)
+		row.OriURL = b.previewURL(out.Epoch, id)
 		row.OriExt = e.Ext
 	}
 	// ThumbURL = 单元格缩略图条目（Ori 行取配对 Thumb，其余取自身）。
@@ -358,9 +364,9 @@ func (b *Backend) fileRowLocked(out *Outcome, id int) report.FileRow {
 		}
 	}
 	if !noWallThumb {
-		row.ThumbURL = b.previewURL(thumbID)
+		row.ThumbURL = b.previewURL(out.Epoch, thumbID)
 		if platform.Current().FreezeAnimatedThumbs() && out.Entries[thumbID].Animated {
-			row.ThumbURL += "?static=1"
+			row.ThumbURL += "&static=1"
 		}
 	}
 	return row
@@ -575,11 +581,15 @@ func (b *Backend) GetGroups(f Filter, by string) ([]report.GroupStat, error) {
 // ---- preview ----
 
 // previewURL builds the media URL for one entry ID (loopback HTTP server).
-func (b *Backend) previewURL(id int) string {
-	if b.previewBase == "" {
-		return "/preview/" + strconv.Itoa(id) // fallback: asset-server route
+// v= 是本次扫描的 epoch（docs/07 §4.1）：清理后重扫复用 id 空间，
+// 不带版本参数时浏览器缓存（含 404 响应）会让新扫描的同 id 预览
+// 串台或图裂。
+func (b *Backend) previewURL(epoch, id int) string {
+	base := "/preview/" // fallback: asset-server route
+	if b.previewBase != "" {
+		base = b.previewBase + "/preview/"
 	}
-	return b.previewBase + "/preview/" + strconv.Itoa(id)
+	return base + strconv.Itoa(id) + "?v=" + strconv.Itoa(epoch)
 }
 
 // ResolvePreview maps a preview ID to the absolute file path. The path
@@ -638,14 +648,21 @@ func (b *Backend) Reveal(id int) error {
 // preview panel still shows the animated original once the user explicitly
 // enters the player view.
 func (b *Backend) PreviewHandler(w http.ResponseWriter, r *http.Request) {
+	// 404 一律 no-store（docs/07 §4.1）：扫描间隙/清理后 outcome 短暂
+	// 失效时返回的 404 不能被浏览器缓存——重扫后同 id 的合法 URL
+	// 不应命中旧 404。
+	notFound := func() {
+		w.Header().Set("Cache-Control", "no-store")
+		http.NotFound(w, r)
+	}
 	id, err := strconv.Atoi(strings.TrimPrefix(r.URL.Path, "/preview/"))
 	if err != nil {
-		http.NotFound(w, r)
+		notFound()
 		return
 	}
 	p, err := b.ResolvePreview(id)
 	if err != nil {
-		http.NotFound(w, r)
+		notFound()
 		return
 	}
 	if r.URL.Query().Get("static") == "1" {

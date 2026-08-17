@@ -72,3 +72,17 @@ func TestWallSafeExt(t *testing.T) {
 		}
 	}
 }
+
+// TestPreviewURLVersioned：预览 URL 带每次扫描的 epoch 版本参数
+// （docs/07 §4.1）——清理后重扫复用 id 空间，版本参数防浏览器缓存
+// （含 404）跨扫描串台。
+func TestPreviewURLVersioned(t *testing.T) {
+	b := &Backend{previewBase: "http://127.0.0.1:1"}
+	if got := b.previewURL(3, 7); got != "http://127.0.0.1:1/preview/7?v=3" {
+		t.Fatalf("got %q", got)
+	}
+	fallback := &Backend{}
+	if got := fallback.previewURL(0, 5); got != "/preview/5?v=0" {
+		t.Fatalf("got %q", got)
+	}
+}
