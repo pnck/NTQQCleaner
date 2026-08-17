@@ -119,6 +119,14 @@ func previewHandler(rw http.ResponseWriter, req *http.Request) {
   - 视频 `<video src="/preview/Video/Ori/xxx.mp4" preload="metadata">`
 - **白名单校验在 handler 内**：只允许 `nt_data` 富媒体目录内文件，拒绝 `..`/绝对路径（安全红线）
 
+**实现演进（2026-08）**：预览端点实际为 **ID 寻址** `/preview/{id}`
+（id = 本次扫描索引下标，服务端逐请求校验结构红线 + 存在性），且 URL
+带**每次扫描递增的版本参数**（`?v=<scan epoch>`）——清理后重扫会产生
+全新 id 空间，若新旧 URL 完全相同，浏览器缓存（含 404 响应）会让新
+扫描的同 id 预览串台或图裂（现象：重扫不恢复、重启恢复——重启后
+随机端口使 URL 变化）。404 响应额外带 `Cache-Control: no-store`。
+动图静态化参数随之为 `&static=1`。
+
 ### 4.2 预览策略（按类型分策略）
 
 | 类型 | 策略 | 预期耗时 |
