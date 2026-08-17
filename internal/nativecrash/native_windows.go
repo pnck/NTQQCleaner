@@ -1,6 +1,14 @@
 //go:build windows
 
-package logring
+// Package nativecrash 安装 Windows 原生异常兜底（docs/09 §3.3）：
+// Go runtime 的 VEH 只覆盖 Go 代码路径，非 Go 线程（WebView2 宿主
+// 进程内线程等）的原生异常没有任何记录且 WER 可能被系统策略关闭。
+// SetUnhandledExceptionFilter 安装后：写 minidump（dbghelp，纯
+// syscall/LazyDLL，无 cgo，容器可交叉编译）并输出一行到 stderr
+// （控制台可见），然后返回 EXCEPTION_CONTINUE_SEARCH 链回默认
+// 处理器——系统 bugreport/WER 按用户系统策略正常介入。与 Go VEH
+// 共存：Go panic/fatal 走默认 stderr 输出，不经过本过滤器。
+package nativecrash
 
 import (
 	"fmt"
@@ -13,25 +21,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// 原生崩溃兜底（docs/09 §3.3）：Go runtime 的 VEH 只覆盖 Go 代码路径，
-// 非 Go 线程（WebView2 宿主进程内线程等）的原生异常没有任何记录且
-// WER 可能被系统策略关闭——当初「WER 默认开启」的假设在真机被证伪。
-// SetUnhandledExceptionFilter 安装后：写 minidump（dbghelp，纯
-// syscall/LazyDLL，无 cgo，容器可交叉编译）+ 环形缓冲追加进 crash
-// log，然后返回 EXCEPTION_CONTINUE_SEARCH 链回默认处理器——系统
-// bugreport/WER 按用户系统策略正常介入。与 Go VEH 共存：Go panic/
-// fatal 仍走 SetCrashOutput（logring.go），不会到达本过滤器。
-
 const (
 	miniDumpNormal                         = 0x00000000
 	miniDumpWithIndirectlyReferencedMemory = 0x00000002
 	exceptionContinueSearch                = 0 // 链回默认处理器（WER 照常介入）
-)
-
-var (
-	nativeOnce sync.Once
-	dumpDir    string
-	miniDump   *windows.LazyProc
 )
 
 // exceptionRecord 镜像 Win64 的 EXCEPTION_RECORD（x/sys/windows 未导出
@@ -52,13 +45,18 @@ type exceptionPointers struct {
 	ContextRecord   uintptr
 }
 
-// installNativeFilter 安装原生异常过滤器（幂等，仅首次生效）。在
-// EnableCrashLog 创建崩溃文件后调用——dumpDir 取崩溃文件所在目录。
-func installNativeFilter() {
-	nativeOnce.Do(func() {
-		mu.Lock()
-		dumpDir = filepath.Dir(crashN)
-		mu.Unlock()
+var (
+	once     sync.Once
+	dumpDir  string
+	miniDump *windows.LazyProc
+)
+
+// Install 安装原生异常过滤器（幂等，仅首次生效）。dumpDir 是
+// minidump 落盘目录（crash-native-<ts>.dmp），仅在原生异常发生
+// 时写入——不产生任何常态文件、无清理逻辑。
+func Install(dir string) {
+	once.Do(func() {
+		dumpDir = dir
 		dbghelp := windows.NewLazySystemDLL("dbghelp.dll")
 		miniDump = dbghelp.NewProc("MiniDumpWriteDump")
 		kernel32 := windows.NewLazySystemDLL("kernel32.dll")
@@ -68,9 +66,9 @@ func installNativeFilter() {
 }
 
 // nativeExceptionFilter 是非 Go 线程原生异常的兜底：写 minidump +
-// 环形缓冲后把异常交回系统。隐私约束（docs/09 §3.3）：MiniDumpNormal
-// + 间接引用内存，**不用 FullMemory**——进程内存可能含 QQ 账号/路径
-// 之外的敏感数据。
+// stderr 一行后把异常交回系统。隐私约束（docs/09 §3.3）：
+// MiniDumpNormal + 间接引用内存，**不用 FullMemory**——进程内存
+// 可能含 QQ 账号/路径之外的敏感数据。
 func nativeExceptionFilter(ep *exceptionPointers) uintptr {
 	// 兜底自身绝不能 panic：任何失败都静默返回 CONTINUE_SEARCH。
 	defer func() { _ = recover() }()
@@ -89,7 +87,6 @@ func nativeExceptionFilter(ep *exceptionPointers) uintptr {
 			uintptr(unsafe.Pointer(ep)), 0, 0)
 		f.Close()
 	}
-	DumpCrash()
-	Crumb("native exception 0x%08x: minidump %s", code, dmp)
+	fmt.Fprintf(os.Stderr, "native exception 0x%08x: minidump %s\n", code, dmp)
 	return exceptionContinueSearch
 }

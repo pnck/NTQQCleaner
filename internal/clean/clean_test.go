@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"qqcleaner/internal/classify"
-	"qqcleaner/internal/logring"
+	"qqcleaner/internal/oplog"
 	"qqcleaner/internal/platform"
 	"qqcleaner/internal/qq/impl/nt"
 	"qqcleaner/internal/rules"
@@ -291,16 +292,23 @@ func TestRunRebootDeferredMove(t *testing.T) {
 	}
 }
 
-// TestRunWritesOpsTrace：逐操作 attempt 痕迹（docs/09 §3.5）——
-// 每个文件的 attempt 在删除/移动 API 调用前实时落盘，被 KILL 时
+// TestRunWritesOpsTrace：逐操作 attempt 日志（docs/09 §3.5）——
+// 每个文件的 attempt 在删除/移动 API 调用前输出 stdout，被 KILL 时
 // 最后一行即未完成的操作。
 func TestRunWritesOpsTrace(t *testing.T) {
 	setQQRunning(t, false)
-	crash := logring.EnableCrashLog(t.TempDir())
-	if crash == "" {
-		t.Fatal("EnableCrashLog failed")
+	oldOut := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
 	}
-	defer logring.Cleanup()
+	os.Stdout = w
+	oplog.Enable()
+	defer func() {
+		w.Close()
+		os.Stdout = oldOut
+		oplog.Disable()
+	}()
 	base := t.TempDir()
 	src := filepath.Join(base, "Pic", "2023-01", "Thumb", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01_720.png")
 	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
@@ -309,7 +317,7 @@ func TestRunWritesOpsTrace(t *testing.T) {
 	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	r := Request{
+	rq := Request{
 		Files: []classify.FileEntry{{
 			Path: src, Biz: "pic", Sub: "Thumb", Category: "pic/thumb",
 			Month: "2023-01", Size: 1, IsThumb: true,
@@ -321,13 +329,11 @@ func TestRunWritesOpsTrace(t *testing.T) {
 		K:            ntKN(),
 		Config:       rules.Default(),
 	}
-	if _, err := Run(context.Background(), r); err != nil {
+	if _, err := Run(context.Background(), rq); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(crash)
-	if err != nil {
-		t.Fatal(err)
-	}
+	w.Close()
+	data, _ := io.ReadAll(r)
 	if !strings.Contains(string(data), "clean op: remove "+src) {
 		t.Fatalf("ops trace missing remove line:\n%s", data)
 	}
