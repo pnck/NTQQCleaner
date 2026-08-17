@@ -7,15 +7,26 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 )
+
+// createNoWindow（CREATE_NO_WINDOW）抑制控制台子进程自建可见窗口：
+// 本 exe 是 windowsgui 子系统（无控制台），tasklist/cmd 等控制台
+// 程序作为子进程派生时会自建一个控制台窗口——清理开始/每 30s 的
+// QQ 进程检查与审计报告打开时都会闪一下命令行窗口。
+const createNoWindow = 0x08000000
+
+var noConsoleWindow = &syscall.SysProcAttr{CreationFlags: createNoWindow}
 
 type windowsAdapter struct{}
 
 func defaultAdapter() Adapter { return windowsAdapter{} }
 
-// QQProcesses 用 tasklist 匹配 QQ.exe。
+// QQProcesses 用 tasklist 匹配 QQ.exe（隐藏控制台窗口）。
 func (windowsAdapter) QQProcesses() []string {
-	out, err := exec.Command("tasklist", "/FI", "IMAGENAME eq QQ.exe", "/FO", "CSV", "/NH").Output()
+	cmd := exec.Command("tasklist", "/FI", "IMAGENAME eq QQ.exe", "/FO", "CSV", "/NH")
+	cmd.SysProcAttr = noConsoleWindow
+	out, err := cmd.Output()
 	if err != nil {
 		return nil
 	}
@@ -65,9 +76,12 @@ func (windowsAdapter) Reveal(path string) error {
 	return exec.Command("explorer", "/select,", path).Start()
 }
 
-// OpenFile 用默认程序打开文件（cmd /c start）。
+// OpenFile 用默认程序打开文件（cmd /c start，隐藏 cmd 窗口——
+// 被打开的默认程序照常显示自己的窗口）。
 func (windowsAdapter) OpenFile(path string) error {
-	return exec.Command("cmd", "/c", "start", "", path).Start()
+	cmd := exec.Command("cmd", "/c", "start", "", path)
+	cmd.SysProcAttr = noConsoleWindow
+	return cmd.Start()
 }
 
 // FreezeAnimatedThumbs：Windows 专有显示政策——WebView2 没有关闭图片
