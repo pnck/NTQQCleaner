@@ -43,11 +43,13 @@
 大文件复制有秒级窗口，且出现「复制成功、删源失败」这种删除模式
 没有的中间态。
 
-### 2.2 进程静默消失（0 字节 crash log）
+### 2.2 进程静默消失（外部击毙）
 
-`internal/logring` 的 crash 文件只在崩溃瞬间才写入（环形缓冲转储/
-运行时崩溃转储）。**全部 0 字节 = 进程死亡完全没有经过 Go runtime
-的崩溃路径**（非 panic、非 fatal）。两个可能：
+历史实测（崩溃文件方案时期）：crash 文件只落面包屑、无任何转储，
+且 VS 挂载显示进程以退出码 1 消失、无异常抛出、main 收尾零执行——
+**进程死亡完全没有经过 Go runtime 的崩溃路径**（非 panic、非
+fatal），唯一能「绕过全部代码、携带退出码」的机制是外部
+`TerminateProcess(h, 1)`。两个可能：
 
 - **外部 TerminateProcess**：QQ 安全防护组件/杀软对「批量删除 QQ
   数据目录」的进程的干预——时机与用户操作完全吻合，为首要嫌疑；
@@ -56,8 +58,8 @@
 
 「事件查看器无条目、无 bugreport 弹窗」本身是**设计行为而非缺陷**：
 `debug.SetCrashOutput` 接管 Go panic 后直接 `ExitProcess(2)`，WER
-不介入。当初的决策「原生崩溃由 WER 默认开启覆盖，无需代码」
-（logring 包注释）在该真机上被证伪。
+不介入。当初的决策「原生崩溃由 WER 默认开启覆盖，无需代码」在该
+真机上被证伪——这也是 §3.3 主动安装过滤器的由来。
 
 ## 3. 设计
 
@@ -95,66 +97,56 @@ x/sys/windows 已有 MoveFileEx/DeleteFile，容器可交叉编译）：
 （IgnoreRunning）从「尽力删除+报占用」升级为「即时可删的删、
 被占用的登记重启删」，UI 如实报告数量。
 
-### 3.2 崩溃面包屑（logring.Crumb）
+### 3.2 逐操作 ops 日志（stdout，internal/oplog）
 
-crash 文件从**启动起持续落 breadcrumb**（区别于仅在崩溃瞬间写入的
-现状）：启动（pid/版本）、scan 开始/结束、clean 开始/每个文件的
-attempt（调用删除/移动 API 前落盘，§3.5 修订——最后一行即未完成的
-操作）/结束。外部击毙时，最后一根面包屑直接定位死点；0 字节文件
-从此不再出现（启动即落首行）。
+**极简机制（2026-08 终版）**：不写文件、不设 flag、无清理逻辑、无
+删除成败判断——GUI 启动即 `oplog.Enable()`，时间戳行直接输出
+stdout。把 exe 拖进 PowerShell 运行时，控制台与 GUI 并行滚动 ops
+日志；双击启动（windowsgui 无控制台）写入静默失败、零成本。CLI 不
+启用（stdout 已被结构化输出占用，精确记录由审计文件承担）。
 
-### 3.3 原生崩溃兜底（Windows-only）
+关键性质：**日志流随进程死亡自然终结**——被外部击毙时，控制台最后
+一行即死点，不存在「文件删不掉/残留堆积/需要启动清理」的任何
+问题。日志内容：GUI 启动、scan 开始/结束、clean 开始/结束、clean
+每个文件的 attempt（调用删除/移动 API **之前**输出——成败结果会
+返回给程序/审计，日志只回答「哪个 attempt 没完成」）。
 
-`internal/logring/native_windows.go`（build tag windows）：
+### 3.3 原生崩溃兜底（Windows-only，internal/nativecrash）
 
-- `EnableCrashLog` 时预加载 dbghelp 的 `MiniDumpWriteDump` proc 并
-  `kernel32.SetUnhandledExceptionFilter` 安装过滤器（EnableCrashLog
-  由 main 仅在 Windows 调用，§3.5 平台决策；包本身平台无关，测试
-  可在任意平台直接启用文件方案）；
+`internal/nativecrash`（build tag windows；`Install(dir)` 由 main 的
+setupCrashGuard 静态分派调用，guard_windows.go / guard_other.go）：
+
+- `Install` 预加载 dbghelp 的 `MiniDumpWriteDump` proc 并
+  `kernel32.SetUnhandledExceptionFilter` 安装过滤器（幂等，仅首次
+  生效）；
 - 触发时：写 minidump（`MiniDumpNormal|MiniDumpWithIndirectly
   ReferencedMemory`，**不用 FullMemory**——进程内存可能含 QQ 账号/
-  路径之外的敏感数据）+ `DumpCrash()` 把环形缓冲追加进 crash log；
+  路径之外的敏感数据）到 `dir`（crash-native-<ts>.dmp，仅原生异常
+  发生时写入，无常态文件）+ stderr 一行（控制台可见）；
 - 返回 `EXCEPTION_CONTINUE_SEARCH`：链回默认处理器，**系统 WER/
   bugreport 按用户系统策略正常介入**——补上「WER 默认开启」假设
   失败的那一环；
-- 与 Go runtime VEH 共存：Go panic/fatal 走 SetCrashOutput（现状
-  不变），本过滤器只接住 VEH 不处理的非 Go 线程异常；两条链路
-  不冲突。
+- 与 Go runtime VEH 共存：Go panic/fatal 走默认 stderr（终端可见），
+  不经过本过滤器。
 
-### 3.5 平台范围、SEH 局限与逐操作 ops 日志（2026-08 修订）
+### 3.5 平台范围与明确不做（2026-08 终版）
 
-- **平台范围决策**：崩溃文件 + SEH 过滤器（minidump）+ 逐操作 ops
-  日志整套仅 Windows 启用——**build tag 静态分派**（main 包
-  crash_windows.go / crash_other.go，无 runtime 判断），与平台适配层
-  惯例一致。POSIX 未观察到异常崩溃——Go panic 走默认 stderr（CLI
-  终端可见），不启用文件方案；logring 内存环形缓冲与 Recover 全平台
-  生效（零开销）。
+- **平台范围**：Windows 上 `setupCrashGuard` 安装原生异常过滤器
+  （§3.3，build tag 静态分派，无 runtime 判断）；POSIX 未观察到
+  异常崩溃——什么都不装，Go panic 走默认 stderr（终端可见）。ops
+  日志（§3.2）是 GUI 行为、跨平台一致（stdout），不依赖任何文件
+  方案。
 - **SEH「死前异常」论证（结论：做不到）**：TerminateProcess 不执行
   受害进程的任何代码——SEH/VEH/exit handler 全部不触发；SEH 只处理
   异常（fault），不处理外部终止，「未 CLEAN 状态触发死前异常」在
   单进程内没有实现路径。行业等价黑科技是让状态活在比进程长寿的
   载体上（文件/共享内存/独立 watchdog 进程——crashpad 的
-  crashpad_handler 即此架构）：本方案的 ops 日志文件本身就是该机制
-  （内核持有文件，写者死亡内容仍在），watchdog 进程能额外补的只有
-  下次启动的「上次异常终止」报告，本期不做。
-- **逐操作 ops 日志（记录 attempt 而非结果）**：clean 在调用删除/
-  移动 API **之前**为每个文件落一行 attempt（clean op: remove/move
-  <path>）——被 KILL 时最后一行即未完成的操作，死点精确到单个文件。
-  成败结果不重复记录：结果会返回给程序（计数/错误列表），启用审计
-  时另有逐文件精确清单（audit-<ts>.jsonl，docs/06 §3）。ops 日志
-  始终开启（Windows）、随正常退出删除，只用于崩溃取证。
-- **退出清理（Windows，flag 门控）**：退出路径在 run() 的响应上声明
-  自身性质——cleanExit flag 仅在 run() 返回 nil（真正正常退出）时为
-  true，teardown 只看 flag：正常退出先落 clean-exit 标记
-  （MarkCleanExit）再由 logring.Cleanup() 删除本次会话的崩溃文件；
-  **错误退出（run() 返回 error）落 "exit: error" 行并保留文件**——
-  失败运行的 ops 痕迹是诊断证据。删除失败（文件仍被句柄持有）时
-  带标记的残留由下次启动的 SweepStale 清扫——只删带标记文件，无
-  标记的一律保留。panic 时 Recover 重新抛出、清理不执行；被 KILL 时
-  进程直接死亡——两条异常路径证据保留。不能放 defer（LIFO 先于
-  Recover、毁掉证据）。
-- **明确不做**：signal.Notify 拦截（Windows windowsgui 无控制台信号、
-  macOS 无需求）；watchdog 进程；5s 心跳（逐操作粒度已足够）。
+  crashpad_handler 即此架构）；stdout 日志同样是该机制（控制台与
+  进程无关、独立存活），watchdog 进程本期不做。
+- **明确不做**：崩溃文件方案（写文件/flag/退出删除/删除成败判断/
+  启动清扫全部不做——日志即 stdout）；signal.Notify 拦截（Windows
+  windowsgui 无控制台信号、macOS 无需求）；watchdog 进程；5s 心跳
+  （逐操作粒度已足够）；重试/延迟类 fallback。
 
 ### 3.4 UI 报告契约扩展
 
@@ -180,11 +172,8 @@ attempt（调用删除/移动 API 前落盘，§3.5 修订——最后一行即�
 | 层 | 手段 |
 |---|---|
 | clean 层 reboot 分支 | 假 Adapter（platform.Install）返回 ErrDeferredReboot → 断言 Action/计数/审计 |
-| logring.Crumb | 单测：启动即落首行；clean 每个 attempt（API 调用前）实时追加进同一文件 |
-| logring.Cleanup | 单测：正常退出路径文件被删、幂等；panic 路径不删（证据保留） |
-| logring.SweepStale | 单测：只清扫带 clean-exit 标记的残留，无标记证据保留 |
-| Windows 适配层编译 | `GOOS=windows CGO_ENABLED=0 go build ./...`（容器门禁） |
-| 平台门控 | build tag 静态分派（crash_windows.go / crash_other.go）；linux/windows/darwin 交叉编译 + 全量测试 |
+| oplog | 单测：启用后时间戳行输出 stdout、未启用零输出；clean 每个 attempt（API 调用前）出现在 stdout |
+| 平台门控 | build tag 静态分派（guard_windows.go / guard_other.go）；linux/windows/darwin 交叉编译 + 全量测试 |
 | 真机（用户执行） | ① 完全关闭 QQ 复测批量清理——若闪退消失则坐实外部击毙；② 跨卷移动+QQ 运行：占用文件进「重启后删除」计数；③ 重启后确认 PendingFileRenameOperations 生效；④ 杀软白名单/Defender 排除后复测 |
 
 ## 6. 待确认项

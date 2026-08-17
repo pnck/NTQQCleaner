@@ -144,11 +144,11 @@ internal/classify   白名单遍历 + FileEntry 组装（Options.K 注入）+
 internal/rules      白名单/黑名单政策 + reason 标签（Reason） + 配置
 internal/report     UI/CLI 共享模型（不暴露绝对路径，预览走 /preview/{id}）
 internal/clean      删除执行：进程保护→白名单→适配器删除/移动→审计
-internal/logring    内存环形日志 + 崩溃转储（debug.SetCrashOutput，panic 时
-                     环形缓冲追加进 crash-<ts>.log；崩溃文件 + 逐操作 attempt
-                     日志（API 调用前落盘）+ 退出清理（正常退出才删：
-                     clean-exit 标记 + 启动清扫）仅 Windows 启用，build tag
-                     静态分派——docs/09 §3.5，POSIX 无文件方案）
+internal/oplog      GUI 操作日志：时间戳行直接输出 stdout（PowerShell 启动
+                     时控制台与 GUI 并行滚动，随进程死亡自然终结；不写文件、
+                     无清理逻辑，docs/09 §3.2/§3.5）
+internal/nativecrash Windows 原生异常兜底：SEH 过滤器 + minidump（dbghelp
+                     syscall，Install(dir)，docs/09 §3.3），其余平台 no-op
 internal/app        Engine（Detect 分派 + 共享管线）+ Backend（GUI 绑定）
 internal/testutil   fixtures：假 QQ 目录树（docs/05 §6），固定时钟 testutil.Now
 frontend/           React 19 + @tanstack/react-virtual 照片墙

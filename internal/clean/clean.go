@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"qqcleaner/internal/classify"
-	"qqcleaner/internal/logring"
+	"qqcleaner/internal/oplog"
 	"qqcleaner/internal/platform"
 	"qqcleaner/internal/rules"
 )
@@ -147,16 +147,17 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		// 类别标签，不信任扫描期关联结果。
 		reason := rules.Reason(f, false, false, 0)
 
-		// 逐操作 attempt 痕迹（docs/09 §3.5）：在删除/移动 API 调用
-		// **之前**落 attempt——成败结果会返回给程序（计数/错误列表），
-		// 启用审计时另有逐文件精确清单；ops 日志不重复记录结果，只
-		// 回答「哪个 attempt 没完成」：进程被击毙（TerminateProcess，
-		// 无 handler 可拦截）时最后一行即未完成的操作。
+		// 逐操作 attempt 日志（docs/09 §3.5）：在删除/移动 API 调用
+		// **之前**输出——成败结果会返回给程序（计数/错误列表），启用
+		// 审计时另有逐文件精确清单；日志不重复记录结果，只回答「哪个
+		// attempt 没完成」：进程被击毙（TerminateProcess，无 handler
+		// 可拦截）时最后一行即未完成的操作（GUI 输出 stdout，随进程
+		// 死亡自然终结）。
 		want := "remove"
 		if backupDir != "" {
 			want = "move"
 		}
-		logring.Crumb("clean op: %s %s", want, f.Path)
+		oplog.Printf("clean op: %s %s", want, f.Path)
 		backupPath, action, err := deleteOne(audit, f, backupDir, reason)
 		if err != nil {
 			res.Failed++

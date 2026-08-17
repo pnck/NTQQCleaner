@@ -13,7 +13,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"qqcleaner/internal/app"
-	"qqcleaner/internal/logring"
+	"qqcleaner/internal/oplog"
 	"qqcleaner/internal/platform"
 )
 
@@ -131,10 +131,13 @@ func fitWindowToScreen(ctx context.Context) {
 // frontend can reach the filesystem exclusively through the whitelisted
 // preview handler (docs/06 §5b).
 func runGUI() error {
-	// panic 时把环形缓冲写进崩溃文件后重新 panic（运行时崩溃转储随后
-	// 追加进同一文件）。
-	defer logring.Recover()
-	logring.Logf("gui starting")
+	// ops 日志直接输出 stdout（docs/09 §3.5）：把 exe 拖进 PowerShell
+	// 运行时控制台与 GUI 并行滚动（被击毙时最后一行即死点）；双击
+	// 启动（windowsgui 无控制台）写入静默失败、零成本。CLI 不启用：
+	// stdout 已被结构化输出占用。
+	oplog.Enable()
+	defer oplog.Disable()
+	oplog.Printf("gui starting")
 	backend := app.NewBackend(configPath(), nil)
 	emitter := &wailsEmitter{}
 	dlgs := &Dialogs{}

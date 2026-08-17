@@ -17,13 +17,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"text/tabwriter"
 
 	"qqcleaner/internal/app"
 	"qqcleaner/internal/discovery"
-	"qqcleaner/internal/logring"
 	"qqcleaner/internal/qq"
 	"qqcleaner/internal/report"
 	"qqcleaner/internal/rules"
@@ -35,29 +33,14 @@ import (
 var version = "dev"
 
 func main() {
-	// 崩溃报告（docs/09 §3.5 平台决策，build tag 静态分派）：
-	// setupCrashReport 在 Windows 上启用崩溃文件 + SEH 原生异常过滤器
-	// + 逐操作 ops 日志，在 POSIX 上 no-op（未观察到异常崩溃，Go panic
-	// 走默认 stderr）。logring 的内存环形缓冲与 Recover 全平台生效。
-	setupCrashReport()
-	logring.Logf("start: version=%s goos=%s goarch=%s", version, runtime.GOOS, runtime.GOARCH)
-	defer logring.Recover()
-	// 退出路径先声明自身性质（docs/09 §3.5）：run() 返回 nil 才是真正
-	// 的正常退出——cleanExit flag 只在此为 true。错误退出（CLI 报错/
-	// GUI 启动失败）保留崩溃文件：ops 痕迹是失败运行的诊断证据，并落
-	// 一行原因。teardown 只看 flag 决定是否删除。
-	cleanExit := true
-	err := run(os.Args[1:])
-	if err != nil {
-		cleanExit = false
-		logring.Crumb("exit: error %v", err)
+	// 原生异常兜底（docs/09 §3.3，build tag 静态分派）：Windows 安装
+	// SEH 过滤器 + minidump（internal/nativecrash），其余平台 no-op。
+	// 日志本身不写文件：GUI 的 ops 日志直接输出 stdout（internal/oplog，
+	// runGUI 启用）——从 PowerShell 启动时控制台与 GUI 并行滚动，
+	// 进程死亡即日志终结；Go panic 走默认 stderr。
+	setupCrashGuard()
+	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
-	}
-	// panic 时 Recover 重新抛出、此处不执行——证据保留；被 KILL 时
-	// 进程直接死亡——同样保留。不能放 defer（LIFO 先于 Recover、
-	// 毁掉证据）。
-	teardownCrashReport(cleanExit)
-	if !cleanExit {
 		os.Exit(1)
 	}
 }
