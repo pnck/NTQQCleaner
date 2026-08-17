@@ -4,16 +4,19 @@ package platform
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"syscall"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 // createNoWindow（CREATE_NO_WINDOW）抑制控制台子进程自建可见窗口：
-// 本 exe 是 windowsgui 子系统（无控制台），tasklist/cmd 等控制台
-// 程序作为子进程派生时会自建一个控制台窗口——清理开始/每 30s 的
-// QQ 进程检查与审计报告打开时都会闪一下命令行窗口。
+// 本 exe 是 windowsgui 子系统（无控制台），cmd 等控制台程序作为子
+// 进程派生时会自建一个控制台窗口。
 const createNoWindow = 0x08000000
 
 var noConsoleWindow = &syscall.SysProcAttr{CreationFlags: createNoWindow}
@@ -22,19 +25,22 @@ type windowsAdapter struct{}
 
 func defaultAdapter() Adapter { return windowsAdapter{} }
 
-// QQProcesses 用 tasklist 匹配 QQ.exe（隐藏控制台窗口）。
+// QQProcesses 用 Toolhelp32 快照 API 枚举 QQ.exe（纯 syscall）——
+// 不 spawn tasklist 子进程：无控制台闪窗、无进程创建开销，也不在
+// 枚举 QQ 进程时向防护组件暴露「陌生进程派生命令」的挑衅行为。
 func (windowsAdapter) QQProcesses() []string {
-	cmd := exec.Command("tasklist", "/FI", "IMAGENAME eq QQ.exe", "/FO", "CSV", "/NH")
-	cmd.SysProcAttr = noConsoleWindow
-	out, err := cmd.Output()
+	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
 		return nil
 	}
+	defer windows.CloseHandle(snap)
 	var procs []string
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" && strings.Contains(strings.ToLower(line), "qq.exe") {
-			procs = append(procs, line)
+	var entry windows.ProcessEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	for err := windows.Process32First(snap, &entry); err == nil; err = windows.Process32Next(snap, &entry) {
+		name := windows.UTF16ToString(entry.ExeFile[:])
+		if strings.EqualFold(name, "qq.exe") {
+			procs = append(procs, fmt.Sprintf("qq.exe (pid %d)", entry.ProcessID))
 		}
 	}
 	return procs
