@@ -39,7 +39,26 @@ func main() {
 	// runGUI 启用）——从 PowerShell 启动时控制台与 GUI 并行滚动，
 	// 进程死亡即日志终结；Go panic 走默认 stderr。
 	setupCrashGuard()
-	if err := run(os.Args[1:]); err != nil {
+	// Windows 单二进制双入口（docs/10 §2.2）：CUI 子系统 + 入口分派。
+	switch consoleKind() {
+	case 0: // 双击（24H2 detached：无控制台）→ GUI
+		exitWith(runGUI())
+	case 1: // 旧系统双击：孤儿控制台 → 先摘除再 GUI（短暂闪烁）
+		detachOrphanConsole()
+		exitWith(runGUI())
+	default: // 父 shell：CLI 语义（裸运行 = usage，exit 2）
+		args := os.Args[1:]
+		if len(args) == 0 && bareShowsUsage() {
+			usage()
+			os.Exit(2)
+		}
+		exitWith(run(args))
+	}
+}
+
+// exitWith 报告错误并按 1 退出（nil = 正常返回）。
+func exitWith(err error) {
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}

@@ -173,16 +173,11 @@ jobs:
           esac
       - name: CLI
         shell: bash
+        # windows 无 CLI 产物（docs/10）：双入口 bundle exe 即 CLI
+        if: ${{ !startsWith(matrix.target, 'windows-') }}
         run: |
           task "build-cli:${{ matrix.target }}"
-          case "${{ matrix.target }}" in
-            windows-*)
-              mv "build/bin/ntqq-cleaner-cli-${{ matrix.target }}.exe" "release/ntqq-cleaner-${{ matrix.target }}-cli.exe"
-              ;;
-            *)
-              mv "build/bin/ntqq-cleaner-cli-${{ matrix.target }}" "release/ntqq-cleaner-${{ matrix.target }}-cli"
-              ;;
-          esac
+          mv "build/bin/ntqq-cleaner-cli-${{ matrix.target }}" "release/ntqq-cleaner-${{ matrix.target }}-cli"
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: artifacts-${{ matrix.target }}

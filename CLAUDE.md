@@ -6,7 +6,8 @@
 
 ```sh
 task build-cli                    # 纯 CLI 二进制（无需 GUI 依赖，任何环境可构建）
-task build-cli[:<os>-<arch>]      # 平台 CLI 二进制（CGO_ENABLED=0 纯 Go 交叉，CI 发布用）
+task build-cli[:<os>-<arch>]      # 平台 CLI 二进制（CGO_ENABLED=0 纯 Go 交叉，CI 发布用；
+                                  # 无 windows 变体——双入口 bundle exe 即 CLI，docs/10）
 task build[:<os>-<arch>]          # GUI 二进制（go build 层），省略 = dev：开 inspector、不 strip
 task build[:<os>-<arch>]:debug    # 显式 debug 模式（与省略默认等价）
 task build[:<os>-<arch>]:release  # release 模式（-s -w + trimpath，无 debug 注入）
@@ -51,7 +52,7 @@ task frontend:typecheck
 - darwin 构建需要 `CGO_LDFLAGS=-framework UniformTypeIdentifiers`（wails 2.14 的 WailsContext.m 用 UTType 但未链接该 framework）
 - 交叉编译（实测 + 官方文档）：
   - **裸 `go build` 必须带 `production` 标签**（wails build 自动加）：缺了会编进 app_default_*.go stub，运行时报 "Wails applications will not build without the correct build tags"
-  - **Windows exe**：后端纯 Go（WebView2 经 syscall）→ 容器内可交叉产出**真实可用** exe（`task build:windows-amd64`，dev 模式带 WebView2 devtools；分发用 `task build:windows-amd64:release`）；`-H windowsgui` 已内置（PE GUI 子系统，无启动控制台黑框）
+  - **Windows exe**：后端纯 Go（WebView2 经 syscall）→ 容器内可交叉产出**真实可用** exe（`task build:windows-amd64`，dev 模式带 WebView2 devtools；分发用 `task build:windows-amd64:release`）。**单二进制双入口（docs/10）**：CUI 子系统（go build 不传 `-H windowsgui`；bundle 用 wails CLI 的 `-windowsconsole`）+ 入口分派（GetConsoleProcessList 计数：父 shell → CLI 语义/裸运行 usage；双击 → GUI，孤儿控制台先 FreeConsole）+ **winrespatch 后封 manifest**（wails 的嵌入阶段会丢弃 `consoleAllocationPolicy`，只能 raw XML 后封；24H2+ 双击零黑框，旧系统短暂闪烁）
   - **macOS**：WKWebView 后端为 ObjC/cgo → 容器无 C 编译器，编译期即报 `clang not found` → 必须在 macOS 主机或 macos CI 上构建（官方 crossplatform 文档也是每平台原生 runner 构建）
   - **Linux**：需 webkit2gtk（编译+运行），容器两者皆无。ubuntu-24.04 只有
     4.1 dev 包 → 构建必须带 `webkit2_41` tag（wails 按此选 4.1 的
@@ -69,9 +70,10 @@ task frontend:typecheck
   typecheck）→ 4 平台矩阵仅编译 `bundle:<os>-<arch>:release` → 正式
   release（**永不删除**；补发时已存在则 upload 补传 assets）
 - **preview.yml**：push main → 同一完整门禁 → 矩阵编译并发布每平台的
-  cli + bundle debug/release（裸 GUI build 层与 bundle 冗余——同一
-  二进制少了 manifest/图标/版本资源——不发布，仍在 Taskfile 里供
-  容器快速验证；前端不单独发布）→ 发布 prerelease
+  bundle debug/release + 非 Windows 平台的 cli（windows 无 CLI 产物：
+  双入口 bundle exe 即 CLI，docs/10；裸 GUI build 层与 bundle 冗余——
+  同一二进制少了 manifest/图标/版本资源——不发布，仍在 Taskfile 里
+  供容器快速验证；前端不单独发布）→ 发布 prerelease
   `v<base.patch+1>-alpha.N`（base = 最新正式 tag，无 tag 兜底
   v0.1.0 → 首个为 v0.1.1-alpha.1；N 按既有同名 alpha 数从 1 滚动，
   新正式 tag 换前缀即重置）→ **只留最近 10 个** preview，删除时
