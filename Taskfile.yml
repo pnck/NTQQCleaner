@@ -105,8 +105,10 @@ tasks:
       - '{{.GO}} build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BINDIR}}/{{.APP}}-cli .'
 
   # CLI 的平台变体（internal 参数化 + 别名，CI 矩阵单元直接调用）：
-  # CLI 纯 Go（无 GUI 依赖），任意主机可交叉（CGO_ENABLED=0）；windows
-  # 输出 .exe。产物名带平台后缀，与宿主 build-cli 并存。
+  # CLI 纯 Go（无 GUI 依赖），任意主机可交叉（CGO_ENABLED=0）。产物名
+  # 带平台后缀，与宿主 build-cli 并存。darwin/linux 保留：bundle 的
+  # .app/webkit2gtk 依赖使纯 CLI 用户不该被迫拿 GUI 产物（docs/10）；
+  # windows 不设变体——双入口 bundle exe 即 CLI。
   build-cli:p:
     internal: true
     vars:
@@ -120,11 +122,8 @@ tasks:
       GOOS: '{{.OS}}'
       GOARCH: '{{.ARCH}}'
 
-  build-cli:windows-amd64:
-    desc: Windows CLI 二进制（纯 Go，任意主机交叉）
-    cmds:
-      - task: build-cli:p
-        vars: {PLATFORM: windows-amd64}
+  # windows 无 CLI 变体（有意为之，docs/10）：双入口 bundle exe 就是
+  # Windows 上的 CLI（CLI 路径不碰 WebView2，无需 -cli 产物）。
 
   build-cli:darwin-arm64:
     desc: macOS arm64 CLI 二进制（纯 Go，任意主机交叉）
@@ -161,7 +160,11 @@ tasks:
       ARCH: '{{if eq .PLATFORM "native"}}{{.HOST_ARCH}}{{else}}{{index (splitList "-" .PLATFORM) 1}}{{end}}'
     deps: [frontend]
     cmds:
-      - '{{.GO}} build -tags {{if eq .RELEASE "0"}}{{.TAGS_DEV}}{{else}}{{.TAGS}}{{end}}{{if eq .OS "linux"}},webkit2_41{{end}} {{if eq .RELEASE "0"}}-gcflags "{{.GCFLAGS_DEV}}"{{end}} {{if eq .RELEASE "1"}}-trimpath{{end}} -ldflags "{{if eq .RELEASE "0"}}{{.LDFLAGS_DEV}}{{else}}{{.LDFLAGS}}{{end}}{{if eq .OS "windows"}} -H windowsgui{{end}}" -o {{.BINDIR}}/{{.APP}}{{if ne .PLATFORM "native"}}-{{.PLATFORM}}{{end}}{{if eq .RELEASE "1"}}-release{{end}}{{if eq .OS "windows"}}.exe{{end}} .'
+      # Windows 单二进制双入口（docs/10）：CUI 子系统（不传 -H windowsgui）
+      # + winrespatch 后封 manifest/icon/version（含 consoleAllocationPolicy，
+      # wails 的嵌入阶段会丢弃该元素，只能后封）。
+      - '{{.GO}} build -tags {{if eq .RELEASE "0"}}{{.TAGS_DEV}}{{else}}{{.TAGS}}{{end}}{{if eq .OS "linux"}},webkit2_41{{end}} {{if eq .RELEASE "0"}}-gcflags "{{.GCFLAGS_DEV}}"{{end}} {{if eq .RELEASE "1"}}-trimpath{{end}} -ldflags "{{if eq .RELEASE "0"}}{{.LDFLAGS_DEV}}{{else}}{{.LDFLAGS}}{{end}}" -o {{.BINDIR}}/{{.APP}}{{if ne .PLATFORM "native"}}-{{.PLATFORM}}{{end}}{{if eq .RELEASE "1"}}-release{{end}}{{if eq .OS "windows"}}.exe{{end}} .'
+      - '{{if eq .OS "windows"}}{{.GO}} run ./tools/winrespatch {{.BINDIR}}/{{.APP}}{{if ne .PLATFORM "native"}}-{{.PLATFORM}}{{end}}{{if eq .RELEASE "1"}}-release{{end}}.exe{{end}}'
     env:
       CGO_ENABLED: '{{if eq .OS "windows"}}0{{else}}1{{end}}'
       GOOS: '{{.OS}}'
@@ -282,9 +285,14 @@ tasks:
     vars:
       PLATFORM: '{{default "native" .PLATFORM}}'
       RELEASE: '{{default "0" .RELEASE}}'
+      OS: '{{if eq .PLATFORM "native"}}{{.GOOS}}{{else}}{{index (splitList "-" .PLATFORM) 0}}{{end}}'
     deps: [frontend]
     cmds:
-      - 'wails build -platform {{if eq .PLATFORM "native"}}{{.BUNDLE_PLATFORM}}{{else}}{{replace "-" "/" .PLATFORM}}{{end}} -clean -s -tags wails{{if or (hasPrefix "linux" .PLATFORM) (and (eq .PLATFORM "native") (eq .GOOS "linux"))}},webkit2_41{{end}} {{if eq .RELEASE "0"}}-debug{{end}} -trimpath -ldflags "{{if eq .RELEASE "0"}}{{.LDFLAGS_DEV}}{{else}}{{.LDFLAGS}}{{end}}"'
+      # -windowsconsole（仅 windows 平台传入，clir 全小写规则，docs/10 §2.1）：
+      # 双入口的前提）；winrespatch 后封 manifest（wails 嵌入阶段丢弃
+      # consoleAllocationPolicy）+ icon/version 幂等覆盖。
+      - 'wails build -platform {{if eq .PLATFORM "native"}}{{.BUNDLE_PLATFORM}}{{else}}{{replace "-" "/" .PLATFORM}}{{end}} -clean -s {{if eq .OS "windows"}}-windowsconsole{{end}} -tags wails{{if or (hasPrefix "linux" .PLATFORM) (and (eq .PLATFORM "native") (eq .GOOS "linux"))}},webkit2_41{{end}} {{if eq .RELEASE "0"}}-debug{{end}} -trimpath -ldflags "{{if eq .RELEASE "0"}}{{.LDFLAGS_DEV}}{{else}}{{.LDFLAGS}}{{end}}"'
+      - '{{if eq .OS "windows"}}{{.GO}} run ./tools/winrespatch {{.BINDIR}}/{{.APP}}.exe{{end}}'
 
   bundle:
     desc: 宿主 dev .app 包（-debug：开 inspector、不 strip）；release 见 bundle:release

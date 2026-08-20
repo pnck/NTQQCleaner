@@ -96,6 +96,7 @@ tests/cli_smoke.sh   CLI 端到端冒烟
 | `docs/07_ui_design.md` | GUI 框架与性能预算（虚拟化/预览策略） |
 | `docs/08_windows_legacy_compat.md` | Windows 布局 + 旧版兼容层设计（含展示映射、待确认清单） |
 | `docs/09_windows_move_crash_report.md` | Windows 移动/删除语义重做 + 崩溃面包屑 + 原生崩溃 minidump 兜底 |
+| `docs/10_windows_single_binary.md` | Windows 单二进制双入口：CUI + detached manifest 后封 + 入口分派 |
 
 设计文档是**需求与规则的唯一权威来源**；代码与文档不一致时以文档为准，
 并推动文档修订（见 §5 流程）。
